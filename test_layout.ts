@@ -1,0 +1,1 @@
+import { generateLayout } from './src/utils/layoutGenerator.ts'; console.log(generateLayout([{id: '1', op_no: '1', name: 'op1', smv: 1, machine_type: 'turning', machine_count: 1, section: 'Front'} as any], 1, 1).machines);
