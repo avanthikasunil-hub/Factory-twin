@@ -33,6 +33,7 @@ const CreateLinePage = () => {
   const [workingHours, setWorkingHours] = useState("9");
 
   const [lines, setLines] = useState<string[]>(DEFAULT_LINES);
+  const [cons, setCons] = useState<string[]>([]);
   const [styles, setStyles] = useState<string[]>([]);
   const [cones, setCones] = useState<string[]>([]);
 
@@ -63,19 +64,30 @@ const CreateLinePage = () => {
       .catch(() => { });
   }, []);
 
-  const loadStyles = (line: string) => {
+  // Load buyers (Column A) for a given line
+  const loadBuyers = (line: string) => {
     if (!line) return;
-    fetch(`http://localhost:4000/styles?line=${line}`)
+    fetch(`http://localhost:4000/cons?line=${encodeURIComponent(line)}`)
       .then(res => res.json())
-      .then(data => setStyles(data))
+      .then(data => setCons(data))
       .catch(() => { });
   };
 
-  const loadCones = (line: string, style: string) => {
-    if (!line || !style) return;
-    fetch(`http://localhost:4000/oc?line=${line}&style=${encodeURIComponent(style)}`)
+  // Load Con Nos / OC (Column B) for a given line + buyer
+  const loadConNos = (line: string, buyerVal: string) => {
+    if (!line || !buyerVal) return;
+    fetch(`http://localhost:4000/oc-by-buyer?line=${encodeURIComponent(line)}&buyer=${encodeURIComponent(buyerVal)}`)
       .then(res => res.json())
       .then(data => setCones(data))
+      .catch(() => { });
+  };
+
+  // Load Styles (Column E) for a given line + Con No
+  const loadStylesByConNo = (line: string, oc: string) => {
+    if (!line || !oc) return;
+    fetch(`http://localhost:4000/styles-by-oc?line=${encodeURIComponent(line)}&oc=${encodeURIComponent(oc)}`)
+      .then(res => res.json())
+      .then(data => setStyles(data))
       .catch(() => { });
   };
 
@@ -119,8 +131,8 @@ const CreateLinePage = () => {
 
   // ── Create line ────────────────────────────────────────────────────────────
   const handleCreateLine = useCallback(() => {
-    if (!lineNo || !styleNo || !coneNo || !buyer) {
-      toast({ title: "Missing Fields", description: "Please select Line, Style, Cone number and Buyer.", variant: "destructive" });
+    if (!lineNo || !buyer || !styleNo || !coneNo) {
+      toast({ title: "Missing Fields", description: "Please select Line, Con, Style and Con No.", variant: "destructive" });
       return;
     }
 
@@ -163,66 +175,67 @@ const CreateLinePage = () => {
 
         <div className="max-w-2xl mx-auto glass-card rounded-2xl p-8 space-y-8">
           <div className="flex flex-col gap-6">
+            {/* 1. Line Number */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><Hash className="w-4 h-4" /> Line Number</Label>
-              <select value={lineNo} onChange={(e) => { setLineNo(e.target.value); setStyleNo(""); setConeNo(""); loadStyles(e.target.value); }} className="w-full h-10 rounded-md border px-3 bg-white text-black">
+              <select value={lineNo} onChange={(e) => {
+                const val = e.target.value;
+                setLineNo(val);
+                setBuyer(""); setConeNo(""); setStyleNo("");
+                setCons([]); setCones([]); setStyles([]);
+                loadBuyers(val);
+              }} className="w-full h-10 rounded-md border px-3 bg-white text-black">
                 <option value="">Select Line</option>
                 {lines.map(line => <option key={line} value={line}>{line}</option>)}
               </select>
             </div>
 
+            {/* 2. Buyer — filtered by Line */}
             <div className="space-y-2">
-              <Label className="flex items-center gap-2"><Shirt className="w-4 h-4" /> Style Number</Label>
-              <input
-                list="styleList"
-                value={styleNo}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setStyleNo(val);
-                  setConeNo("");
-                  if (lineNo && val) {
-                    loadCones(lineNo, val);
-                    // Also attempt to fetch buyer for this style
-                    fetch(`http://localhost:4000/buyer?line=${lineNo}&style=${encodeURIComponent(val)}`)
-                      .then(res => res.json())
-                      .then(data => {
-                        if (data.buyer) setBuyer(data.buyer);
-                      })
-                      .catch(() => { });
-                  }
-                }}
-                className="w-full h-10 rounded-md border px-3"
-              />
-              <datalist id="styleList">{styles.map(style => <option key={style} value={style} />)}</datalist>
+              <Label className="flex items-center gap-2"><Users className="w-4 h-4" /> Buyer</Label>
+              <select value={buyer} onChange={(e) => {
+                const val = e.target.value;
+                setBuyer(val);
+                setConeNo(""); setStyleNo("");
+                setCones([]); setStyles([]);
+                loadConNos(lineNo, val);
+              }} className="w-full h-10 rounded-md border px-3 bg-white text-black" disabled={!lineNo}>
+                <option value="">Select Buyer</option>
+                {cons.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
 
+            {/* 3. Con No — filtered by Buyer */}
             <div className="space-y-2">
-              <Label className="flex items-center gap-2"><Spool className="w-4 h-4" /> Cone Number</Label>
-              <input
-                list="coneList"
-                value={coneNo}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setConeNo(val);
-                  if (lineNo && styleNo && val) {
-                    fetch(`http://localhost:4000/buyer?line=${lineNo}&style=${encodeURIComponent(styleNo)}&oc=${val}`)
-                      .then(res => res.json())
-                      .then(data => {
-                        if (data.buyer) setBuyer(data.buyer);
-                      })
-                      .catch(() => { });
-                  }
-                }}
-                className="w-full h-10 rounded-md border px-3"
-              />
-              <datalist id="coneList">{cones.map(cone => <option key={cone} value={cone} />)}</datalist>
+              <Label className="flex items-center gap-2"><Spool className="w-4 h-4" /> Con No</Label>
+              <select value={coneNo} onChange={(e) => {
+                const val = e.target.value;
+                setConeNo(val);
+                setStyleNo(""); setStyles([]);
+                loadStylesByConNo(lineNo, val);
+              }} className="w-full h-10 rounded-md border px-3 bg-white text-black" disabled={!buyer}>
+                <option value="">Select Con No</option>
+                {cones.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
 
+            {/* 4. Style No — filtered by Con No */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2"><Shirt className="w-4 h-4" /> Style No</Label>
+              <select value={styleNo} onChange={(e) => setStyleNo(e.target.value)}
+                className="w-full h-10 rounded-md border px-3 bg-white text-black" disabled={!coneNo}>
+                <option value="">Select Style No</option>
+                {styles.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+
+            {/* 5. Target Output */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><Target className="w-4 h-4" /> Target Output/Day</Label>
               <input type="number" value={targetOutput} onChange={(e) => setTargetOutput(e.target.value)} className="w-full h-10 rounded-md border px-3" />
             </div>
 
+            {/* 6. Efficiency */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><Activity className="w-4 h-4" /> Efficiency (%)</Label>
               <input type="number" value={efficiency} onChange={(e) => setEfficiency(e.target.value)} className="w-full h-10 rounded-md border px-3" />

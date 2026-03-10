@@ -3,11 +3,11 @@ import type { Operation, MachinePosition, SectionLayout } from '@/types';
 import { calculateMachineRequirements } from './lineBalancing';
 
 // Constants (Units: Approx Meters)
-export const LANE_Z_CENTER_AB = -6.0;
+export const LANE_Z_CENTER_AB = -3.92;
 export const LANE_Z_CENTER_CD = 0.0;
 
-export const LANE_Z_A = -5.2;
-export const LANE_Z_B = -6.8;
+export const LANE_Z_A = -3.12;
+export const LANE_Z_B = -4.72;
 export const LANE_Z_C = 0.75;
 export const LANE_Z_D = -0.75;
 
@@ -21,7 +21,9 @@ const ROT_FACE_BACK = Math.PI / 2;
 
 const FT = 0.3048;
 
-export const LAYOUT_LOGIC_VERSION = 53;
+export const LAYOUT_LOGIC_VERSION = 66;
+
+
 export const FIXED_ASSEMBLY_START = 0;
 
 export interface SectionPreset {
@@ -356,26 +358,24 @@ export const generateLayout = (
         const zoneLen = zoneBounds.end - zoneBounds.start;
         const iDims = getMachineZoneDims('inspection');
         const sDims = getMachineZoneDims('supermarket');
-        let reservedX = iDims.length + 0.1;
+        // Reserve same space as Phase 2: iDims.length + 0.2m gap + 0.1m buffer
+        // These MUST match Phase 2's `reservation` constant or machines will spill prematurely.
+        let reservedX = iDims.length + 0.2 + 0.1;
         if (tag === 'front' || tag === 'back') reservedX += sDims.width + 0.1;
         sectionSpace[tag] = { availableLen: (zoneLen - reservedX), usedLen: 0 };
     }
 
-    // Calculate X-consumption per section:
-    // Alternating placement means both Lane-A and Lane-B machines share the X cursor.
-    // Each machine in an alternating pair advances X by 1× its width (not 0.5×).
-    // We model it as: max machines in either lane × machine width.
-    // For N machines alternating: ceil(N/2) per lane → X consumed = ceil(N/2) × width (use max lane).
     for (const secName of processingOrder) {
         const secLower = secName.toLowerCase();
         const ops = sectionsMap.get(secName)!;
         const matchedTag = PARTS_ORDER.find(tag => secLower.includes(tag));
         if (matchedTag && !secLower.includes('assembly')) {
-            // Each pair of machines shares the same X slot. X consumed = ceil(totalCount/2) × avg_width
-            // But since types may differ we sum per-machine and divide by 2 lanes.
             let lane1X = 0, lane2X = 0;
             let alt = 0;
             for (const item of ops) {
+                const mType = item.operation.machine_type.toLowerCase();
+                // Skip inspection + supermarket — these are placed by the system, not by the OB
+                if (mType.includes('inspection') || mType.includes('supermarket')) continue;
                 const w = getMachineZoneDims(item.operation.machine_type).length;
                 for (let k = 0; k < item.count; k++) {
                     if (alt % 2 === 0) lane1X += w;
@@ -383,7 +383,7 @@ export const generateLayout = (
                     alt++;
                 }
             }
-            // X consumed in this section = max of the two lanes (the longer lane determines how far the cursor goes)
+            // X consumed in this section = max of the two lanes
             sectionSpace[matchedTag].usedLen += Math.max(lane1X, lane2X);
         }
     }
@@ -460,6 +460,9 @@ export const generateLayout = (
     const sectionCounters: Record<string, number> = {};
     Array.from(sectionsMap.keys()).forEach(k => sectionCounters[k] = 1);
 
+    // Track inspections that overflowed to the next section (no space in current section)
+    const pendingInspection: Record<string, { ops: any[], sectionName: string }> = {};
+
     // --- PHASE 2: PLACEMENT LOOP ---
     for (const secName of processingOrder) {
         const secLower = secName.toLowerCase();
@@ -469,8 +472,8 @@ export const generateLayout = (
         const matchedTag = PARTS_ORDER.find(tag => secLower.includes(tag));
         const zoneBounds = matchedTag ? PART_BOUNDS[matchedTag] : { start: 0, end: 500 };
 
-        // Every section ALWAYS starts from its own section border.
-        // We never continue placing from where the previous section left off.
+        // Every section ALWAYS starts from its own section border (fixed zone start).
+        // Overflow machines from previous sections are placed first at the START of this section.
         let alternatingX = zoneBounds.start;
 
         const isAssemblySec = secLower.includes('assembly');
@@ -537,14 +540,18 @@ export const generateLayout = (
         const hasSupermarket = (matchedTag === 'front' || matchedTag === 'back');
         const supermarketStart = sectionLimit - (hasSupermarket ? sDims.width : 0);
 
-        const reservation = (iDims.length + 3 * INSPECTION_GAP + 0.01);
+        // Reserve space for inspection + required 0.2m gap before it.
+        // Previously used 3*INSPECTION_GAP (=0.09m) which was too small — addInspection
+        // always returned false and moved inspection to Back. 0.2 + buffer = 0.31m is correct.
+        const reservation = (iDims.length + 0.2 + 0.1);
         const machineZoneEnd = supermarketStart - reservation;
 
-        const rawZones = isAB ? zonesAB : zonesCD;
-        const zones = rawZones.map(z => ({
-            start: z.start,
-            end: (z.end > machineZoneEnd && z.start < machineZoneEnd) ? machineZoneEnd : z.end
-        }));
+        // To prevent jumping over the small gaps between sections and prematurely moving machines to the next section, 
+        // we'll treat the zone as continuous up to machineZoneEnd.
+        const zones = [{
+            start: targetSpecs ? targetSpecs.start : 0,
+            end: machineZoneEnd
+        }];
 
         let lCX = alternatingX, rCX = alternatingX;
         let alt = 0;
@@ -626,14 +633,17 @@ export const generateLayout = (
             console.log(`[Layout] Placing ${baseOps?.length || 1} Inspection(s) for ${sName}`);
             const iDims = getMachineZoneDims('inspection');
 
-            // Inspection goes DIRECTLY after the last machine — no zone-jumping.
-            // We reserved space at end of section (machineZoneEnd) precisely for this.
+            // Inspection goes DIRECTLY after the last machine — 0.2m gap, consistent across all sections.
             let iStart = Math.max(lCX, rCX) + 0.2;
 
             // Hard limit: must stay within section boundary
             const capTarget = (matchedTag === 'front' || matchedTag === 'back') ? supermarketStart : sectionLimit;
-            const maxIStart = capTarget - iDims.length - INSPECTION_GAP;
-            if (iStart > maxIStart) iStart = maxIStart;
+
+            // If inspection doesn't fit with the required 0.2m gap, DON'T clamp it in.
+            // Return false so the caller can move the inspection to the next section.
+            if (iStart + iDims.length > capTarget) {
+                return false;
+            }
 
             // Must not go before section start
             if (iStart < (targetSpecs?.start || 0)) iStart = (targetSpecs?.start || 0) + 0.01;
@@ -647,21 +657,21 @@ export const generateLayout = (
                 }
             }
 
-            const opsToUse = (baseOps && baseOps.length > 0) ? baseOps : [{ operation: createDummyOp(`${sName} Inspection`, finalSection), count: 1 }];
+            const opsToUse = (baseOps && baseOps.length > 0) ? [{ ...baseOps[0], count: 1 }] : [{ operation: createDummyOp(`${sName} Inspection`, finalSection), count: 1 }];
 
             for (const item of opsToUse) {
-                for (let k = 0; k < item.count; k++) {
-                    addMachine(
-                        item.operation,
-                        (isAB_sect ? 'A' : 'C'),
-                        iStart + iDims.length / 2,
-                        undefined,
-                        -Math.PI / 2,
-                        sName,
-                        true
-                    );
-                    iStart += iDims.length + INSPECTION_GAP;
-                }
+                // Ensure we place exactly ONE inspection per section, disregarding the OB count 
+                // if it mistakenly has multiple inspection operations.
+                addMachine(
+                    item.operation,
+                    (isAB_sect ? 'A' : 'C'),
+                    iStart + iDims.length / 2,
+                    undefined,
+                    -Math.PI / 2,
+                    sName,
+                    true
+                );
+                iStart += iDims.length + INSPECTION_GAP;
             }
 
             const lastM = layout[layout.length - 1];
@@ -670,11 +680,14 @@ export const generateLayout = (
                 lastM.id = `inspect-${sName}-${uuidv4()}`;
             }
 
-            const iEnd = iStart + iDims.length;
-            lCX = iEnd;
-            rCX = iEnd;
-            if (isAB_sect) { cur.A = Math.max(cur.A, iEnd); cur.B = Math.max(cur.B, iEnd); }
-            else { cur.C = Math.max(cur.C, iEnd); cur.D = Math.max(cur.D, iEnd); }
+            // iStart after the loop = last_machine_end + INSPECTION_GAP
+            // (loop already advanced iStart by iDims.length + INSPECTION_GAP after placing the machine)
+            // Do NOT add another iDims.length — that was causing a 1-2 slot empty gap after inspection.
+            lCX = iStart;
+            rCX = iStart;
+            if (isAB_sect) { cur.A = Math.max(cur.A, iStart); cur.B = Math.max(cur.B, iStart); }
+            else { cur.C = Math.max(cur.C, iStart); cur.D = Math.max(cur.D, iStart); }
+
         };
 
         const placeOps = (opsToPlace: any[], sourceSecLabel: string) => {
@@ -706,14 +719,34 @@ export const generateLayout = (
             }
         };
 
-        // 1. If this section is a target for "Next" spillovers
-        // Spilled machines AND their inspection are placed here (inspection follows machines)
+        // Handle inspection overflow from a previous section (inspection moves to start of this section)
+        if (matchedTag && pendingInspection[matchedTag]) {
+            const pi = pendingInspection[matchedTag];
+            // lCX/rCX are at section border. Inspection placed right at start with 0.2m gap.
+            addInspection(pi.sectionName, cursors, isAB, zones, pi.ops);
+            delete pendingInspection[matchedTag];
+        }
+
+        // 1. If this section is a target for machine spillovers (e.g. Sleeve→Back)
+        // Keep sourceSec label so overflow machines are still numbered/displayed as Sleeve machines.
         if (matchedTag && spillPending[matchedTag]?.isNext) {
             const pending = spillPending[matchedTag];
-            const sourceSec = (pending as any).sourceSection || (pending.ops.length > 0 ? pending.ops[0].operation.section : 'Unknown');
+            const sourceSec = (pending as any).sourceSection || (pending.ops.length > 0 ? pending.ops[0].operation.section : secName);
             placeOps(pending.ops, sourceSec);
-            // Inspection always follows the last spilled machine into the same target zone
-            addInspection(sourceSec, cursors, isAB, zones);
+
+            // If the source section spilled forward, its inspection follows its spilled machines.
+            if ((pending as any).inspectionOpsToFollow) {
+                const inspPlaced = addInspection(sourceSec, cursors, isAB, zones, (pending as any).inspectionOpsToFollow);
+                if (inspPlaced === false) {
+                    const inspTarget = findOverflowSection(secLower, cursors, isAB);
+                    const inspTargetTag = PARTS_ORDER.find(t => inspTarget.toLowerCase().includes(t));
+                    if (inspTargetTag) {
+                        pendingInspection[inspTargetTag] = { ops: (pending as any).inspectionOpsToFollow, sectionName: sourceSec };
+                        console.log(`[Layout] Spilled Inspection for ${sourceSec} didn't fit in ${secName} — moved to ${inspTarget}`);
+                    }
+                }
+            }
+
             delete spillPending[matchedTag];
         }
 
@@ -732,8 +765,28 @@ export const generateLayout = (
         else { cursors.C = Math.max(cursors.C, lCX); cursors.D = Math.max(cursors.D, rCX); }
 
         // --- PHASE A: INSPECTION PLACEMENT ---
-        if (!isSpilledForward[secName]) {
-            addInspection(secName, cursors, isAB, zones, inspectionOps);
+        // Check if machines spilled forward. If so, inspection MUST follow them to the target section!
+        if (isSpilledForward[secName]) {
+            const nextTarget = findOverflowSection(secLower, cursors, isAB);
+            const nextTargetTag = PARTS_ORDER.find(t => nextTarget.toLowerCase().includes(t));
+            if (nextTargetTag && spillPending[nextTargetTag]) {
+                const inspOps = inspectionOps.length > 0 ? inspectionOps : [{ operation: createDummyOp(`${secName} Inspection`, secName), count: 1 }];
+                (spillPending[nextTargetTag] as any).inspectionOpsToFollow = inspOps;
+                console.log(`[Layout] Inspection for ${secName} follows spilled machines into ${nextTarget}`);
+            }
+        } else {
+            // Normal case: place inspection right after last machine (0.2m gap).
+            // If it returns false (no space), move inspection to the next section.
+            const inspPlaced = addInspection(secName, cursors, isAB, zones, inspectionOps);
+            if (inspPlaced === false && matchedTag) {
+                const inspTarget = findOverflowSection(secLower, cursors, isAB);
+                const inspTargetTag = PARTS_ORDER.find(t => inspTarget.toLowerCase().includes(t));
+                if (inspTargetTag && inspTargetTag !== matchedTag) {
+                    const inspOps = inspectionOps.length > 0 ? inspectionOps : [{ operation: createDummyOp(`${secName} Inspection`, secName), count: 1 }];
+                    pendingInspection[inspTargetTag] = { ops: inspOps, sectionName: secName };
+                    console.log(`[Layout] Inspection for ${secName} has no space — moved to ${inspTarget}`);
+                }
+            }
         }
 
         // --- PHASE B: PLACE PENDING SPILLOVERS FROM THE END OF THE SECTION ---

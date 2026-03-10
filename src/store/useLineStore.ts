@@ -719,20 +719,41 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
     const newAlerts: { id: string; type: 'green' | 'red'; message: string }[] = [];
 
+    const PART_BOUNDS_LOCAL = PART_BOUNDS as Record<string, { start: number; end: number }>;
     const overflowPairs = new Set<string>();
     layout.forEach(m => {
-      const origSec = (m.operation.section || '').toLowerCase().trim();
-      const curSec = (m.section || '').toLowerCase().trim();
-      if (!origSec || !curSec) return;
-
-      const normOrig = origSec.includes('assembly') ? 'assembly' : origSec;
-      const normCur = curSec.includes('assembly') ? 'assembly' : curSec;
-
-      if (normOrig === normCur) return;
       if (m.isInspection || m.operation.machine_type.toLowerCase().includes('inspection')) return;
       if (m.operation.machine_type.toLowerCase().includes('supermarket')) return;
 
-      overflowPairs.add(`${normOrig}→${normCur}`);
+      const labelSec = (m.section || '').toLowerCase().trim();
+      if (!labelSec) return;
+
+      const machineX = m.position.x;
+
+      // Find which physical section the machine is actually in (by X position)
+      let physicalSec = labelSec;
+      for (const [part, bounds] of Object.entries(PART_BOUNDS_LOCAL)) {
+        if (machineX >= bounds.start - 1.0 && machineX <= bounds.end + 1.0) {
+          physicalSec = part.toLowerCase();
+          break;
+        }
+      }
+
+      // If physical section differs from label section, this machine has overflowed
+      const normLabel = labelSec.includes('assembly') ? 'assembly' : labelSec;
+      const normPhys = physicalSec.includes('assembly') ? 'assembly' : physicalSec;
+      if (normLabel !== normPhys) {
+        overflowPairs.add(`${normLabel}→${normPhys}`);
+      }
+
+      // Also detect by operation.section vs m.section (old method, fallback)
+      const origSec = (m.operation.section || '').toLowerCase().trim();
+      const curSec = (m.section || '').toLowerCase().trim();
+      if (origSec && curSec && origSec !== curSec) {
+        const normOrig = origSec.includes('assembly') ? 'assembly' : origSec;
+        const normCur = curSec.includes('assembly') ? 'assembly' : curSec;
+        if (normOrig !== normCur) overflowPairs.add(`${normOrig}→${normCur}`);
+      }
     });
 
     overflowPairs.forEach(pair => {
@@ -747,6 +768,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       });
     });
 
+
     const allSections = new Set<string>(layout.map(m => (m.section || '').toLowerCase()).filter(Boolean) as string[]);
     let assemblyViolated = false;
 
@@ -760,8 +782,19 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         if ((m.section || '').toLowerCase() !== sec) return false;
         if (m.isInspection || m.operation.machine_type.toLowerCase().includes('inspection')) return false;
         if (m.operation.machine_type.toLowerCase().includes('supermarket')) return false;
+        // If a machine is physically outside sectionEnd check if it really belongs here
+        // (machines that overflowed cleanly into the next section are tagged with the original
+        // source section name, so their X position will be beyond sectionEnd — that is NOT
+        // a violation, it is handled as a green overflow info).
         const halfLen = getMachineZoneDims(m.operation.machine_type).length / 2;
-        return (m.position.x + halfLen) > (sectionEnd + 0.1);
+        const isOverSectionEnd = (m.position.x + halfLen) > (sectionEnd + 0.1);
+        if (!isOverSectionEnd) return false;
+        // Determine if this machine is an expected overflow (green) — if any overflow alert
+        // covers this sec→*, it means the system moved it intentionally.
+        const isIntentionalOverflow = newAlerts.some(
+          a => a.type === 'green' && a.id.startsWith(`overflow-${sec}→`)
+        );
+        return !isIntentionalOverflow;
       });
 
       if (violated) {
@@ -1149,23 +1182,15 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       const lane = spatialInfo.lane;
       const ry = -Math.PI / 2;
       const bounds = computeFootprint(mRaw.operation.machine_type, inspectDims, ry);
-      const inspectXStart = getNextValidX(currentSeqX + 0.1, bounds.totalWidth, activeZones);
-      const autoX = inspectXStart - bounds.minWorldX;
+      // Always place inspection exactly 0.2m after last production machine — same as layout generator.
+      // Never use stale mRaw.position: always recompute from live cursor so all sections are consistent.
+      const gapAfterLastMachine = 0.2;
+      const inspectTargetX = currentSeqX + gapAfterLastMachine;
+      const finalX = getNextValidX(inspectTargetX - bounds.minWorldX, bounds.totalWidth, activeZones);
       const autoZ = midZ + 0.8;
-      const isFresh = mRaw.position.x === 0 && mRaw.position.z === 0;
-      let targetX = isFresh ? autoX : Math.max(mRaw.position.x, autoX);
-      let finalZ = isFresh ? autoZ : mRaw.position.z;
-      if (!isFresh) {
-        const lastProdX = reLayouted.length > 0
-          ? Math.max(...reLayouted.map(p => p.position.x + getMachineZoneDims(p.operation.machine_type).length))
-          : startX;
-        targetX = Math.max(targetX, lastProdX + 0.2);
-      }
-      const finalX = getNextValidX(targetX, bounds.totalWidth, activeZones);
       currentSeqX = Math.max(currentSeqX, finalX + bounds.maxWorldX) + 0.1;
-      return { ...mRaw, position: { x: finalX, y: 0, z: finalZ }, rotation: { x: 0, y: ry, z: 0 }, lane, section: spatialInfo.section };
+      return { ...mRaw, position: { x: finalX, y: 0, z: autoZ }, rotation: { x: 0, y: ry, z: 0 }, lane, section: spatialInfo.section };
     });
-
     const finalSupers = supermarketList.map(mRaw => {
       const isBeingDragged = movingIds.includes(mRaw.id);
       const superDims = getMachineZoneDims('supermarket');

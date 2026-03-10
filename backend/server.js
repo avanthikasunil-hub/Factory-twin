@@ -122,6 +122,73 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify([...new Set(styles)]));
   }
 
+  // Get unique Cons (buyers) for a line — Column A (index 0)
+  if (pathname === "/cons") {
+    const line = query.line;
+    if (!line) return res.end(JSON.stringify([]));
+
+    const sheetData = await fetchGraphData(line);
+    if (sheetData.length < 4) return res.end(JSON.stringify([]));
+
+    const cons = sheetData.slice(3)
+      .map(row => (row[0] != null ? String(row[0]).trim() : ""))
+      .filter(c => c !== "" && c.toLowerCase() !== "buyer" && c.toLowerCase() !== "con");
+
+    return res.end(JSON.stringify([...new Set(cons)]));
+  }
+
+  // Get styles for a line filtered by con (buyer) — Column A (index 0), Column E (index 4)
+  if (pathname === "/styles-by-con") {
+    const line = query.line;
+    const con = query.con;
+    if (!line || !con) return res.end(JSON.stringify([]));
+
+    const sheetData = await fetchGraphData(line);
+    if (sheetData.length < 4) return res.end(JSON.stringify([]));
+
+    const styles = sheetData.slice(3)
+      .filter(row => row[0] != null && String(row[0]).trim() === con)
+      .map(row => (row[4] != null ? String(row[4]).trim() : ""))
+      .filter(s => s !== "" && s.toLowerCase() !== "style");
+
+    return res.end(JSON.stringify([...new Set(styles)]));
+  }
+
+
+  // Get OC/Con Nos for a line filtered by buyer — Column A (index 0), Column B (index 1)
+  if (pathname === "/oc-by-buyer") {
+    const line = query.line;
+    const buyer = query.buyer;
+    if (!line || !buyer) return res.end(JSON.stringify([]));
+
+    const sheetData = await fetchGraphData(line);
+    if (sheetData.length < 4) return res.end(JSON.stringify([]));
+
+    const ocList = sheetData.slice(3)
+      .filter(row => row[0] != null && String(row[0]).trim() === buyer)
+      .map(row => (row[1] != null ? String(row[1]).trim() : ""))
+      .filter(oc => oc !== "" && oc.toLowerCase() !== "con no" && oc.toLowerCase() !== "oc");
+
+    return res.end(JSON.stringify([...new Set(ocList)]));
+  }
+
+  // Get styles for a line filtered by Con No (OC) — Column B (index 1), Column E (index 4)
+  if (pathname === "/styles-by-oc") {
+    const line = query.line;
+    const oc = query.oc;
+    if (!line || !oc) return res.end(JSON.stringify([]));
+
+    const sheetData = await fetchGraphData(line);
+    if (sheetData.length < 4) return res.end(JSON.stringify([]));
+
+    const styles = sheetData.slice(3)
+      .filter(row => row[1] != null && String(row[1]).trim() === oc)
+      .map(row => (row[4] != null ? String(row[4]).trim() : ""))
+      .filter(s => s !== "" && s.toLowerCase() !== "style");
+
+    return res.end(JSON.stringify([...new Set(styles)]));
+  }
+
   // Get OC numbers for a style
   if (pathname === "/oc") {
     const line = query.line;
@@ -151,7 +218,6 @@ const server = http.createServer(async (req, res) => {
     if (sheetData.length < 4) return res.end(JSON.stringify({ buyer: "" }));
 
     // Find a row where Style matches (index 4)
-    // If OC is provided (index 1), match both. If not, match just Style.
     const matchingRow = sheetData.slice(3)
       .find(row => {
         const styleMatch = row[4] != null && String(row[4]).trim() === style;
@@ -159,13 +225,12 @@ const server = http.createServer(async (req, res) => {
         return styleMatch && ocMatch;
       });
 
-    // Per user instruction: Buyer is ALWAYS in column A (index 0)
+    // Buyer is ALWAYS in column A (index 0)
     let buyer = "";
     if (matchingRow && matchingRow[0] != null) {
       buyer = String(matchingRow[0]).trim();
     }
 
-    // Only fallback if absolutely necessary and buyer is completely empty
     if (!buyer) {
       buyer = extractBuyerFromHeader(sheetData);
     }
@@ -173,7 +238,8 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ buyer }));
   }
 
-  res.end(JSON.stringify({ message: "Backend is working" }));
+
+res.end(JSON.stringify({ message: "Backend is working" }));
 });
 
 server.listen(4000, () => {

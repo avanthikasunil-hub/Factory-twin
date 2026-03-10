@@ -219,13 +219,19 @@ const LinePlannerPage = () => {
       ? Math.min(minPrepOutput === Infinity ? 999999 : minPrepOutput, aggregateAssemblyOutput)
       : (minPrepOutput === Infinity ? 0 : minPrepOutput);
 
+    const totalOperatorsCount = prodMachines.filter(m => !m.isInspection).length;
+    const lineCapacity = totalStyleSMV > 0
+      ? Math.floor((totalOperatorsCount * workingHours * 60 * (efficiency / 100)) / totalStyleSMV / 100) * 100
+      : 0;
+
     return {
       sectionMetrics,
       aggregateAssemblyOutput,
       totalAssemblyOperatorsCount: totalAssemblyOpsCount,
       actualOutput: actualOutput === 999999 ? 0 : actualOutput,
       totalOperators: prodMachines.length,
-      totalStyleSMV
+      totalStyleSMV,
+      lineCapacity
     };
   }, [operations, machineLayout, workingHours, efficiency, targetOutput]);
 
@@ -517,6 +523,17 @@ const LinePlannerPage = () => {
                     <p className="text-[26px] font-black leading-none tracking-tight">{stats.actualOutput}</p>
                   </div>
                 </div>
+
+                <div className="group flex items-center gap-4 p-5 rounded-3xl bg-purple-500/10 border-2 border-purple-500/20 shadow-sm transition-all hover:scale-[1.02]">
+                  <div className="p-3 rounded-2xl bg-purple-500 text-white shadow-lg shadow-purple-500/20">
+                    <Target className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1">
+                    <span className="text-[9px] uppercase font-black text-purple-600/80 block mb-0.5 tracking-widest">Line Capacity</span>
+                    <p className="text-[26px] font-black leading-none tracking-tight">{stats.lineCapacity.toLocaleString()}</p>
+                  </div>
+                </div>
+
               </div>
             </div>
 
