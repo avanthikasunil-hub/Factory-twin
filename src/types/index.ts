@@ -11,6 +11,7 @@ export interface Operation {
   tool_folder?: string;
   machinist_smv?: number;
   non_machinist_smv?: number;
+  no_of_machines?: number;
 }
 export type ColumnAliases = {
   op_no: string[];

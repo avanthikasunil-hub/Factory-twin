@@ -1,5 +1,15 @@
-const http = require("http");
+const express = require("express");
+const cors = require("cors");
+const multer = require("multer");
+const XLSX = require("xlsx");
+const db = require("./db");
 const url = require("url");
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Microsoft Graph Credentials
 const tenantId = "38fbdf1b-3455-4185-9e4c-92a79558faef";
@@ -36,10 +46,10 @@ async function fetchGraphData(sheetName) {
   if (!token) return [];
 
   const filePath = "Book 1.xlsx";
-  const url = `https://graph.microsoft.com/v1.0/users/${personalUserPrincipalName}/drive/root:/${encodeURIComponent(filePath)}:/workbook/worksheets('${sheetName}')/usedRange?$select=values`;
+  const graphUrl = `https://graph.microsoft.com/v1.0/users/${personalUserPrincipalName}/drive/root:/${encodeURIComponent(filePath)}:/workbook/worksheets('${sheetName}')/usedRange?$select=values`;
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(graphUrl, {
       headers: { Authorization: `Bearer ${token}` }
     });
     const data = await res.json();
@@ -50,6 +60,7 @@ async function fetchGraphData(sheetName) {
   }
 }
 
+// Reuse the extraction logic from server.js
 function extractBuyerFromHeader(sheetData) {
   if (!sheetData || sheetData.length === 0) return "";
   const searchLimit = Math.min(sheetData.length, 20);
@@ -69,179 +80,423 @@ function extractBuyerFromHeader(sheetData) {
   return "";
 }
 
-const server = http.createServer(async (req, res) => {
-  const parsedUrl = url.parse(req.url, true);
-  const pathname = parsedUrl.pathname;
-  const query = parsedUrl.query;
+// ---------------------------------------------------------------------------
+// OB Parsing logic (ported from obParser.ts)
+// ---------------------------------------------------------------------------
+const COLUMN_ALIASES = {
+  op_no: ['op no', 'op_no', 'op. no.', 'operation number', 'op id', 'id', 'sl', 'sl.', 's.l', 'no', 'seq', 'opseq', 'op seq'],
+  op_name: [
+    'operation', 'op name', 'op_name', 'operation name', 'op description', 'description',
+    'op_desc', 'operation_name', 'particulars', 'process', 'process name', 'opname', 'op name'
+  ],
+  machine_type: [
+    'machine', 'mc type', 'm/c type', 'machine type', 'mc_type', 'm/c', 'mc', 'machine_type',
+    'equipment', 'machinery', 'm/c name', 'mc name', 'machine name'
+  ],
+  smv: [
+    'smv', 'sam', 's m v', 's a m', 'standard_minute', 'std min', 'standard minute',
+    'standard time', 'cycle time', 'smv (min)', 'sam (min)', 'bpt', 'basic pitch time',
+    'allocated time', 'target time', 'estimated time', 'val', 'standard val',
+    'smv total', 'total smv', 'work content', 'mins', 'min', 'pitch time', 'standard minutes',
+    'standard value', 'std value', 'std.min', 'smv/pc', 'smv / pc', 'machine smv',
+    'target smv', 'm/c smv', 'manual smv', 'cycle_time', 'pitch_time', 'smv_total', 'total_smv'
+  ],
+  section: ['section', 'sect', 'department', 'dept', 'area', 'zone', 'component', 'garment part'],
+  tool_folder: ['tool/folder', 'tool', 'folder', 'attachment', 'guide', 'folder/tool'],
+  machinist_smv: ['machinist smv', 'machinist', 'operator smv', 'operator time', 'machinist time', 'machinist_smv'],
+  non_machinist_smv: ['non-machinist', 'non machinist', 'non-machinist smv', 'helper smv', 'helper time', 'manual smv', 'non-machinist time', 'non_machinist'],
+  no_of_machines: ['no of machines', 'no. of machines', 'machine count', 'mc count', 'm/c count', 'no of mc', 'no of m/c']
+};
 
-  // CORS Headers
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+function normalizeString(str) {
+  return String(str ?? '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+}
 
-  if (req.method === "OPTIONS") {
-    res.statusCode = 204;
-    return res.end();
-  }
-
-  res.setHeader("Content-Type", "application/json");
-
-  // Get Microsoft Graph Token
-  if (pathname === "/get-token") {
-    const token = await getAccessToken();
-    if (token) {
-      return res.end(JSON.stringify({ access_token: token }));
-    } else {
-      res.statusCode = 401;
-      return res.end(JSON.stringify({ error: "Unauthorized" }));
+function findColumnIndex(headers, field) {
+  const aliases = COLUMN_ALIASES[field].map(normalizeString);
+  if (field === 'smv') {
+    for (let i = 0; i < headers.length; i++) {
+      const raw = String(headers[i] ?? '').trim().toLowerCase();
+      if (raw === 'smv' || raw === 'sam') return i;
     }
   }
-
-  // Get all lines (fixed list)
-  if (pathname === "/lines") {
-    const lines = ["LINE 1", "LINE 2", "LINE 3", "LINE 4", "LINE 5", "LINE 6", "LINE 7", "LINE 8", "LINE 9"];
-    return res.end(JSON.stringify(lines));
+  for (let i = 0; i < headers.length; i++) {
+    const h = normalizeString(headers[i]);
+    if (h && aliases.includes(h)) return i;
   }
+  return -1;
+}
 
-  // Get styles for a line
-  if (pathname === "/styles") {
-    const line = query.line;
-    if (!line) return res.end(JSON.stringify([]));
+function parseValue(val) {
+  if (typeof val === 'number') return val;
+  if (!val) return 0;
+  const s = String(val).trim();
+  const n = parseFloat(s.replace(/[^\d.,]/g, '').replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+}
 
-    const sheetData = await fetchGraphData(line);
-    if (sheetData.length < 4) return res.end(JSON.stringify([]));
+const SECTION_MAP = [
+  ['collar', 'Collar'], ['cuff', 'Cuff'], ['sleeve', 'Sleeve'],
+  ['front', 'Front'], ['back', 'Back'], ['assembly', 'Assembly'],
+];
 
-    // Index 4 is Style (as confirmed in StyleOB logic)
-    const styles = sheetData.slice(3)
-      .map(row => {
-        const val = row[4];
-        return val != null ? String(val).trim() : "";
-      })
-      .filter(s => s !== "" && s.toLowerCase() !== "style");
-
-    return res.end(JSON.stringify([...new Set(styles)]));
+function isSectionHeader(row, opNoIndex, smvIndex) {
+  if (typeof opNoIndex === 'number' && typeof smvIndex === 'number') {
+    const opNo = row[opNoIndex];
+    const smv = row[smvIndex];
+    if ((opNo != null && String(opNo).trim() !== '' && String(opNo).trim() !== '0') || (smv != null && parseValue(smv) > 0)) return null;
   }
-
-  // Get unique Cons (buyers) for a line — Column A (index 0)
-  if (pathname === "/cons") {
-    const line = query.line;
-    if (!line) return res.end(JSON.stringify([]));
-
-    const sheetData = await fetchGraphData(line);
-    if (sheetData.length < 4) return res.end(JSON.stringify([]));
-
-    const cons = sheetData.slice(3)
-      .map(row => (row[0] != null ? String(row[0]).trim() : ""))
-      .filter(c => c !== "" && c.toLowerCase() !== "buyer" && c.toLowerCase() !== "con");
-
-    return res.end(JSON.stringify([...new Set(cons)]));
+  const rowStr = row.join(' ').toLowerCase();
+  for (const [kw, label] of SECTION_MAP) {
+    if (rowStr.includes(kw)) return label;
   }
+  return null;
+}
 
-  // Get styles for a line filtered by con (buyer) — Column A (index 0), Column E (index 4)
-  if (pathname === "/styles-by-con") {
-    const line = query.line;
-    const con = query.con;
-    if (!line || !con) return res.end(JSON.stringify([]));
+function parseSpecificSheet(sheet) {
+  const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+  if (data.length === 0) return null;
 
-    const sheetData = await fetchGraphData(line);
-    if (sheetData.length < 4) return res.end(JSON.stringify([]));
+  let headerRowIdx = -1;
+  let buyer = "";
+  let color = "";
+  let quantity = 0;
 
-    const styles = sheetData.slice(3)
-      .filter(row => row[0] != null && String(row[0]).trim() === con)
-      .map(row => (row[4] != null ? String(row[4]).trim() : ""))
-      .filter(s => s !== "" && s.toLowerCase() !== "style");
+  // 1. Metadata Extraction (Heuristic Search)
+  try {
+    const maxScan = Math.min(data.length, 60);
+    for (let r = 0; r < maxScan; r++) {
+      const row = data[r];
+      if (!row || !Array.isArray(row)) continue;
 
-    return res.end(JSON.stringify([...new Set(styles)]));
-  }
+      row.forEach((cell, idx) => {
+        if (!cell) return;
+        const cellStr = String(cell).toLowerCase().trim();
 
+        const getVal = (keywords) => {
+          const match = keywords.find(kw => cellStr.startsWith(kw));
+          if (match) {
+            // Case 1: "Buyer: Nike" in same cell
+            let remainder = cellStr.substring(match.length).trim();
+            if (remainder.startsWith(':')) remainder = remainder.substring(1).trim();
+            if (remainder.length > 1) return String(cell).substring(String(cell).toLowerCase().indexOf(remainder)).trim();
 
-  // Get OC/Con Nos for a line filtered by buyer — Column A (index 0), Column B (index 1)
-  if (pathname === "/oc-by-buyer") {
-    const line = query.line;
-    const buyer = query.buyer;
-    if (!line || !buyer) return res.end(JSON.stringify([]));
+            // Case 2: "Buyer" in this cell, "Nike" in next
+            const nextCell = row[idx + 1];
+            if (nextCell) {
+              const nextVal = String(nextCell).trim();
+              if (nextVal && nextVal !== ":" && nextVal.length > 0) return nextVal;
+            }
+          }
+          return null;
+        };
 
-    const sheetData = await fetchGraphData(line);
-    if (sheetData.length < 4) return res.end(JSON.stringify([]));
-
-    const ocList = sheetData.slice(3)
-      .filter(row => row[0] != null && String(row[0]).trim() === buyer)
-      .map(row => (row[1] != null ? String(row[1]).trim() : ""))
-      .filter(oc => oc !== "" && oc.toLowerCase() !== "con no" && oc.toLowerCase() !== "oc");
-
-    return res.end(JSON.stringify([...new Set(ocList)]));
-  }
-
-  // Get styles for a line filtered by Con No (OC) — Column B (index 1), Column E (index 4)
-  if (pathname === "/styles-by-oc") {
-    const line = query.line;
-    const oc = query.oc;
-    if (!line || !oc) return res.end(JSON.stringify([]));
-
-    const sheetData = await fetchGraphData(line);
-    if (sheetData.length < 4) return res.end(JSON.stringify([]));
-
-    const styles = sheetData.slice(3)
-      .filter(row => row[1] != null && String(row[1]).trim() === oc)
-      .map(row => (row[4] != null ? String(row[4]).trim() : ""))
-      .filter(s => s !== "" && s.toLowerCase() !== "style");
-
-    return res.end(JSON.stringify([...new Set(styles)]));
-  }
-
-  // Get OC numbers for a style
-  if (pathname === "/oc") {
-    const line = query.line;
-    const style = query.style;
-    if (!line || !style) return res.end(JSON.stringify([]));
-
-    const sheetData = await fetchGraphData(line);
-    if (sheetData.length < 4) return res.end(JSON.stringify([]));
-
-    // Index 1 is Con No (OC), Index 4 is Style
-    const ocList = sheetData.slice(3)
-      .filter(row => row[4] != null && String(row[4]).trim() === style)
-      .map(row => row[1] != null ? String(row[1]).trim() : "")
-      .filter(oc => oc !== "");
-
-    return res.end(JSON.stringify([...new Set(ocList)]));
-  }
-
-  // Get buyer for a line/style/oc
-  if (pathname === "/buyer") {
-    const line = query.line;
-    const style = query.style;
-    const oc = query.oc;
-    if (!line || !style) return res.end(JSON.stringify({ buyer: "" }));
-
-    const sheetData = await fetchGraphData(line);
-    if (sheetData.length < 4) return res.end(JSON.stringify({ buyer: "" }));
-
-    // Find a row where Style matches (index 4)
-    const matchingRow = sheetData.slice(3)
-      .find(row => {
-        const styleMatch = row[4] != null && String(row[4]).trim() === style;
-        const ocMatch = !oc || (row[1] != null && String(row[1]).trim() === oc);
-        return styleMatch && ocMatch;
+        if (!buyer) {
+          const b = getVal(['buyer', 'customer', 'brand', 'client']);
+          if (b) buyer = b;
+        }
+        if (!color) {
+          const c = getVal(['color', 'colour', 'shade', 'fabric', 'fabric color']);
+          if (c) color = c;
+        }
+        if (!quantity) {
+          const qVal = getVal(['quantity', 'qty', 'order size', 'po qty', 'total qty', 'order qty']);
+          if (qVal) {
+            const num = parseInt(qVal.replace(/\D/g, ''));
+            if (!isNaN(num)) quantity = num;
+          }
+        }
       });
-
-    // Buyer is ALWAYS in column A (index 0)
-    let buyer = "";
-    if (matchingRow && matchingRow[0] != null) {
-      buyer = String(matchingRow[0]).trim();
     }
+  } catch (e) { console.error("[Metadata Parse Error]", e); }
 
-    if (!buyer) {
-      buyer = extractBuyerFromHeader(sheetData);
+  // 2. Find Header Row for Operations
+  let bestScore = 0;
+  let indices = {};
+
+  for (let i = 0; i < Math.min(data.length, 100); i++) {
+    const headers = (data[i] || []).map(h => String(h || '').toLowerCase());
+    const tOpNo = findColumnIndex(headers, 'op_no');
+    const tOpName = findColumnIndex(headers, 'op_name');
+    const tMachine = findColumnIndex(headers, 'machine_type');
+    const tSmv = findColumnIndex(headers, 'smv');
+    const tMcCount = findColumnIndex(headers, 'no_of_machines');
+
+    let score = 0;
+    if (tOpNo !== -1) score += 3;
+    if (tOpName !== -1) score += 2;
+    if (tMachine !== -1) score += 3;
+    if (tSmv !== -1) score += 4;
+    if (tMcCount !== -1) score += 2;
+
+    if (score > bestScore) {
+      bestScore = score;
+      headerRowIdx = i;
+      indices = {
+        opNo: tOpNo,
+        opName: tOpName,
+        machine: tMachine,
+        smv: tSmv,
+        section: findColumnIndex(headers, 'section'),
+        mcCount: tMcCount
+      };
     }
-
-    return res.end(JSON.stringify({ buyer }));
   }
 
+  if (headerRowIdx === -1 || indices.smv === -1) return null;
 
-res.end(JSON.stringify({ message: "Backend is working" }));
+  // 3. Parse Operations
+  const operations = [];
+  let currentSection = 'General';
+  let totalSMV = 0;
+
+  for (let i = headerRowIdx + 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row || row.length === 0) continue;
+
+    const secH = isSectionHeader(row, indices.opNo, indices.smv);
+    if (secH) {
+      currentSection = secH;
+      continue;
+    }
+
+    const smv = parseValue(row[indices.smv]);
+    const opName = indices.opName !== -1 ? String(row[indices.opName] || '').trim() : '';
+    const opNo = indices.opNo !== -1 ? String(row[indices.opNo] || '').trim() : '';
+    const machine = indices.machine !== -1 ? String(row[indices.machine] || '').trim() : '';
+
+    if (smv > 0 && (opName || machine)) {
+      operations.push({
+        op_no: opNo || `OP-${operations.length + 1}`,
+        op_name: opName,
+        machine_type: machine,
+        smv: smv,
+        section: (indices.section !== -1 && row[indices.section]) ? String(row[indices.section]).trim() : currentSection,
+        no_of_machines: indices.mcCount !== -1 ? parseValue(row[indices.mcCount]) : 0
+      });
+      totalSMV += smv;
+    }
+  }
+
+  return { operations, totalSMV, buyer, color, quantity };
+}    // ---------------------------------------------------------------------------
+// Endpoints
+// ---------------------------------------------------------------------------
+
+app.get("/lines", (req, res) => {
+  res.json(["LINE 1", "LINE 2", "LINE 3", "LINE 4", "LINE 5", "LINE 6", "LINE 7", "LINE 8", "LINE 9"]);
 });
 
-server.listen(4000, () => {
-  console.log("Backend running on http://localhost:4000");
+app.get("/schedule", async (req, res) => {
+  const line = req.query.line;
+  if (!line) return res.json([]);
+
+  const sheetData = await fetchGraphData(line);
+  console.log(`[Schedule] Line: ${line}, Rows found: ${sheetData.length}`);
+  if (sheetData.length < 4) return res.json([]);
+
+  const schedule = await Promise.all(sheetData.slice(3)
+    .filter(row => row[0])
+    .map(async (row, idx) => {
+      const style_no = row[4] ? String(row[4]).trim() : "";
+      const con_no = row[1] ? String(row[1]).trim() : "";
+
+      const dbStatus = await new Promise((resolve) => {
+        db.get(`SELECT status FROM style_status WHERE line_no = ? AND style_no = ? AND con_no = ?`, [line, style_no, con_no], (err, row) => resolve(row ? row.status : "Planned"));
+      });
+
+      // Check if OB exists and get filename
+      const obData = await new Promise(resolve => {
+        db.get(`SELECT ob_file_name FROM style_ob WHERE line_no = ? AND style_no = ? AND con_no = ?`, [line, style_no, con_no], (err, row) => resolve(row));
+      });
+
+      return {
+        id: idx + 1,
+        buyer: row[0] ? String(row[0]).trim() : "",
+        conNo: con_no,
+        color: row[2] ? String(row[2]).trim() : "",
+        quantity: row[3] ? String(row[3]).trim() : "",
+        style: style_no,
+        status: dbStatus,
+        hasOB: !!obData,
+        obFileName: obData ? obData.ob_file_name : null
+      };
+    }));
+
+  res.json(schedule);
+});
+
+app.post("/update-status", (req, res) => {
+  const { line_no, style_no, con_no, status } = req.body;
+  db.run(`INSERT OR REPLACE INTO style_status (line_no, style_no, con_no, status) VALUES (?, ?, ?, ?)`, [line_no, style_no, con_no, status], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ success: true });
+  });
+});
+
+app.post("/upload-ob", upload.single("file"), (req, res) => {
+  const { line_no, style_no, con_no } = req.body;
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  try {
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    let bestResult = null;
+    let maxOps = 0;
+
+    for (const name of workbook.SheetNames) {
+      const resData = parseSpecificSheet(workbook.Sheets[name]);
+      if (resData && resData.operations.length > maxOps) {
+        maxOps = resData.operations.length;
+        bestResult = resData;
+      }
+    }
+
+    if (!bestResult) return res.status(400).json({ error: "No valid operations found" });
+
+    db.run(`INSERT OR REPLACE INTO style_ob (line_no, style_no, con_no, operations, total_smv, ob_file_name, buyer, color, quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [line_no, style_no, con_no, JSON.stringify(bestResult.operations), bestResult.totalSMV, req.file.originalname, bestResult.buyer, bestResult.color, bestResult.quantity],
+      (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, count: bestResult.operations.length });
+      }
+    );
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/get-ob", (req, res) => {
+  const { line_no, style_no, con_no } = req.query;
+  const query = `
+    SELECT * FROM style_ob 
+    WHERE LOWER(TRIM(line_no)) = LOWER(TRIM(?)) 
+    AND LOWER(TRIM(style_no)) = LOWER(TRIM(?))
+    ${con_no ? 'AND (COALESCE(con_no,"") = COALESCE(?,"") OR con_no IS NULL)' : ''}
+  `;
+  const params = con_no ? [line_no, style_no, con_no] : [line_no, style_no];
+
+  db.get(query, params, (err, row) => {
+    if (err) {
+      console.error("[Backend] /get-ob Error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+    if (!row) {
+      console.warn(`[Backend] /get-ob NOT FOUND: Line=${line_no}, Style=${style_no}`);
+      return res.status(404).json({ error: "OB not found" });
+    }
+
+    // Ensure operations is parsed if it's stored as a string
+    try {
+      if (row.operations && typeof row.operations === 'string') {
+        row.operations = JSON.parse(row.operations);
+      }
+    } catch (e) {
+      console.error("[Backend] Error parsing operations for /get-ob:", e);
+    }
+
+    res.json(row);
+  });
+});
+
+app.get("/current-styles", async (req, res) => {
+  const query = `
+    SELECT ss.*, so.buyer, so.color, so.quantity 
+    FROM style_status ss
+    LEFT JOIN style_ob so ON 
+      LOWER(TRIM(ss.line_no)) = LOWER(TRIM(so.line_no)) AND 
+      LOWER(TRIM(ss.style_no)) = LOWER(TRIM(so.style_no)) AND
+      (COALESCE(LOWER(TRIM(ss.con_no)), '') = COALESCE(LOWER(TRIM(so.con_no)), '') OR ss.con_no IS NULL OR so.con_no IS NULL)
+  `;
+
+  try {
+    const rows = await new Promise((resolve, reject) => {
+      db.all(query, [], (err, rows) => err ? reject(err) : resolve(rows));
+    });
+
+    // Resolve Fallbacks (Enrich from Google Sheets if SQLite is missing data)
+    const enriched = await Promise.all(rows.map(async (row) => {
+      // If we have data from style_ob, use it.
+      if (row.buyer && row.color && (row.quantity && row.quantity > 0)) {
+        return row;
+      }
+
+      // Otherwise, fallback to schedule data
+      const sheetData = await fetchGraphData(row.line_no);
+      if (sheetData && sheetData.length > 3) {
+        // Search schedule (skipping first 3 rows) for the match
+        const match = sheetData.slice(3).find(sRow => {
+          const sStyle = sRow[4] ? String(sRow[4]).trim().toLowerCase() : "";
+          const sCon = sRow[1] ? String(sRow[1]).trim().toLowerCase() : "";
+          const targetStyle = String(row.style_no).trim().toLowerCase();
+          const targetCon = String(row.con_no || "").trim().toLowerCase();
+
+          return (sStyle === targetStyle) && (!targetCon || sCon === targetCon);
+        });
+
+        if (match) {
+          return {
+            ...row,
+            buyer: row.buyer || (match[0] ? String(match[0]).trim() : "---"),
+            color: row.color || (match[2] ? String(match[2]).trim() : "---"),
+            quantity: (row.quantity && row.quantity > 0) ? row.quantity : parseInt(String(match[3] || "0").replace(/\D/g, '')) || 0
+          };
+        }
+      }
+      return row;
+    }));
+
+    res.json(enriched);
+  } catch (err) {
+    console.error("[Backend] Error enriching styles:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/active-layouts", (req, res) => {
+  // Use a more permissive JOIN to find the OB for active styles
+  const query = `
+    SELECT 
+      ss.line_no as status_line, 
+      ss.style_no as status_style, 
+      ss.con_no as status_con, 
+      ss.status,
+      so.*
+    FROM style_status ss
+    LEFT JOIN style_ob so ON 
+      LOWER(TRIM(ss.line_no)) = LOWER(TRIM(so.line_no)) AND 
+      LOWER(TRIM(ss.style_no)) = LOWER(TRIM(so.style_no))
+    WHERE LOWER(ss.status) IN ('changeover', 'running')
+  `;
+  db.all(query, [], (err, rows) => {
+    if (err) {
+      console.error("[Backend] Error in /active-layouts:", err);
+      return res.status(500).json({ error: err.message });
+    }
+
+    const parsedRows = rows.map(row => {
+      let ops = [];
+      try {
+        if (row.operations) {
+          ops = typeof row.operations === 'string' ? JSON.parse(row.operations) : row.operations;
+        }
+      } catch (e) {
+        console.error(`[Backend] JSON Parse error for ${row.status_line}:`, e);
+      }
+      return {
+        ...row,
+        line_no: row.status_line, // Ensure the line_no from status is kept
+        style_no: row.status_style,
+        con_no: row.status_con,
+        operations: ops
+      };
+    });
+
+    console.log(`[Backend] /active-layouts sent ${parsedRows.length} rows. Matches: ${parsedRows.filter(r => r.operations.length > 0).length}`);
+    res.json(parsedRows);
+  });
+});
+
+const PORT = 4000;
+app.listen(PORT, () => {
+  console.log(`Backend running on http://localhost:${PORT}`);
 });

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Factory, Hash, Shirt, Spool, Activity, Target, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileUploadZone } from "@/components/ui/FileUploadZone";
 import { AnimatedBackground } from "@/components/ui/AnimatedBackground";
 import { useLineStore } from "@/store/useLineStore";
@@ -178,55 +179,67 @@ const CreateLinePage = () => {
             {/* 1. Line Number */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><Hash className="w-4 h-4" /> Line Number</Label>
-              <select value={lineNo} onChange={(e) => {
-                const val = e.target.value;
+              <Select value={lineNo} onValueChange={(val) => {
                 setLineNo(val);
                 setBuyer(""); setConeNo(""); setStyleNo("");
                 setCons([]); setCones([]); setStyles([]);
                 loadBuyers(val);
-              }} className="w-full h-10 rounded-md border px-3 bg-white text-black">
-                <option value="">Select Line</option>
-                {lines.map(line => <option key={line} value={line}>{line}</option>)}
-              </select>
+              }}>
+                <SelectTrigger className="w-full h-10 bg-white text-black">
+                  <SelectValue placeholder="Select Line" />
+                </SelectTrigger>
+                <SelectContent>
+                  {lines.map(line => <SelectItem key={line} value={line}>{line}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* 2. Buyer — filtered by Line */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><Users className="w-4 h-4" /> Buyer</Label>
-              <select value={buyer} onChange={(e) => {
-                const val = e.target.value;
+              <Select value={buyer} disabled={!lineNo} onValueChange={(val) => {
                 setBuyer(val);
                 setConeNo(""); setStyleNo("");
                 setCones([]); setStyles([]);
                 loadConNos(lineNo, val);
-              }} className="w-full h-10 rounded-md border px-3 bg-white text-black" disabled={!lineNo}>
-                <option value="">Select Buyer</option>
-                {cons.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              }}>
+                <SelectTrigger className="w-full h-10 bg-white text-black">
+                  <SelectValue placeholder="Select Buyer" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cons.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* 3. Con No — filtered by Buyer */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><Spool className="w-4 h-4" /> Con No</Label>
-              <select value={coneNo} onChange={(e) => {
-                const val = e.target.value;
+              <Select value={coneNo} disabled={!buyer} onValueChange={(val) => {
                 setConeNo(val);
                 setStyleNo(""); setStyles([]);
                 loadStylesByConNo(lineNo, val);
-              }} className="w-full h-10 rounded-md border px-3 bg-white text-black" disabled={!buyer}>
-                <option value="">Select Con No</option>
-                {cones.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              }}>
+                <SelectTrigger className="w-full h-10 bg-white text-black">
+                  <SelectValue placeholder="Select Con No" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cones.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* 4. Style No — filtered by Con No */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><Shirt className="w-4 h-4" /> Style No</Label>
-              <select value={styleNo} onChange={(e) => setStyleNo(e.target.value)}
-                className="w-full h-10 rounded-md border px-3 bg-white text-black" disabled={!coneNo}>
-                <option value="">Select Style No</option>
-                {styles.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <Select value={styleNo} disabled={!coneNo} onValueChange={(val) => setStyleNo(val)}>
+                <SelectTrigger className="w-full h-10 bg-white text-black">
+                  <SelectValue placeholder="Select Style No" />
+                </SelectTrigger>
+                <SelectContent>
+                  {styles.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* 5. Target Output */}

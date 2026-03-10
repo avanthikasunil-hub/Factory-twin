@@ -14,23 +14,26 @@ import { SceneLighting } from './SceneLighting';
  */
 export const Scene3D = ({
   showMachines = true,
+  machines: machinesOverride,
   sections: sectionsOverride,
   isOverview = false,
   cameraPosition,
   cameraFov
 }: {
   showMachines?: boolean;
+  machines?: MachinePosition[];
   sections?: SectionLayout[];
   isOverview?: boolean;
   cameraPosition?: [number, number, number];
   cameraFov?: number;
 }) => {
   const {
-    machineLayout, sectionLayout: storeSectionLayout, selectedMachine, selectedMachines,
+    machineLayout: storeMachineLayout, sectionLayout: storeSectionLayout, selectedMachine, selectedMachines,
     isMoveMode, updateMachinesPositions, moveSelectedMachines,
     isDraggingActive, setDraggingActive
   } = useLineStore();
 
+  const machineLayout = machinesOverride || storeMachineLayout;
   const sectionLayout = sectionsOverride || storeSectionLayout;
 
   const groupPivotRef = useRef<THREE.Group>(null);
@@ -207,7 +210,7 @@ export const Scene3D = ({
                 if (selectedMachines.includes(machine.id) && isDraggingActive) return null;
                 return (
                   <Suspense key={`suspense-${machine.id}`} fallback={null}>
-                    <Machine3D key={machine.id} machineData={machine} />
+                    <Machine3D key={machine.id} machineData={machine} isOverview={isOverview} />
                   </Suspense>
                 );
               })}

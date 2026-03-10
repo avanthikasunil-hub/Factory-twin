@@ -15,6 +15,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 const LINE_DATA = [
     { id: 1, name: "Line 1", floor: "Floor 1", style: "Polo Shirt V2", buyer: "Nike", startDate: "01/03/2024", endDate: "15/03/2024", status: "Active" },
@@ -30,6 +31,40 @@ const LINE_DATA = [
 
 export default function VirtualLineOverview() {
     const navigate = useNavigate();
+    const [lineStatuses, setLineStatuses] = useState<any[]>([]);
+
+    useEffect(() => {
+        const fetchAllStatus = async () => {
+            try {
+                const res = await fetch("http://localhost:4000/current-styles");
+                if (res.ok) {
+                    const data = await res.json();
+                    setLineStatuses(data);
+                }
+            } catch (err) {
+                console.error("Error fetching all status:", err);
+            }
+        };
+        fetchAllStatus();
+        const interval = setInterval(fetchAllStatus, 15000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const mergedLineData = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(id => {
+        const lineName = `Line ${id}`;
+        const statusData = lineStatuses.find(s => s.line_no === lineName);
+        const floor = id <= 6 ? "Floor 1" : "Floor 2";
+
+        return {
+            id,
+            name: lineName,
+            floor,
+            style: statusData?.style_no || "---",
+            buyer: statusData?.buyer || "---",
+            status: statusData?.status || "Idle",
+            con_no: statusData?.con_no || "---"
+        };
+    });
 
     const stats = [
         { label: "Total Capacity", value: "9 Lines", icon: Layers, color: "text-blue-600", bg: "bg-blue-50" },
@@ -91,14 +126,13 @@ export default function VirtualLineOverview() {
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em] rounded-l-[2rem]">Production Line</th>
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Current Style</th>
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Buyer</th>
-                                    <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Start Date</th>
-                                    <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">End Date</th>
+                                    <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Con No</th>
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Status</th>
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em] rounded-r-[2rem]">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {LINE_DATA.map((line, i) => (
+                                {mergedLineData.map((line, i) => (
                                     <motion.tr
                                         key={line.id}
                                         initial={{ opacity: 0, y: 10 }}
@@ -109,13 +143,8 @@ export default function VirtualLineOverview() {
                                     >
                                         <td className="px-10 py-8 bg-slate-50/50 rounded-l-[2rem] border-t border-b border-l border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300">
                                             <div className="flex items-center gap-6 justify-center">
-                                                <div className="w-12 h-12 rounded-2xl bg-white shadow-sm border border-slate-100 flex items-center justify-center group-hover:border-purple-200 group-hover:shadow-purple-100/50 transition-all duration-500">
-                                                    <span className="text-xl font-black text-slate-900 leading-none">{line.id}</span>
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-black text-slate-900 text-lg group-hover:text-purple-700 transition-colors uppercase tracking-tight">{line.name}</span>
-                                                    </div>
+                                                <div className="space-y-1 text-center">
+                                                    <span className="font-black text-slate-900 text-lg group-hover:text-purple-700 transition-colors uppercase tracking-tight">{line.name}</span>
                                                 </div>
                                             </div>
                                         </td>
@@ -126,21 +155,18 @@ export default function VirtualLineOverview() {
                                             <span className="text-sm font-black text-slate-600 tracking-tight uppercase">{line.buyer}</span>
                                         </td>
                                         <td className="px-8 py-8 bg-slate-50/50 border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
-                                            <span className="text-sm font-black text-slate-600 tracking-tight">{line.startDate}</span>
-                                        </td>
-                                        <td className="px-8 py-8 bg-slate-50/50 border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
-                                            <span className="text-sm font-black text-slate-600 tracking-tight">{line.endDate}</span>
+                                            <span className="text-sm font-black text-slate-600 tracking-tight uppercase">{line.con_no}</span>
                                         </td>
                                         <td className="px-8 py-8 bg-slate-50/50 border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
                                             <div className={cn(
                                                 "inline-flex items-center gap-2 px-5 py-2 rounded-full border transition-all duration-300",
-                                                line.status === "Active" ? "bg-emerald-50 border-emerald-100 text-emerald-700 shadow-sm shadow-emerald-100" :
-                                                    line.status === "Maintenance" ? "bg-amber-50 border-amber-100 text-amber-700 shadow-sm shadow-amber-100" :
+                                                line.status === "Running" ? "bg-emerald-50 border-emerald-100 text-emerald-700 shadow-sm shadow-emerald-100" :
+                                                    line.status === "Changeover" ? "bg-indigo-50 border-indigo-100 text-indigo-700 shadow-sm shadow-indigo-100" :
                                                         "bg-slate-50 border-slate-200 text-slate-500 shadow-sm shadow-slate-100"
                                             )}>
                                                 <Circle size={8} fill="currentColor" className={cn(
-                                                    line.status === "Active" ? "text-emerald-500" :
-                                                        line.status === "Maintenance" ? "text-amber-500" :
+                                                    line.status === "Running" ? "text-emerald-500" :
+                                                        line.status === "Changeover" ? "text-indigo-500 animate-pulse" :
                                                             "text-slate-300"
                                                 )} />
                                                 <span className="text-[10px] font-black uppercase tracking-[0.15em]">{line.status}</span>

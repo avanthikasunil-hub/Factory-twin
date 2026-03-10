@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Save, Factory, Eye, Activity, Target,
   Undo2, Redo2, Move, AlertCircle, X, ChevronDown, ChevronUp, Settings, Filter,
-  Users, Scissors, TrendingUp, Info
+  Users, Scissors, TrendingUp, Info, RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,7 @@ import { MachineInfoPanel } from '@/components/ui/MachineInfoPanel';
 import { useLineStore } from '@/store/useLineStore';
 import { LAYOUT_LOGIC_VERSION } from '@/utils/layoutGenerator';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import type { Operation } from '@/types';
 
 const LinePlannerPage = () => {
@@ -27,7 +28,7 @@ const LinePlannerPage = () => {
     setLineParameters, visibleSection, setVisibleSection, undo, redo,
     canUndo, canRedo, isMoveMode, setMoveMode, selectedMachines,
     isDraggingActive, setDraggingActive, layoutError, warnings, clearWarnings,
-    layoutAlerts, dismissLayoutAlert
+    layoutAlerts, dismissLayoutAlert, fetchAndApplyOB
   } = useLineStore();
 
   // ─── Local input state (UI only — committed on blur/Enter, NOT on every keystroke) ───
@@ -35,6 +36,12 @@ const LinePlannerPage = () => {
   const [localHours, setLocalHours] = useState(workingHours.toString());
   const [localEfficiency, setLocalEfficiency] = useState(efficiency.toString());
   const [isAssemblyExpanded, setIsAssemblyExpanded] = useState(false);
+
+  useEffect(() => {
+    if (currentLine?.lineNo && (currentLine as any).styleNo && (currentLine as any).coneNo) {
+      fetchAndApplyOB(currentLine.lineNo, (currentLine as any).styleNo, (currentLine as any).coneNo);
+    }
+  }, [currentLine?.lineNo, (currentLine as any)?.styleNo, (currentLine as any)?.coneNo, fetchAndApplyOB]);
 
   // ─── HOT REFRESH: Auto-update layout when logic code changes ──────────────────
   const { layoutLogicVersion, setLayoutLogicVersion } = useLineStore();
@@ -264,10 +271,10 @@ const LinePlannerPage = () => {
             <h1 className="text-xl font-bold leading-tight uppercase tracking-tight">
               {currentLine ? `${currentLine.lineNo}` : 'Factory Twin'}
             </h1>
-            {currentLine?.styleNo && (
+            {currentLine?.coneNo && (
               <div className="flex items-center gap-3">
                 <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-black text-left">
-                  {currentLine.styleNo}
+                  {currentLine.coneNo}
                 </p>
                 {currentLine.buyer && (
                   <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">

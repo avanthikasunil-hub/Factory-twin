@@ -97,6 +97,7 @@ interface LineStore {
   updateLineWithNewOB: (newOperations: Operation[], sourceSheet?: string) => void;
   resetLine: () => void;
   setMachineLayout: (layout: MachinePosition[]) => void;
+  fetchAndApplyOB: (lineNo: string, styleNo: string, conNo: string) => Promise<void>;
 }
 
 const FT = 0.3048;
@@ -537,177 +538,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       return m;
     });
 
-    const applyPhysicsToLane = (laneMachines: MachinePosition[], zones: any[], sectionStart: number, sectionEnd: number, laneKey: string, fixZ: (m: MachinePosition, minWZ: number, maxWZ: number) => number) => {
-      if (laneMachines.length === 0) return [];
-
-      let items = laneMachines.map(m => {
-        const dims = getMachineZoneDims(m.operation.machine_type);
-        const ry = m.rotation.y;
-        const cosR = Math.cos(ry), sinR = Math.sin(ry);
-        const hw = dims.length / 2, hd = dims.width / 2;
-        const corners = [{ x: -hw, z: -hd }, { x: hw, z: -hd }, { x: -hw, z: hd }, { x: hw, z: hd }];
-        let minWX = Infinity, maxWX = -Infinity, minWZ = Infinity, maxWZ = -Infinity;
-        corners.forEach(p => {
-          const wx = p.x * cosR + p.z * sinR;
-          const wz = -p.x * sinR + p.z * cosR;
-          if (wx < minWX) minWX = wx; if (wx > maxWX) maxWX = wx;
-          if (wz < minWZ) minWZ = wz; if (wz > maxWZ) maxWZ = wz;
-        });
-        const totalWidth = maxWX - minWX + 0.15; // padding
-        const leftX = m.position.x + minWX;
-        const targetZ = fixZ ? fixZ(m, minWZ, maxWZ) : m.position.z;
-
-        return { m, isAnchor: machineIds.includes(m.id), x: leftX, w: totalWidth, id: m.id, minWX, targetZ };
-      });
-
-      const safeZones = zones.map((z: any) => ({
-        start: Math.max(z.start, sectionStart),
-        end: Math.min(z.end, sectionEnd)
-      })).filter((z: any) => z.end > z.start);
-
-      for (let i = 0; i < safeZones.length - 1; i++) {
-        const gapStart = safeZones[i].end;
-        const gapEnd = safeZones[i + 1].start;
-        if (gapEnd > gapStart) {
-          items.push({ isAnchor: true, x: gapStart, w: gapEnd - gapStart, id: `gap-${i}`, minWX: 0, targetZ: 0, m: null as any });
-        }
-      }
-
-      items.sort((a, b) => a.x - b.x);
-
-      let changed = true;
-      let iters = 0;
-      while (changed && iters < 300) {
-        changed = false;
-        for (let i = 0; i < items.length - 1; i++) {
-          const left = items[i]; const right = items[i + 1];
-          const overlap = (left.x + left.w) - right.x;
-          if (overlap > 0.001) {
-            changed = true;
-            if (left.isAnchor && right.isAnchor) right.x += overlap;
-            else if (left.isAnchor) right.x += overlap;
-            else if (right.isAnchor) left.x -= overlap;
-            else { left.x -= overlap / 2; right.x += overlap / 2; }
-          }
-        }
-
-        for (const item of items) {
-          if (!item.isAnchor || !item.id.startsWith('gap-')) {
-            if (item.x < sectionStart) { item.x = sectionStart; changed = true; }
-            if (item.x + item.w > sectionEnd) { item.x = sectionEnd - item.w; changed = true; }
-          }
-        }
-        items.sort((a, b) => a.x - b.x);
-        iters++;
-      }
-
-      const repacked: MachinePosition[] = [];
-      items.forEach(item => {
-        if (item.m) {
-          const finalX = item.x - item.minWX;
-          repacked.push({ ...item.m, position: { ...item.m.position, x: finalX, z: item.targetZ }, lane: laneKey as any });
-        }
-      });
-      return repacked;
-    };
-
-    affectedSections.forEach(sec => {
-      const isAssembly = sec.includes('assembly') || sec.includes('lane') || sec.includes('line');
-      const specs = getLayoutSpecs(get().currentLine?.lineNo);
-
-      const isSpecial = (m: MachinePosition) =>
-        m.isInspection || m.operation.machine_type.toLowerCase().includes('inspection') ||
-        m.operation.machine_type.toLowerCase().includes('supermarket') ||
-        m.id.startsWith('board') || m.operation.machine_type.toLowerCase().includes('board');
-
-      if (isAssembly) {
-        const isCDGroup = sec.includes('assembly 3') || sec.includes('assembly 4');
-        const zones = isCDGroup ? specs.zonesCD : specs.zonesAB;
-        const ASSEMBLY_START = 114.0719 * FT;
-        const targetSpecs = (specs.sections as any)[sec] || (isCDGroup ? specs.sections.assemblyCD : specs.sections.assemblyAB);
-        const secEndX = targetSpecs?.end || (ASSEMBLY_START + 500);
-        const assemblyLanes = ['A', 'B', 'C', 'D'] as const;
-
-        const sectionMachines = workLayout.filter(m => (m.section || '').toLowerCase() === sec);
-        const repackedAssembly: MachinePosition[] = [];
-
-        assemblyLanes.forEach(laneKey => {
-          const LANE_Z: Record<string, number> = { A: -5.2, B: -6.8, C: 0.75, D: -0.75 };
-          const laneZ = LANE_Z[laneKey];
-          const laneMachines = sectionMachines
-            .filter(m => (m.lane || '').toUpperCase() === laneKey && !isSpecial(m));
-
-          const repacked = applyPhysicsToLane(laneMachines, zones, ASSEMBLY_START, secEndX, laneKey, () => laneZ);
-          repackedAssembly.push(...repacked);
-        });
-
-        const specials = sectionMachines.filter(isSpecial);
-        const others = workLayout.filter(m => (m.section || '').toLowerCase() !== sec);
-        workLayout = [...others, ...repackedAssembly, ...specials];
-        return;
-      }
-
-      const isCDGroup = sec.includes('collar') || sec.includes('front');
-      const lane1 = isCDGroup ? 'C' : 'A';
-      const lane2 = isCDGroup ? 'D' : 'B';
-      const midZ = isCDGroup ? LANE_Z_CENTER_CD : LANE_Z_CENTER_AB;
-      const zones = isCDGroup ? specs.zonesCD : specs.zonesAB;
-
-      const targetTag = Object.keys(specs.sections).find(k => sec.includes(k.toLowerCase()));
-      const targetSpecs = targetTag ? (specs.sections as any)[targetTag] : null;
-
-      const secStartX = targetSpecs?.start || 0;
-      const secEndX = targetSpecs?.end || (isCDGroup ? 110.0719 * FT : 109.9619 * FT);
-
-      const sectionMachines = workLayout.filter(m => (m.section || '').toLowerCase() === sec);
-      const prodMachines = sectionMachines.filter(m => !isSpecial(m));
-
-      // Look for capacity overload
-      const capacityPx = secEndX - secStartX;
-      const requiredPxLength = prodMachines.reduce((sum, m) => {
-        return sum + getMachineZoneDims(m.operation.machine_type).length / 2.0;
-      }, 0);
-
-      const hasAnchors = prodMachines.some(m => machineIds.includes(m.id));
-      if (hasAnchors && requiredPxLength > capacityPx) {
-        // Boot the edge machine
-        const unanchored = prodMachines.filter(m => !machineIds.includes(m.id));
-        if (unanchored.length > 0) {
-          const overflowTarget = findOverflowSection(sec, undefined, !isCDGroup);
-          if (overflowTarget !== sec.toLowerCase() && !overflowTarget.includes('assembly')) {
-            const targetSpecsRef = (specs.sections as any)[overflowTarget];
-            const targetStart = targetSpecsRef?.start || 0;
-            const bootForward = targetStart > secStartX;
-
-            unanchored.sort((a, b) => a.position.x - b.position.x);
-            const machineToBoot = bootForward ? unanchored[unanchored.length - 1] : unanchored[0];
-
-            machineToBoot.section = overflowTarget;
-            // It will be picked up by the other section's loop if it was early, or we must ensure we add it to affectedSections
-            if (!affectedSections.has(overflowTarget)) {
-              affectedSections.add(overflowTarget);
-            }
-
-            // Remove it from this section's list for the physics solver
-            const idx = sectionMachines.findIndex(m => m.id === machineToBoot.id);
-            if (idx !== -1) sectionMachines.splice(idx, 1);
-          }
-        }
-      }
-
-      const repackedAll: MachinePosition[] = [];
-
-      [lane1, lane2].forEach(laneKey => {
-        const laneMachines = sectionMachines.filter(m => m.lane === laneKey && !isSpecial(m));
-        const repacked = applyPhysicsToLane(laneMachines, zones, secStartX, secEndX, laneKey, (m, minWZ, maxWZ) => {
-          return (laneKey === 'A' || laneKey === 'C') ? (midZ - minWZ) : (midZ - maxWZ);
-        });
-        repackedAll.push(...repacked);
-      });
-
-      const specials = sectionMachines.filter(isSpecial);
-      const others = workLayout.filter(m => (m.section || '').toLowerCase() !== sec);
-      workLayout = [...others, ...repackedAll, ...specials];
+    affectedSections.forEach(secLower => {
+      workLayout = (get() as any)._reLayoutSection(workLayout, secLower, true);
     });
 
     set({ machineLayout: workLayout, isDraggingActive: false });
@@ -902,7 +734,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
             return { ...m, position: { ...m.position, x: anchor.preDragX } };
           } else {
             const peerWidth = getMachineZoneDims(m.operation.machine_type).length;
-            const pushedX = Math.min(anchor.preDragX + draggedWidth, secEndX - peerWidth);
+            const pushedX = anchor.preDragX + draggedWidth;
             return { ...m, position: { ...m.position, x: pushedX } };
           }
         });
@@ -967,7 +799,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
           const layoutSpecs = getLayoutSpecs(get().currentLine?.lineNo);
           const targetSpecs = (layoutSpecs.sections as any)[secLower];
           const secEndX = targetSpecs?.end || (114.0719 * FT);
-          const pushedX = Math.min(anchor.preDragX + draggedWidth, secEndX - peerWidth);
+          const pushedX = anchor.preDragX + draggedWidth; // Unrestricted drag push out of zone
           return { ...m, position: { ...m.position, x: pushedX } };
         }
       });
@@ -1132,7 +964,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         if (isFinalCommit) {
           finalX = packedX;
         } else {
-          let targetX = Math.min(m.position.x, ASSEMBLY_START_X - currentWidth - 0.5);
+          let targetX = m.position.x;
           finalX = (m.position.x === 0 && m.position.z === 0)
             ? packedX
             : Math.max(getNextValidX(targetX, currentWidth, zones), packedX);
@@ -1282,6 +1114,19 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const result = (get() as any)._reLayoutSection(updatedLayout, section.toLowerCase());
     set({ machineLayout: result });
   },
+
+  fetchAndApplyOB: async (lineNo, styleNo, conNo) => {
+    try {
+      const res = await fetch(`http://localhost:4000/get-ob?line_no=${encodeURIComponent(lineNo)}&style_no=${encodeURIComponent(styleNo)}&con_no=${encodeURIComponent(conNo)}`);
+      if (res.ok) {
+        const data = await res.json();
+        console.log(`[Store] Applying custom OB from server for ${styleNo}`);
+        get().updateLineWithNewOB(data.operations);
+      }
+    } catch (err) {
+      console.error("[Store] Error fetching OB from server:", err);
+    }
+  }
 
 }), {
   name: 'line-store',

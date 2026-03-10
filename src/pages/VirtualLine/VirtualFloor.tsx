@@ -2,8 +2,10 @@ import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Scene3D } from "@/components/3d/Scene3D";
 import { getLayoutSpecs, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD, LANE_Z_A, LANE_Z_B, LANE_Z_C, LANE_Z_D } from "@/utils/layoutGenerator";
-import { SectionLayout } from "@/types";
+import { generateCotLayout } from "@/utils/cotLayoutGenerator";
+import { SectionLayout, MachinePosition } from "@/types";
 import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
 
 const LINE_COLORS = [
     '#3b82f6', // Blue
@@ -149,12 +151,88 @@ export default function VirtualFloor() {
         }
     }, [activeFloor, activeLine]);
 
+    const [activeMachines, setActiveMachines] = useState<MachinePosition[]>([]);
+
+    useEffect(() => {
+        const fetchActiveLayouts = async () => {
+            try {
+                const res = await fetch("http://localhost:4000/active-layouts");
+                if (!res.ok) return;
+                const activeData = await res.json();
+
+                // Helper to extract numeric line ID (handles "Line 1", "L1", " 1", etc.)
+                const getLineNum = (lineStr: string) => {
+                    if (!lineStr) return null;
+                    const match = String(lineStr).match(/\d+/);
+                    return match ? parseInt(match[0]) : null;
+                };
+
+                // Filter by Floor (Line 1-6 -> F1, Line 7-9 -> F2)
+                let floorData = activeData.filter((s: any) => {
+                    const lNum = getLineNum(s.line_no);
+                    if (lNum === null) return false;
+
+                    if (activeFloor === "Floor 1") return lNum >= 1 && lNum <= 6;
+                    if (activeFloor === "Floor 2") return lNum >= 7 && lNum <= 9;
+                    return false;
+                });
+
+                // Filter if specific line selected
+                if (activeLine && activeLine !== "All Lines") {
+                    const targetLNum = getLineNum(activeLine);
+                    floorData = floorData.filter(s => getLineNum(s.line_no) === targetLNum);
+                }
+
+                // Filter out lines with NO operations data
+                floorData = floorData.filter((s: any) => Array.isArray(s.operations) && s.operations.length > 0);
+
+                console.log(`[VirtualFloor] rendering for ${activeFloor}, lines found: ${floorData.map(f => f.line_no).join(', ')}`);
+
+                if (floorData.length === 0) {
+                    setActiveMachines([]);
+                    return;
+                }
+
+                const data = getLayoutSpecs("Line 1");
+                const { specs } = data;
+                const minZ = LANE_Z_CENTER_AB - (specs.widthAB / 2);
+                const maxZ = LANE_Z_CENTER_CD + (specs.widthCD / 2);
+                const zStep = (maxZ - minZ) + 3.7;
+
+                const allMachines = floorData.flatMap((item: any) => {
+                    const ops = item.operations;
+                    const result = generateCotLayout(ops, item.line_no);
+
+                    const lineNum = getLineNum(item.line_no)!;
+                    // F1 (1-6) -> 0..5, F2 (7-9) -> 0..2
+                    const relativeIdx = (lineNum <= 6) ? (lineNum - 1) : (lineNum - 7);
+                    const zOffset = relativeIdx * zStep;
+
+                    return result.machines.map(m => ({
+                        ...m,
+                        position: { ...m.position, z: m.position.z + zOffset }
+                    }));
+                });
+
+                setActiveMachines(allMachines);
+
+            } catch (err) {
+                console.error("[VirtualFloor] Error:", err);
+            }
+        };
+
+        fetchActiveLayouts();
+        const interval = setInterval(fetchActiveLayouts, 10000);
+        return () => clearInterval(interval);
+    }, [activeFloor, activeLine]);
+
     return (
         <div className="absolute inset-0 flex flex-col bg-slate-950 overflow-hidden">
             <div className="flex-1 relative bg-[#0a0a0c]">
                 <Scene3D
                     key={`${activeFloor}-${activeLine}`}
-                    showMachines={false}
+                    showMachines={true}
+                    machines={activeMachines}
                     sections={floorSections}
                     isOverview={activeLine === "All Lines"}
                     cameraPosition={cameraConfig.position}

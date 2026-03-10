@@ -35,17 +35,8 @@ const NAV_ITEMS = [
     { id: "dashboard", label: 'Dashboard', icon: Layout, path: '/' },
 ];
 
-const COT_DATA = [
-    { line: "Line 1", runningStyle: "ST-2024-A1", isCOT: false },
-    { line: "Line 2", runningStyle: "SH-001", cotStyle: "SH-002", isCOT: true },
-    { line: "Line 3", runningStyle: "BL-992", cotStyle: "BL-993", isCOT: true },
-    { line: "Line 4", runningStyle: "ST-2024-X1", cotStyle: "ST-2024-X2", isCOT: true },
-    { line: "Line 5", runningStyle: "TS-102", isCOT: false },
-    { line: "Line 6", runningStyle: "BS-001", isCOT: false },
-    { line: "Line 7", runningStyle: "BS-002", isCOT: false },
-    { line: "Line 8", runningStyle: "JK-554", cotStyle: "JK-555", isCOT: true },
-    { line: "Line 9", runningStyle: "ST-2024-B1", isCOT: false },
-];
+// This will be replaced by dynamic data in the component
+let COT_DATA: any[] = [];
 
 export default function VirtualLineLayout() {
     const navigate = useNavigate();
@@ -57,6 +48,29 @@ export default function VirtualLineLayout() {
     const currentPath = location.pathname;
     const activeFloor = searchParams.get("floor") || "Floor 1";
     const activeLine = searchParams.get("line");
+
+    const [liveCotData, setLiveCotData] = useState<any[]>([]);
+
+    useEffect(() => {
+        const fetchStatus = async () => {
+            try {
+                const res = await fetch("http://localhost:4000/current-styles");
+                if (res.ok) {
+                    const data = await res.json();
+                    setLiveCotData(data);
+                }
+            } catch (err) {
+                console.error("Error fetching live status:", err);
+            }
+        };
+        fetchStatus();
+        const interval = setInterval(fetchStatus, 15000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const activeLineData = liveCotData.find(i => i.line_no === activeLine);
+    const isChangeover = activeLineData?.status === 'Changeover';
+    const isRunning = activeLineData?.status === 'Running';
 
     return (
         <div className="flex h-screen bg-[#f8fafc] overflow-hidden">
@@ -182,39 +196,23 @@ export default function VirtualLineLayout() {
 
                         {(currentPath === "/virtual-line/floor" || (currentPath === "/virtual-line/tracker" && searchParams.get("line"))) && (
                             <div className="flex items-center gap-1 ml-4 bg-slate-100/50 p-1 rounded-2xl border border-slate-200/60 shadow-inner">
-                                {searchParams.get("line") && (() => {
-                                    const lineData = COT_DATA.find(i => i.line === searchParams.get("line"));
-                                    if (!lineData) return null;
-                                    return (
-                                        <div className="flex items-center gap-1 border-r border-slate-200/60 pr-1 mr-1">
-                                            {/* Current Running Style - Click to see Layout */}
-                                            <button
-                                                onClick={() => navigate(`/virtual-line/floor?${searchParams.toString()}`)}
-                                                className="flex flex-col items-start px-4 py-2 rounded-xl hover:bg-white transition-all shrink-0 text-left group/run"
-                                            >
-                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5 group-hover/run:text-slate-600 transition-colors">Running Style</span>
-                                                <div className="flex items-center gap-2.5">
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                                    <span className="text-slate-900 font-black text-[13px] tracking-tight">{lineData.runningStyle}</span>
-                                                </div>
-                                            </button>
-
-                                            {/* Target COT Style - ONLY for Tracker View */}
-                                            {lineData.isCOT && currentPath === "/virtual-line/tracker" && (
-                                                <button
-                                                    onClick={() => navigate(`/virtual-line/tracker?${searchParams.toString()}`)}
-                                                    className="flex flex-col items-start px-4 py-2 rounded-xl bg-white border border-indigo-100/50 transition-all shrink-0 text-left group/cot"
-                                                >
-                                                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest leading-none mb-1.5 group-hover/cot:text-indigo-600 transition-colors">COT Style</span>
-                                                    <div className="flex items-center gap-2.5">
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                                                        <span className="text-slate-900 font-black text-[13px] tracking-tight">{lineData.cotStyle}</span>
-                                                    </div>
-                                                </button>
-                                            )}
-                                        </div>
-                                    );
-                                })()}
+                                {searchParams.get("line") && activeLineData && (
+                                    <div className="flex items-center gap-1 border-r border-slate-200/60 pr-1 mr-1">
+                                        {/* Current Style - Click to see Layout */}
+                                        <button
+                                            onClick={() => navigate(`/virtual-line/floor?${searchParams.toString()}`)}
+                                            className="flex flex-col items-start px-4 py-2 rounded-xl hover:bg-white transition-all shrink-0 text-left group/run"
+                                        >
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5 group-hover/run:text-slate-600 transition-colors">
+                                                {isRunning ? 'Running Style' : 'Changeover Style'}
+                                            </span>
+                                            <div className="flex items-center gap-2.5">
+                                                <div className={cn("w-1.5 h-1.5 rounded-full", isRunning ? "bg-emerald-500" : "bg-indigo-500 animate-pulse")} />
+                                                <span className="text-slate-900 font-black text-[13px] tracking-tight">{activeLineData.style_no}</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                )}
 
                                 {currentPath === "/virtual-line/floor" ? (
                                     <div className="flex items-center gap-1">
@@ -278,7 +276,7 @@ export default function VirtualLineLayout() {
                                         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => {
                                             const lineName = `Line ${num}`;
                                             const isActive = searchParams.get("line") === lineName;
-                                            const isCOT = COT_DATA.find(d => d.line === lineName)?.isCOT;
+                                            const isCOT = liveCotData.find(d => d.line_no === lineName)?.status === 'Changeover';
                                             const floor = num <= 6 ? "Floor 1" : "Floor 2";
 
                                             return (

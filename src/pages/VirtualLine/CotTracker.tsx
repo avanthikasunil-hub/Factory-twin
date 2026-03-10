@@ -3,7 +3,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { Scene3D } from "@/components/3d/Scene3D";
 import { getLayoutSpecs, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD, LANE_Z_A, LANE_Z_B, LANE_Z_C, LANE_Z_D } from "@/utils/layoutGenerator";
-import { SectionLayout } from "@/types";
+import { generateCotLayout } from "@/utils/cotLayoutGenerator";
+import { SectionLayout, MachinePosition } from "@/types";
 import {
     PlayCircle,
     PauseCircle,
@@ -32,6 +33,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useEffect } from "react";
 
 const LINE_COLORS = [
     '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16'
@@ -81,15 +83,99 @@ export default function CotTracker() {
 
     const doneCount = opStatuses.filter(s => s.status === 'done').length;
 
-    const cotToday = [
-        { slNo: 1, line: "Line 4", floor: "Floor 1", fromStyle: "ST-2024-X1", toStyle: "ST-2024-X2", status: "In Progress", startTime: "08:30 AM", operator: "John D." },
-        { slNo: 2, line: "Line 3", floor: "Floor 1", fromStyle: "BL-992", toStyle: "BL-993", status: "Pending", startTime: "10:15 AM", operator: "Sarah M." },
-        { slNo: 3, line: "Line 8", floor: "Floor 2", fromStyle: "JK-554", toStyle: "JK-555", status: "Pending", startTime: "11:00 AM", operator: "Mike R." },
-        { slNo: 4, line: "Line 5", floor: "Floor 1", fromStyle: "TS-102", toStyle: "TS-103", status: "Completed", startTime: "06:45 AM", operator: "Alex K." },
-        { slNo: 5, line: "Line 2", floor: "Floor 1", fromStyle: "SH-001", toStyle: "SH-002", status: "In Progress", startTime: "09:00 AM", operator: "Elena W." },
-    ];
+    const [cotData, setCotData] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const activeStyleData = useMemo(() => cotToday.find(i => i.line === activeLine), [activeLine]);
+    const getLineFloor = (lineName: string) => {
+        const lineNum = parseInt(String(lineName || "").replace(/\D/g, ''));
+        if (lineNum >= 1 && lineNum <= 6) return "Floor 1";
+        if (lineNum >= 7 && lineNum <= 9) return "Floor 2";
+        return "Floor 1";
+    };
+
+    useEffect(() => {
+        const fetchCotData = async () => {
+            try {
+                const res = await fetch("http://localhost:4000/current-styles");
+                if (res.ok) {
+                    const data = await res.json();
+                    // Only track Changeover styles in the COT Tracker
+                    const activeStyles = data.filter((s: any) => s.status === 'Changeover');
+
+                    const mappedData = activeStyles.map((item: any, idx: number) => ({
+                        slNo: idx + 1,
+                        line: item.line_no,
+                        conNo: item.con_no,
+                        floor: getLineFloor(item.line_no),
+                        fromStyle: "---",
+                        toStyle: item.style_no,
+                        status: "In Progress",
+                        startTime: "08:30 AM",
+                        operator: "Line Supervisor"
+                    }));
+                    setCotData(mappedData);
+                }
+            } catch (err) {
+                console.error("Error fetching COT data:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchCotData();
+        const interval = setInterval(fetchCotData, 10000); // Polling every 10s
+        return () => clearInterval(interval);
+    }, []);
+
+    const activeStyleData = useMemo(() => cotData.find(i => i.line === activeLine), [activeLine, cotData]);
+
+    const [cotLayout, setCotLayout] = useState<{ machines: MachinePosition[], sections: SectionLayout[] } | null>(null);
+
+    useEffect(() => {
+        if (!activeLine || !activeStyleData) {
+            setCotLayout(null);
+            return;
+        }
+
+        const fetchStyleOB = async () => {
+            try {
+                const con_no = activeStyleData.conNo || '';
+                const style_no = activeStyleData.toStyle;
+
+                // Encode and build complete URL
+                const baseUrl = "http://localhost:4000/get-ob";
+                const params = new URLSearchParams({
+                    line_no: activeLine,
+                    style_no: style_no,
+                    con_no: con_no
+                });
+
+                console.log(`[COT Tracker] Fetching OB for ${activeLine}:`, { style_no, con_no });
+                const res = await fetch(`${baseUrl}?${params.toString()}`);
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.operations && Array.isArray(data.operations)) {
+                        console.log(`[COT Tracker] OB Fetched! ${data.operations.length} ops. Generating layout...`);
+                        const result = generateCotLayout(data.operations, activeLine);
+                        console.log(`[COT Tracker] Layout generated with ${result.machines.length} machines.`);
+                        setCotLayout(result);
+                    } else {
+                        console.warn("[COT Tracker] Received data but no operations found.");
+                        setCotLayout(null);
+                    }
+                } else {
+                    console.warn(`[COT Tracker] Failed to fetch OB. Status: ${res.status}`);
+                    setCotLayout(null);
+                }
+            } catch (err) {
+                console.error("[COT Tracker] Error in fetchStyleOB:", err);
+                setCotLayout(null);
+            }
+        };
+
+        fetchStyleOB();
+    }, [activeLine, activeStyleData]);
 
     const floorSections = useMemo(() => {
         const data = getLayoutSpecs("Line 1");
@@ -103,8 +189,16 @@ export default function CotTracker() {
 
         for (let i = 0; i < numLines; i++) {
             const zOffset = i * zStep;
-            let lineLabelValue = activeFloor === "Floor 1" ? `Line ${i + 1}` : (i === 0 ? "Line 9" : "Line 8");
-            let colorIndex = activeFloor === "Floor 1" ? i : (i === 0 ? 8 : 7);
+            let lineLabelValue = "";
+            let colorIndex = 0;
+
+            if (activeFloor === "Floor 1") {
+                lineLabelValue = `Line ${i + 1}`;
+                colorIndex = i;
+            } else {
+                lineLabelValue = `Line ${i + 7}`;
+                colorIndex = i + 6;
+            }
 
             if (activeLine && activeLine !== "All Lines" && lineLabelValue !== activeLine) continue;
 
@@ -127,8 +221,8 @@ export default function CotTracker() {
         if (!activeLine || activeLine === "All Lines") {
             return { position: [-100, 120, 25] as [number, number, number], fov: 30 };
         }
-        const lineNum = parseInt(activeLine.split(' ')[1]);
-        let i = activeFloor === "Floor 1" ? lineNum - 1 : (lineNum === 9 ? 0 : 1);
+        const lineNum = parseInt(String(activeLine || "").replace(/\D/g, ''));
+        let i = (lineNum <= 6) ? (lineNum - 1) : (lineNum - 7);
 
         const data = getLayoutSpecs("Line 1");
         const { specs } = data;
@@ -173,12 +267,12 @@ export default function CotTracker() {
                             <div className="hidden md:flex items-center gap-6">
                                 <div className="flex flex-col items-end">
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Scheduled</span>
-                                    <span className="text-xl font-black text-slate-900">05 Transitions</span>
+                                    <span className="text-xl font-black text-slate-900">{String(cotData.length).padStart(2, '0')} Transitions</span>
                                 </div>
                                 <div className="w-px h-8 bg-slate-200" />
                                 <div className="flex flex-col items-end">
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Completed</span>
-                                    <span className="text-xl font-black text-emerald-600">01 / 05</span>
+                                    <span className="text-xl font-black text-emerald-600">00 / {String(cotData.length).padStart(2, '0')}</span>
                                 </div>
                             </div>
                         </div>
@@ -196,7 +290,19 @@ export default function CotTracker() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {cotToday.map((item, i) => (
+                                        {loading ? (
+                                            <tr>
+                                                <td colSpan={5} className="py-20 text-center font-black text-slate-400 uppercase tracking-widest animate-pulse">
+                                                    Fetching Live Changeover Data...
+                                                </td>
+                                            </tr>
+                                        ) : cotData.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={5} className="py-20 text-center font-black text-slate-400 uppercase tracking-widest">
+                                                    No Styles in Changeover Status
+                                                </td>
+                                            </tr>
+                                        ) : cotData.map((item, i) => (
                                             <motion.tr
                                                 key={item.slNo}
                                                 initial={{ opacity: 0, y: 10 }}
@@ -253,9 +359,10 @@ export default function CotTracker() {
                     <div className="flex-1 relative order-2 md:order-1 border-b md:border-b-0 md:border-r border-white/5">
                         <div className="w-full h-full">
                             <Scene3D
-                                key={`${activeFloor} -${activeLine} `}
-                                showMachines={false}
-                                sections={floorSections}
+                                key={`${activeFloor}-${activeLine}`}
+                                showMachines={true}
+                                machines={cotLayout?.machines || []}
+                                sections={cotLayout?.sections || floorSections}
                                 isOverview={false}
                                 cameraPosition={cameraConfig.position}
                                 cameraFov={cameraConfig.fov}

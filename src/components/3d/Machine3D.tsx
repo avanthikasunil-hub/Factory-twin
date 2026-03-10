@@ -10,6 +10,7 @@ import { HumanOperator } from './HumanOperator';
 interface Machine3DProps {
   machineData: MachinePosition;
   relativePosition?: { x: number, y: number, z: number };
+  isOverview?: boolean;
 }
 
 // Maps machine keys (lowercase) to GLB filenames
@@ -163,7 +164,7 @@ const GarmentBundles = () => {
   );
 };
 
-export const Machine3D = ({ machineData, relativePosition }: Machine3DProps) => {
+export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine3DProps) => {
   const rootRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
@@ -277,10 +278,6 @@ export const Machine3D = ({ machineData, relativePosition }: Machine3DProps) => 
       </group>
     );
   }
-
-
-
-
 
   // Handle centering logic once when model loads
   useLayoutEffect(() => {
@@ -417,8 +414,8 @@ export const Machine3D = ({ machineData, relativePosition }: Machine3DProps) => 
         {/* 3D Model */}
         <primitive object={clonedScene} castShadow receiveShadow />
 
-        {/* Garment Bundles for Supermarket */}
-        {mType.includes('supermarket') && <GarmentBundles />}
+        {/* Garment Bundles for Supermarket - Hidden in Overview for performance */}
+        {mType.includes('supermarket') && !isOverview && <GarmentBundles />}
 
         {/* Bottleneck Status Ring (Always Visible) */}
         {bottleneckColor && (
@@ -439,41 +436,20 @@ export const Machine3D = ({ machineData, relativePosition }: Machine3DProps) => 
         {/* Info Label (Visible on Hover) */}
         {(hovered && !isSelected) && (
           <Html position={[0, 2, 0]} center style={{ pointerEvents: 'none' }}>
-            <div className="bg-black/90 text-white px-2.5 py-2.0 rounded-lg text-xs whitespace-nowrap backdrop-blur-md pointer-events-none border border-white/20 shadow-xl min-w-[140px]">
-              <div className="flex items-center justify-between gap-4 mb-2 pb-1.5 border-b border-white/10">
-                <div className="font-black text-primary uppercase tracking-tight">
-                  {machineData.operation.machine_type}
-                </div>
-                {machineData.machineIndex !== undefined && (
-                  <div className="bg-primary/20 px-1.5 py-0.5 rounded text-[9px] font-black text-primary border border-primary/30">
-                    #{machineData.machineIndex + 1}
-                  </div>
-                )}
+            <div className="bg-black/95 text-white px-3 py-2 rounded-xl text-[10px] whitespace-nowrap backdrop-blur-md pointer-events-none border border-white/20 shadow-2xl">
+              <div className="font-black text-indigo-400 uppercase tracking-tight mb-1">
+                {machineData.operation.op_name || machineData.operation.machine_type}
               </div>
-
-              {/* Show operation name if it's different and relevant */}
-              {machineData.operation.op_name.toLowerCase() !== machineData.operation.machine_type.toLowerCase() && (
-                <p className="text-[10px] text-white/90 font-bold mb-0.5">{machineData.operation.op_name}</p>
-              )}
-
-              <div className="flex items-center gap-2">
-                <span className="text-[8px] bg-white/10 px-1 rounded text-white/50 font-bold uppercase tracking-widest">
-                  Op {machineData.operation.op_no || "N/A"}
-                </span>
+              <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-1">
+                <span className="text-white/50 text-[8px]">Op {machineData.operation.op_no || "N/A"}</span>
+                <span className="text-accent font-black">{machineData.operation.smv?.toFixed(2)} min</span>
               </div>
-
-              {machineData.machineIndex !== undefined && (
-                <div className="mt-1.5 pt-1.5 border-t border-white/5 flex items-center justify-between">
-                  <span className="text-[9px] text-gray-500 font-bold uppercase tracking-tighter">Work Content</span>
-                  <span className="text-accent font-bold text-[10px]">{machineData.operation.smv?.toFixed(2)} min</span>
-                </div>
-              )}
             </div>
           </Html>
         )}
       </group>
 
-      {/* Human Operator */}
+      {/* Human Operator - RESTORED visibility for all modes */}
       {needsOperator && (() => {
         const isRotated90 = Math.abs(machineData.rotation.y % Math.PI) > 0.1;
         const operatorOffsetZ = isRotated90 ? -0.25 : 0;
@@ -497,7 +473,7 @@ export const Machine3D = ({ machineData, relativePosition }: Machine3DProps) => 
         );
       })()}
 
-      {/* Ground Zone Area Border */}
+      {/* Ground Zone Area Border - RESTORED visibility for all modes */}
       {(() => {
         let humanMaxZ = 0;
         if (needsOperator) {
