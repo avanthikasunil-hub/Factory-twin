@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "../../config";
 
 const LINE_DATA = [
     { id: 1, name: "Line 1", floor: "Floor 1", style: "Polo Shirt V2", buyer: "Nike", startDate: "01/03/2024", endDate: "15/03/2024", status: "Active" },
@@ -36,7 +37,7 @@ export default function VirtualLineOverview() {
     useEffect(() => {
         const fetchAllStatus = async () => {
             try {
-                const res = await fetch("http://localhost:4000/current-styles");
+                const res = await fetch(`${API_BASE_URL}/current-styles`);
                 if (res.ok) {
                     const data = await res.json();
                     setLineStatuses(data);

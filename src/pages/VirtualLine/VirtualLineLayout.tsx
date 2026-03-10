@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { API_BASE_URL } from "../../config";
 
 const NAV_ITEMS = [
     { id: "overview", label: 'Overview', icon: LayoutDashboard, path: '/virtual-line/overview' },
@@ -54,7 +55,7 @@ export default function VirtualLineLayout() {
     useEffect(() => {
         const fetchStatus = async () => {
             try {
-                const res = await fetch("http://localhost:4000/current-styles");
+                const res = await fetch(`${API_BASE_URL}/current-styles`);
                 if (res.ok) {
                     const data = await res.json();
                     setLiveCotData(data);

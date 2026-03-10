@@ -22,6 +22,7 @@ import {
 } from "@/utils/layoutGenerator";
 import { calculateMachineRequirements } from '@/utils/lineBalancing';
 import { toast } from 'sonner';
+import { API_BASE_URL } from '../config';
 
 interface LineStore {
   savedLines: LineData[];
@@ -1117,12 +1118,10 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
 
   fetchAndApplyOB: async (lineNo, styleNo, conNo) => {
     try {
-      const res = await fetch(`http://localhost:4000/get-ob?line_no=${encodeURIComponent(lineNo)}&style_no=${encodeURIComponent(styleNo)}&con_no=${encodeURIComponent(conNo)}`);
-      if (res.ok) {
-        const data = await res.json();
-        console.log(`[Store] Applying custom OB from server for ${styleNo}`);
-        get().updateLineWithNewOB(data.operations);
-      }
+      const res = await fetch(`${API_BASE_URL}/get-ob?line_no=${encodeURIComponent(lineNo)}&style_no=${encodeURIComponent(styleNo)}&con_no=${encodeURIComponent(conNo)}`);
+      if (!res.ok) throw new Error("OB not found"); const data = await res.json();
+      console.log(`[Store] Applying custom OB from server for ${styleNo}`);
+      get().updateLineWithNewOB(data.operations);
     } catch (err) {
       console.error("[Store] Error fetching OB from server:", err);
     }

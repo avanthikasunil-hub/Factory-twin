@@ -25,6 +25,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { API_BASE_URL } from "../../config";
 
 // Mock data for the styles in a specific line for the month
 const STYLE_SCHEDULE = [
@@ -43,7 +44,7 @@ export default function LineScheduleDetails() {
 
     useEffect(() => {
         setLoading(true);
-        fetch(`http://localhost:4000/schedule?line=${encodeURIComponent(lineId)}`)
+        fetch(`${API_BASE_URL}/schedule?line=${encodeURIComponent(lineId)}`)
             .then(res => res.json())
             .then(data => {
                 setSchedule(data);
@@ -57,7 +58,7 @@ export default function LineScheduleDetails() {
 
     const handleStatusChange = async (style_no: string, con_no: string, nextStatus: string) => {
         try {
-            const res = await fetch("http://localhost:4000/update-status", {
+            const res = await fetch(`${API_BASE_URL}/update-status`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -88,7 +89,7 @@ export default function LineScheduleDetails() {
             formData.append("con_no", conNo);
 
             try {
-                const res = await fetch("http://localhost:4000/upload-ob", {
+                const res = await fetch(`${API_BASE_URL}/upload-ob`, {
                     method: "POST",
                     body: formData
                 });
@@ -96,7 +97,7 @@ export default function LineScheduleDetails() {
                     const data = await res.json();
                     alert(`OB Uploaded successfully! ${data.count} operations parsed.`);
                     // Refresh schedule to show green check
-                    const refreshRes = await fetch(`http://localhost:4000/schedule?line=${encodeURIComponent(lineId)}`);
+                    const refreshRes = await fetch(`${API_BASE_URL}/schedule?line=${encodeURIComponent(lineId)}`);
                     const refreshData = await refreshRes.json();
                     setSchedule(refreshData);
                 } else {

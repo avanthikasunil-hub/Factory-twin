@@ -6,6 +6,7 @@ import { generateCotLayout } from "@/utils/cotLayoutGenerator";
 import { SectionLayout, MachinePosition } from "@/types";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "../../config";
 
 const LINE_COLORS = [
     '#3b82f6', // Blue
@@ -156,7 +157,7 @@ export default function VirtualFloor() {
     useEffect(() => {
         const fetchActiveLayouts = async () => {
             try {
-                const res = await fetch("http://localhost:4000/active-layouts");
+                const res = await fetch(`${API_BASE_URL}/active-layouts`);
                 if (!res.ok) return;
                 const activeData = await res.json();
 

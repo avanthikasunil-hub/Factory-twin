@@ -11,6 +11,7 @@ import { useLineStore } from "@/store/useLineStore";
 import { parseOBExcel } from "@/utils/obParser";
 import { useToast } from "@/hooks/use-toast";
 import type { Operation } from "@/types";
+import { API_BASE_URL } from "../../config";
 
 const DEFAULT_LINES = [
   "LINE 1", "LINE 2", "LINE 3", "LINE 4", "LINE 5",
@@ -56,7 +57,7 @@ const CreateLinePage = () => {
 
   // ── Backend data loaders ───────────────────────────────────────────────────
   useEffect(() => {
-    fetch("http://localhost:4000/lines")
+    fetch(`${API_BASE_URL}/lines`)
       .then(res => res.json())
       .then(data => {
         const merged = Array.from(new Set([...DEFAULT_LINES, ...data]));
@@ -68,7 +69,7 @@ const CreateLinePage = () => {
   // Load buyers (Column A) for a given line
   const loadBuyers = (line: string) => {
     if (!line) return;
-    fetch(`http://localhost:4000/cons?line=${encodeURIComponent(line)}`)
+    fetch(`${API_BASE_URL}/cons?line=${encodeURIComponent(line)}`)
       .then(res => res.json())
       .then(data => setCons(data))
       .catch(() => { });
@@ -77,7 +78,7 @@ const CreateLinePage = () => {
   // Load Con Nos / OC (Column B) for a given line + buyer
   const loadConNos = (line: string, buyerVal: string) => {
     if (!line || !buyerVal) return;
-    fetch(`http://localhost:4000/oc-by-buyer?line=${encodeURIComponent(line)}&buyer=${encodeURIComponent(buyerVal)}`)
+    fetch(`${API_BASE_URL}/oc-by-buyer?line=${encodeURIComponent(line)}&buyer=${encodeURIComponent(buyerVal)}`)
       .then(res => res.json())
       .then(data => setCones(data))
       .catch(() => { });
@@ -86,7 +87,7 @@ const CreateLinePage = () => {
   // Load Styles (Column E) for a given line + Con No
   const loadStylesByConNo = (line: string, oc: string) => {
     if (!line || !oc) return;
-    fetch(`http://localhost:4000/styles-by-oc?line=${encodeURIComponent(line)}&oc=${encodeURIComponent(oc)}`)
+    fetch(`${API_BASE_URL}/styles-by-oc?line=${encodeURIComponent(line)}&oc=${encodeURIComponent(oc)}`)
       .then(res => res.json())
       .then(data => setStyles(data))
       .catch(() => { });

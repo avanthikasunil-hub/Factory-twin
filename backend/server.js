@@ -4,6 +4,7 @@ const multer = require("multer");
 const XLSX = require("xlsx");
 const db = require("./db");
 const url = require("url");
+const path = require("path");
 
 const app = express();
 app.use(cors());
@@ -496,7 +497,13 @@ app.get("/active-layouts", (req, res) => {
   });
 });
 
-const PORT = 4000;
+app.use(express.static(path.join(__dirname, "../dist")));
+
+app.get(/.*/, (req, res) => {
+  res.sendFile(path.join(__dirname, "../dist/index.html"));
+});
+
+const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`);
+  console.log(`Server running on ${PORT}`);
 });

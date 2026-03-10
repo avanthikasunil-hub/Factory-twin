@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
+import { API_BASE_URL } from "../../config";
 
 const LINE_COLORS = [
     '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16'
@@ -96,7 +97,7 @@ export default function CotTracker() {
     useEffect(() => {
         const fetchCotData = async () => {
             try {
-                const res = await fetch("http://localhost:4000/current-styles");
+                const res = await fetch(`${API_BASE_URL}/current-styles`);
                 if (res.ok) {
                     const data = await res.json();
                     // Only track Changeover styles in the COT Tracker
@@ -143,7 +144,7 @@ export default function CotTracker() {
                 const style_no = activeStyleData.toStyle;
 
                 // Encode and build complete URL
-                const baseUrl = "http://localhost:4000/get-ob";
+                const baseUrl = `${API_BASE_URL}/get-ob`;
                 const params = new URLSearchParams({
                     line_no: activeLine,
                     style_no: style_no,
