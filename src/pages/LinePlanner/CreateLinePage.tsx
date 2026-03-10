@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Factory, Hash, Shirt, Spool, Activity, Target, Clock } from "lucide-react";
+import { ArrowLeft, Factory, Hash, Shirt, Spool, Activity, Target, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { FileUploadZone } from "@/components/ui/FileUploadZone";
@@ -27,6 +27,7 @@ const CreateLinePage = () => {
   const [lineNo, setLineNo] = useState("");
   const [styleNo, setStyleNo] = useState("");
   const [coneNo, setConeNo] = useState("");
+  const [buyer, setBuyer] = useState("");
   const [efficiency, setEfficiency] = useState("100");
   const [targetOutput, setTargetOutput] = useState("1000");
   const [workingHours, setWorkingHours] = useState("9");
@@ -92,7 +93,7 @@ const CreateLinePage = () => {
     updateLineWithNewOB([], "");
 
     try {
-      const { operations, totalSMV, machineTypesCount, sourceSheet: sheetName } = await parseOBExcel(file);
+      const { operations, buyer: parsedBuyer, totalSMV, machineTypesCount, sourceSheet: sheetName } = await parseOBExcel(file);
 
       if (!operations || operations.length === 0) {
         throw new Error("No operations found in the uploaded Excel file.");
@@ -101,6 +102,7 @@ const CreateLinePage = () => {
       updateLineWithNewOB(operations, sheetName);
 
       setParsedOperations(operations);
+      if (parsedBuyer) setBuyer(parsedBuyer);
       setParsedTotalSMV(totalSMV);
       setExactMachineCount(machineTypesCount);
       setSourceSheet(sheetName);
@@ -117,8 +119,8 @@ const CreateLinePage = () => {
 
   // ── Create line ────────────────────────────────────────────────────────────
   const handleCreateLine = useCallback(() => {
-    if (!lineNo || !styleNo || !coneNo) {
-      toast({ title: "Missing Fields", description: "Please select Line, Style and Cone number.", variant: "destructive" });
+    if (!lineNo || !styleNo || !coneNo || !buyer) {
+      toast({ title: "Missing Fields", description: "Please select Line, Style, Cone number and Buyer.", variant: "destructive" });
       return;
     }
 
@@ -131,6 +133,7 @@ const CreateLinePage = () => {
       lineNo,
       styleNo,
       coneNo,
+      buyer,
       parsedOperations,
       parseFloat(efficiency || "100"),
       parseFloat(targetOutput || "1000"),
@@ -141,7 +144,7 @@ const CreateLinePage = () => {
     saveLine(line);
     toast({ title: "Line Created Successfully", description: `${lineNo} created.` });
     navigate("/line-planner/planner");
-  }, [lineNo, styleNo, coneNo, parsedOperations, parsedTotalSMV, efficiency, targetOutput, workingHours, sourceSheet, createLine, saveLine, navigate, toast]);
+  }, [lineNo, styleNo, coneNo, buyer, parsedOperations, parsedTotalSMV, efficiency, targetOutput, workingHours, sourceSheet, createLine, saveLine, navigate, toast]);
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -170,13 +173,48 @@ const CreateLinePage = () => {
 
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><Shirt className="w-4 h-4" /> Style Number</Label>
-              <input list="styleList" value={styleNo} onChange={(e) => { setStyleNo(e.target.value); setConeNo(""); loadCones(lineNo, e.target.value); }} className="w-full h-10 rounded-md border px-3" />
+              <input
+                list="styleList"
+                value={styleNo}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setStyleNo(val);
+                  setConeNo("");
+                  if (lineNo && val) {
+                    loadCones(lineNo, val);
+                    // Also attempt to fetch buyer for this style
+                    fetch(`http://localhost:4000/buyer?line=${lineNo}&style=${encodeURIComponent(val)}`)
+                      .then(res => res.json())
+                      .then(data => {
+                        if (data.buyer) setBuyer(data.buyer);
+                      })
+                      .catch(() => { });
+                  }
+                }}
+                className="w-full h-10 rounded-md border px-3"
+              />
               <datalist id="styleList">{styles.map(style => <option key={style} value={style} />)}</datalist>
             </div>
 
             <div className="space-y-2">
               <Label className="flex items-center gap-2"><Spool className="w-4 h-4" /> Cone Number</Label>
-              <input list="coneList" value={coneNo} onChange={(e) => setConeNo(e.target.value)} className="w-full h-10 rounded-md border px-3" />
+              <input
+                list="coneList"
+                value={coneNo}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setConeNo(val);
+                  if (lineNo && styleNo && val) {
+                    fetch(`http://localhost:4000/buyer?line=${lineNo}&style=${encodeURIComponent(styleNo)}&oc=${val}`)
+                      .then(res => res.json())
+                      .then(data => {
+                        if (data.buyer) setBuyer(data.buyer);
+                      })
+                      .catch(() => { });
+                  }
+                }}
+                className="w-full h-10 rounded-md border px-3"
+              />
               <datalist id="coneList">{cones.map(cone => <option key={cone} value={cone} />)}</datalist>
             </div>
 

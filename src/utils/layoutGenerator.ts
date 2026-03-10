@@ -21,7 +21,7 @@ const ROT_FACE_BACK = Math.PI / 2;
 
 const FT = 0.3048;
 
-export const LAYOUT_LOGIC_VERSION = 41;
+export const LAYOUT_LOGIC_VERSION = 53;
 export const FIXED_ASSEMBLY_START = 0;
 
 export interface SectionPreset {
@@ -56,11 +56,6 @@ export function getLayoutSpecs(lineNo: string = "Line 1") {
     const presetKey = num >= 6 ? 'B' : 'A';
     const p = LINE_PRESETS[presetKey];
 
-    // Scaling factors (preserving the existing FT scaling used in code if it was intentional)
-    // NOTE: The user says "Length (m)", but existing code used "34.34 * FT".
-    // I will stick to what the user provides as meters, but keep the FT conversion if the scene expects it.
-    // However, looking at the consistency, I'll assume 1 unit = 1 foot currently?
-    // Let's stick to the FT scaling for now to avoid breaking the 3D ground size without checking it.
     const S = FT;
 
     const pA = LINE_PRESETS['A'];
@@ -157,15 +152,12 @@ export function findOverflowSection(currentSection: string, cursors?: LaneCursor
 
 export const getNextValidX = (currentX: number, machineLength: number, zones: { start: number, end: number }[]): number => {
     let x = currentX;
-    // Strictly find a zone that can FULLY contain the machine
     for (const zone of zones) {
         const potentialStart = Math.max(x, zone.start);
         if (potentialStart + machineLength <= zone.end) {
             return potentialStart;
         }
     }
-    // If no zone fits, we return the original x (or a very large value to signal overflow)
-    // but the placement loop handles this via warn/overflow
     return x;
 };
 
@@ -213,7 +205,6 @@ export const generateLayout = (
     const warnings: string[] = [];
 
     // ─── Parallel Balancing ───
-    // Assembly section target is target / 3
     const assemblyKeywords = ['assembly', 'joining', 'stitching', 'sewing', 'lane', 'line'];
     const isAssemblyOp = (op: Operation) => {
         const sec = (op.section || '').toLowerCase();
@@ -224,7 +215,7 @@ export const generateLayout = (
     const prepOps = rawOperations.filter(op => !isAssemblyOp(op));
 
     const balancedPrep = calculateMachineRequirements(prepOps, targetOutput, workingHours, efficiency);
-    const balancedAssembly = calculateMachineRequirements(assemblyOps, targetOutput / 3.0, workingHours, efficiency);
+    const balancedAssembly = calculateMachineRequirements(assemblyOps, Math.ceil(targetOutput / 3), workingHours, efficiency);
 
     const balancedOps = [...balancedPrep, ...balancedAssembly];
 
@@ -237,15 +228,12 @@ export const generateLayout = (
         const opName = item.operation.op_name.toLowerCase();
         const mType = item.operation.machine_type.toLowerCase();
 
-        // Skip only non-production overhead like washing allowance
         if (opName.includes('washing allowance') || opName.includes('washing_allowance')) return;
 
-        // Map truly unknown machine types to a 'Helper Table' so they render correctly
         if (!item.operation.machine_type || item.operation.machine_type.toLowerCase() === 'unknown') {
             item.operation.machine_type = 'Helper Table';
         }
 
-        // Skip operations with section='Unknown' and no meaningful machine type
         const sec = item.operation.section || 'Unknown';
         if (sec === 'Unknown') {
             console.warn('[layoutGenerator] Skipping op with Unknown section:', item.operation.op_name);
@@ -271,7 +259,6 @@ export const generateLayout = (
         if (idx !== -1) sectionOrder.splice(idx, 1);
     });
 
-    // Assembly section handling - ONLY if present in OB
     if (mergedAssemblyOps.length > 0) {
         sectionsMap.set("Assembly", mergedAssemblyOps);
         if (!sectionOrder.includes("Assembly")) sectionOrder.push("Assembly");
@@ -282,7 +269,7 @@ export const generateLayout = (
     const abSections = ['cuff', 'sleeve', 'back'];
     const cdSections = ['collar', 'front'];
 
-    const addMachine = (op: Operation, lane: 'A' | 'B' | 'C' | 'D', xPos: number, countIdx: number, forcedRot?: number, sectionName?: string, centerModel?: boolean) => {
+    const addMachine = (op: Operation, lane: 'A' | 'B' | 'C' | 'D', xPos: number, countIdx?: number, forcedRot?: number, sectionName?: string, centerModel?: boolean) => {
         const secLower = sectionName?.toLowerCase() || '';
         let z = 0, ry = 0;
         if (lane === 'A') { z = LANE_Z_A; ry = 0; }
@@ -297,7 +284,7 @@ export const generateLayout = (
         const isAssembly = secLower.includes('assembly') || secLower.includes('lane') || secLower.includes('line') || secLower.includes('joining');
         if (secLower.includes('cuff') || secLower.includes('sleeve') || secLower.includes('front') || secLower.includes('back') || secLower.includes('collar') || isAssembly) {
             if (isAssembly) { if (forcedRot === undefined) ry = (lane === 'B' || lane === 'C') ? ROT_FACE_FRONT : ROT_FACE_BACK; }
-            else { if (forcedRot === undefined) ry = (lane === 'A' || lane === 'C') ? 0 : Math.PI; }
+            else if (forcedRot === undefined) { ry = (lane === 'A' || lane === 'C') ? 0 : Math.PI; }
 
             const dims = getMachineZoneDims(op.machine_type);
             const needsOp = !op.machine_type.toLowerCase().includes('supermarket') && !op.machine_type.toLowerCase().includes('trolley');
@@ -328,14 +315,19 @@ export const generateLayout = (
             z = (lane === 'A' || lane === 'C') ? midZ - b.minWZ : midZ - b.maxWZ;
         }
 
+        if (!sectionCounters[sectionName || op.section]) {
+            sectionCounters[sectionName || op.section] = 1;
+        }
+        const mIdx = countIdx ?? sectionCounters[sectionName || op.section]++;
+
         layout.push({
-            id: `${op.op_no}-${countIdx}-${uuidv4()}`,
+            id: `${op.op_no}-${mIdx}-${uuidv4()}`,
             operation: op,
             position: { x: xPos, y: 0, z },
             rotation: { x: 0, y: ry, z: 0 },
             lane,
             section: sectionName || op.section,
-            machineIndex: countIdx,
+            machineIndex: mIdx - 1,
             centerModel: centerModel || op.machine_type.toLowerCase().includes('table')
         });
     };
@@ -356,6 +348,8 @@ export const generateLayout = (
     const isSpilledForward: Record<string, boolean> = {};
 
     // --- PHASE 1: PRE-CALCULATE SPILLS ---
+    // availableLen = the X-extent of the zone minus space reserved for inspection (+supermarket for front/back)
+    // usedLen = sum of machine widths (alternating lanes share same X cursor, so each machine contributes 1× its width to X)
     const sectionSpace: Record<string, { availableLen: number, usedLen: number }> = {};
     for (const tag of PARTS_ORDER) {
         const zoneBounds = PART_BOUNDS[tag as keyof typeof PART_BOUNDS];
@@ -367,14 +361,30 @@ export const generateLayout = (
         sectionSpace[tag] = { availableLen: (zoneLen - reservedX), usedLen: 0 };
     }
 
+    // Calculate X-consumption per section:
+    // Alternating placement means both Lane-A and Lane-B machines share the X cursor.
+    // Each machine in an alternating pair advances X by 1× its width (not 0.5×).
+    // We model it as: max machines in either lane × machine width.
+    // For N machines alternating: ceil(N/2) per lane → X consumed = ceil(N/2) × width (use max lane).
     for (const secName of processingOrder) {
         const secLower = secName.toLowerCase();
         const ops = sectionsMap.get(secName)!;
         const matchedTag = PARTS_ORDER.find(tag => secLower.includes(tag));
         if (matchedTag && !secLower.includes('assembly')) {
-            const factor = 2.0;
-            const machineLen = (ops.reduce((sum, item) => sum + (getMachineZoneDims(item.operation.machine_type).length * item.count), 0) / factor);
-            sectionSpace[matchedTag].usedLen += machineLen;
+            // Each pair of machines shares the same X slot. X consumed = ceil(totalCount/2) × avg_width
+            // But since types may differ we sum per-machine and divide by 2 lanes.
+            let lane1X = 0, lane2X = 0;
+            let alt = 0;
+            for (const item of ops) {
+                const w = getMachineZoneDims(item.operation.machine_type).length;
+                for (let k = 0; k < item.count; k++) {
+                    if (alt % 2 === 0) lane1X += w;
+                    else lane2X += w;
+                    alt++;
+                }
+            }
+            // X consumed in this section = max of the two lanes (the longer lane determines how far the cursor goes)
+            sectionSpace[matchedTag].usedLen += Math.max(lane1X, lane2X);
         }
     }
 
@@ -386,6 +396,7 @@ export const generateLayout = (
 
         if (matchedTag && !secLower.includes('assembly')) {
             const spaceInfo = sectionSpace[matchedTag];
+            // Only spill when the section is GENUINELY full (usedLen strictly exceeds available)
             if (spaceInfo.usedLen > spaceInfo.availableLen) {
                 const excess = spaceInfo.usedLen - spaceInfo.availableLen;
                 const overflowTarget = findOverflowSection(secLower, cursors, isAB);
@@ -404,52 +415,35 @@ export const generateLayout = (
                             const sourceIdx = PARTS_ORDER.indexOf(matchedTag);
                             const isNext = targetIdx > sourceIdx;
 
+                            // Move machines from the overflow end of the section
                             const movedOps: any[] = [];
                             let remainingExcess = excess;
                             while (ops.length > 0 && remainingExcess > 0) {
-                                if (isNext) {
-                                    const item = ops[ops.length - 1];
-                                    const machineWidth = (getMachineZoneDims(item.operation.machine_type).length);
-                                    const lenContribution = (machineWidth * item.count) / 2.0;
+                                const item = isNext ? ops[ops.length - 1] : ops[0];
+                                const machineWidth = getMachineZoneDims(item.operation.machine_type).length;
+                                // Each machine contributes its full width to the excess calculation (per-lane widths)
+                                const lenPerMachine = machineWidth;
 
-                                    let countToMove = 0;
-                                    while (countToMove < item.count && (countToMove * (machineWidth / 2.0)) < remainingExcess) {
-                                        countToMove++;
-                                    }
+                                let countToMove = 0;
+                                while (countToMove < item.count && (countToMove * lenPerMachine) < remainingExcess) {
+                                    countToMove++;
+                                }
 
-                                    if (countToMove >= item.count) {
-                                        movedOps.unshift(ops.pop()!);
-                                        remainingExcess -= lenContribution;
-                                    } else {
-                                        const splitItem = { ...item, count: countToMove };
-                                        item.count -= countToMove;
-                                        movedOps.unshift(splitItem);
-                                        remainingExcess -= (countToMove * (machineWidth / 2.0));
-                                    }
+                                if (countToMove >= item.count) {
+                                    if (isNext) movedOps.unshift(ops.pop()!);
+                                    else movedOps.push(ops.shift()!);
+                                    remainingExcess -= item.count * lenPerMachine;
                                 } else {
-                                    const item = ops[0];
-                                    const machineWidth = (getMachineZoneDims(item.operation.machine_type).length);
-                                    const lenContribution = (machineWidth * item.count) / 2.0;
-
-                                    let countToMove = 0;
-                                    while (countToMove < item.count && (countToMove * (machineWidth / 2.0)) < remainingExcess) {
-                                        countToMove++;
-                                    }
-
-                                    if (countToMove >= item.count) {
-                                        movedOps.push(ops.shift()!);
-                                        remainingExcess -= lenContribution;
-                                    } else {
-                                        const splitItem = { ...item, count: countToMove };
-                                        item.count -= countToMove;
-                                        movedOps.push(splitItem);
-                                        remainingExcess -= (countToMove * (machineWidth / 2.0));
-                                    }
+                                    const splitItem = { ...item, count: countToMove };
+                                    item.count -= countToMove;
+                                    if (isNext) movedOps.unshift(splitItem);
+                                    else movedOps.push(splitItem);
+                                    remainingExcess -= countToMove * lenPerMachine;
                                 }
                             }
                             if (isNext) isSpilledForward[secName] = true;
                             spillPending[targetTag] = { ops: movedOps, isNext: isNext, sourceSection: secName };
-                            warnings.unshift(`${secName} ${movedOps.length > 0 ? 'overflow' : 'inspection'} moved to ${overflowTarget}`);
+                            warnings.unshift(`${secName} overflow (${movedOps.reduce((s, o) => s + o.count, 0)} machines) moved to ${overflowTarget}`);
                         } else {
                             warnings.unshift(`Space limit exceeded on ${secName}. No space left in ${overflowTarget}.`);
                             sectionSpaceViolators.push(secName);
@@ -475,8 +469,9 @@ export const generateLayout = (
         const matchedTag = PARTS_ORDER.find(tag => secLower.includes(tag));
         const zoneBounds = matchedTag ? PART_BOUNDS[matchedTag] : { start: 0, end: 500 };
 
-        const currentTail = isAB ? Math.max(cursors.A, cursors.B) : Math.max(cursors.C, cursors.D);
-        let alternatingX = Math.max(zoneBounds.start, currentTail);
+        // Every section ALWAYS starts from its own section border.
+        // We never continue placing from where the previous section left off.
+        let alternatingX = zoneBounds.start;
 
         const isAssemblySec = secLower.includes('assembly');
         if (isAssemblySec) {
@@ -490,15 +485,15 @@ export const generateLayout = (
             ops.forEach((item) => {
                 const { operation, count } = item;
                 const dims = getMachineZoneDims(operation.machine_type);
-                const step = dims.width + 0.4; // Increased gap (40cm)
+                const step = dims.width + 0.4;
 
                 for (let c = 0; c < count; c++) {
                     const xPosAB = currentX_AB + (dims.width / 2);
                     const xPosCD = currentX_CD + (dims.width / 2);
 
-                    addMachine(operation, 'B', xPosAB, sectionCounters[secName], ROT_FACE_FRONT, "Assembly 1", true);
-                    addMachine(operation, 'A', xPosAB, sectionCounters[secName], ROT_FACE_BACK, "Assembly 2", true);
-                    addMachine(operation, 'D', xPosCD, sectionCounters[secName], ROT_FACE_BACK, "Assembly 3", true);
+                    addMachine(operation, 'B', xPosAB, sectionCounters[secName], -Math.PI / 2, "Assembly 1", true);
+                    addMachine(operation, 'A', xPosAB, sectionCounters[secName], Math.PI / 2, "Assembly 2", true);
+                    addMachine(operation, 'D', xPosCD, sectionCounters[secName], Math.PI / 2, "Assembly 3", true);
 
                     sectionCounters[secName]++;
                     currentX_AB += step;
@@ -517,13 +512,12 @@ export const generateLayout = (
             }
 
             cursors.A = currentX_AB; cursors.B = currentX_AB;
-            cursors.D = currentX_CD; // Lane D (Assembly 3) follows CD current
-            cursors.C = hX;          // Lane C (Assembly 4) follows hX independently
+            cursors.D = currentX_CD;
+            cursors.C = hX;
 
             const finalX_AB = currentX_AB;
             const finalX_CD = Math.max(currentX_CD, hX);
 
-            // Push two separate boxes for Assembly AB and CD to match previous visual style
             sectionLayouts.push({
                 id: uuidv4(), name: "Assembly AB", position: { x: startX_AssemblyAB, y: 0, z: LANE_Z_CENTER_AB },
                 length: specs.assemblyAB.end - specs.assemblyAB.start, width: specs.widthAB, color: '#f06b43'
@@ -540,12 +534,9 @@ export const generateLayout = (
         const targetSpecs = matchedTag ? specs.sections[matchedTag as keyof typeof specs.sections] : null;
         const sectionLimit = targetSpecs?.end || Infinity;
 
-        // The point where the supermarket starts
         const hasSupermarket = (matchedTag === 'front' || matchedTag === 'back');
         const supermarketStart = sectionLimit - (hasSupermarket ? sDims.width : 0);
 
-        // Strictly reserve space for inspection in ALL sections
-        // and supermarket in Front/Back sections
         const reservation = (iDims.length + 3 * INSPECTION_GAP + 0.01);
         const machineZoneEnd = supermarketStart - reservation;
 
@@ -574,11 +565,8 @@ export const generateLayout = (
                 }
             }
             const maxW = Math.max(lane1W, lane2W);
-
-            // currentTail holds the exact point where the preceding section (Collar)
-            // finished its core layout and inspection.
-            // ALIGN WITH BORDER but NEVER overlap with Collar machines or inspection
-            const startX_O = Math.max(currentTail + 0.05, zoneEnd - maxW);
+            const collarTail = isAB ? Math.max(cursors.A, cursors.B) : Math.max(cursors.C, cursors.D);
+            const startX_O = Math.max(collarTail + 0.05, zoneEnd - maxW);
 
             let lCX_O = startX_O;
             let rCX_O = startX_O;
@@ -592,8 +580,8 @@ export const generateLayout = (
                 for (let k = 0; k < item.count; k++) {
                     const targetLane = (alt_O % 2 === 0) ? lLane : rLane;
                     let nextX = getNextValidX(targetLane === lLane ? lCX_O : rCX_O, w, collarZones);
-                    const minFloor = (currentTail || 0) + 0.5;
-                    nextX = Math.max(nextX, minFloor); // Enforce Supreme Floor
+                    const minFloor = (collarTail || 0) + 0.5;
+                    nextX = Math.max(nextX, minFloor);
                     if (targetLane === lLane) {
                         lCX_O = nextX;
                         addMachine(item.operation, lLane, lCX_O + w / 2, sectionCounters['Front Overflow']++, undefined, 'Front Overflow', true);
@@ -608,11 +596,10 @@ export const generateLayout = (
             }
             delete spillPending['collar'];
 
-            // Important: Advance alternatingX so exactly when Front Main starts, it naturally sits AFTER Overflow!
             alternatingX = Math.max(alternatingX, Math.max(lCX_O, rCX_O));
         }
 
-        lCX = alternatingX; // Reset to the correct start point for Front Main
+        lCX = alternatingX;
         rCX = alternatingX;
 
         const isAssembly = secLower.includes('assembly') || secLower.includes('lane') || secLower.includes('line') || secLower.includes('joining');
@@ -627,32 +614,30 @@ export const generateLayout = (
 
         const boxLength = targetSpecs ? targetSpecs.end - targetSpecs.start : 500;
 
-        const currentSectionLayout = {
-            id: uuidv4(), name: secName, position: { x: targetSpecs?.start || 0, y: 0, z: isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD },
-            length: boxLength, width: isAB ? specs.widthAB : specs.widthCD, color: secColor
-        };
-        sectionLayouts.push(currentSectionLayout);
+        if (targetSpecs) {
+            const currentSectionLayout = {
+                id: uuidv4(), name: secName, position: { x: targetSpecs.start, y: 0, z: isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD },
+                length: boxLength, width: isAB ? specs.widthAB : specs.widthCD, color: secColor
+            };
+            sectionLayouts.push(currentSectionLayout);
+        }
 
-        const addInspection = (sName: string, cur: LaneCursors, isAB_sect: boolean, zns: any[]) => {
+        const addInspection = (sName: string, cur: LaneCursors, isAB_sect: boolean, _zns: any[], baseOps?: any[]) => {
+            console.log(`[Layout] Placing ${baseOps?.length || 1} Inspection(s) for ${sName}`);
             const iDims = getMachineZoneDims('inspection');
-            // Uniform gap relative to its own lane (A or C)
-            const targetLaneX = isAB_sect ? lCX : lCX;
-            const initialStart = targetLaneX + INSPECTION_GAP;
 
-            // Jump over pathways
-            let iStart = getNextValidX(initialStart, iDims.length, zns);
+            // Inspection goes DIRECTLY after the last machine — no zone-jumping.
+            // We reserved space at end of section (machineZoneEnd) precisely for this.
+            let iStart = Math.max(lCX, rCX) + 0.2;
 
-            // Cap inspection point to stay strictly inside the section boundary
+            // Hard limit: must stay within section boundary
             const capTarget = (matchedTag === 'front' || matchedTag === 'back') ? supermarketStart : sectionLimit;
             const maxIStart = capTarget - iDims.length - INSPECTION_GAP;
-
-            // Final safety: ensure it doesn't go before the machines if it's being pulled back
             if (iStart > maxIStart) iStart = maxIStart;
 
-            // Final safety: ensure it's not before the section start
+            // Must not go before section start
             if (iStart < (targetSpecs?.start || 0)) iStart = (targetSpecs?.start || 0) + 0.01;
 
-            // Visually check if we jumped to a new section area
             let finalSection = sName;
             const midX = iStart + iDims.length / 2;
             for (const [part, bounds] of Object.entries(PART_BOUNDS)) {
@@ -662,20 +647,28 @@ export const generateLayout = (
                 }
             }
 
-            layout.push({
-                id: `inspect-${sName}-${uuidv4()}`,
-                operation: createDummyOp(`${sName} Inspection`, finalSection),
-                position: {
-                    x: iStart + iDims.length / 2,
-                    y: 0,
-                    z: (isAB_sect ? LANE_Z_A : LANE_Z_C)
-                },
-                rotation: { x: 0, y: ROT_FACE_FRONT, z: 0 },
-                lane: (isAB_sect ? 'A' : 'C'),
-                isInspection: true,
-                section: finalSection,
-                centerModel: true
-            });
+            const opsToUse = (baseOps && baseOps.length > 0) ? baseOps : [{ operation: createDummyOp(`${sName} Inspection`, finalSection), count: 1 }];
+
+            for (const item of opsToUse) {
+                for (let k = 0; k < item.count; k++) {
+                    addMachine(
+                        item.operation,
+                        (isAB_sect ? 'A' : 'C'),
+                        iStart + iDims.length / 2,
+                        undefined,
+                        -Math.PI / 2,
+                        sName,
+                        true
+                    );
+                    iStart += iDims.length + INSPECTION_GAP;
+                }
+            }
+
+            const lastM = layout[layout.length - 1];
+            if (lastM) {
+                lastM.isInspection = true;
+                lastM.id = `inspect-${sName}-${uuidv4()}`;
+            }
 
             const iEnd = iStart + iDims.length;
             lCX = iEnd;
@@ -691,17 +684,14 @@ export const generateLayout = (
                 for (let k = 0; k < item.count; k++) {
                     const targetLane = (alt % 2 === 0) ? lLane : rLane;
 
-                    // Strictly enforce the machineZoneEnd cap in the placement
                     if (targetLane === lLane) {
                         const nextX = getNextValidX(lCX, w, zones);
                         if (nextX + w > machineZoneEnd + 0.01) {
                             sectionSpaceViolators.push(sourceSecLabel);
-                            // If it doesn't fit in capped Zone, we still place it but log violation
-                            // The spill logic should have prevented this, but we need a final safety
                         }
                         lCX = nextX;
                         addMachine(item.operation, lLane, lCX + w / 2, sectionCounters[sourceSecLabel]++, undefined, sourceSecLabel, true);
-                        lCX += w;
+                        lCX += w + MACHINE_SPACING_X;
                     } else {
                         const nextX = getNextValidX(rCX, w, zones);
                         if (nextX + w > machineZoneEnd + 0.01) {
@@ -709,25 +699,30 @@ export const generateLayout = (
                         }
                         rCX = nextX;
                         addMachine(item.operation, rLane, rCX + w / 2, sectionCounters[sourceSecLabel]++, undefined, sourceSecLabel, true);
-                        rCX += w;
+                        rCX += w + MACHINE_SPACING_X;
                     }
                     alt++;
                 }
             }
         };
 
-        // 1. If this section is a target for "Next" spillovers (moving forward, e.g. Cuff -> Sleeve)
-        // These go to the START of the section.
+        // 1. If this section is a target for "Next" spillovers
+        // Spilled machines AND their inspection are placed here (inspection follows machines)
         if (matchedTag && spillPending[matchedTag]?.isNext) {
             const pending = spillPending[matchedTag];
             const sourceSec = (pending as any).sourceSection || (pending.ops.length > 0 ? pending.ops[0].operation.section : 'Unknown');
             placeOps(pending.ops, sourceSec);
+            // Inspection always follows the last spilled machine into the same target zone
             addInspection(sourceSec, cursors, isAB, zones);
             delete spillPending[matchedTag];
         }
 
-        // 2. Place current section machines (e.g. Collar machines)
-        placeOps(ops, secName);
+        // 2. Separate machines for correct end-of-section placement
+        const regularOps = ops.filter(o => !o.operation.machine_type.toLowerCase().includes('inspection') && !o.operation.machine_type.toLowerCase().includes('supermarket'));
+        const inspectionOps = ops.filter(o => o.operation.machine_type.toLowerCase().includes('inspection'));
+        const smOps = ops.filter(o => o.operation.machine_type.toLowerCase().includes('supermarket'));
+
+        placeOps(regularOps, secName);
 
         if (matchedTag) {
             sectionTails[matchedTag] = { lTail: lCX, rTail: rCX };
@@ -738,7 +733,7 @@ export const generateLayout = (
 
         // --- PHASE A: INSPECTION PLACEMENT ---
         if (!isSpilledForward[secName]) {
-            addInspection(secName, cursors, isAB, zones);
+            addInspection(secName, cursors, isAB, zones, inspectionOps);
         }
 
         // --- PHASE B: PLACE PENDING SPILLOVERS FROM THE END OF THE SECTION ---
@@ -746,7 +741,6 @@ export const generateLayout = (
             const pending = spillPending[matchedTag];
             const zoneEnd = PART_BOUNDS[matchedTag].end;
 
-            // Calculate exact width needed for alternating placement
             let lane1W = 0, lane2W = 0;
             let tempAlt = alt;
             for (const item of pending.ops) {
@@ -760,8 +754,6 @@ export const generateLayout = (
             const exactPendingWidth = Math.max(lane1W, lane2W);
             const spillStart = zoneEnd - exactPendingWidth;
 
-            // Align each lane independently so they both finish at the exact zone boundary
-            // We use the last placed inspection's end as the minimum starting point
             const currentEndX = isAB ? Math.max(cursors.A, cursors.B) : Math.max(cursors.C, cursors.D);
             lCX = Math.max(currentEndX + 0.05, zoneEnd - lane1W);
             rCX = Math.max(currentEndX + 0.05, zoneEnd - lane2W);
@@ -779,19 +771,23 @@ export const generateLayout = (
             const sDims = getMachineZoneDims('supermarket');
             const targetSpecs = secLower.includes('front') ? specs.front : specs.back;
             const absEnd = targetSpecs.end;
-            layout.push({
-                id: `super-${secName}`, operation: createDummyOp('Supermarket', secName),
-                position: { x: absEnd - sDims.width / 2 - 0.2, y: 0, z: (isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD) },
-                rotation: { x: 0, y: ROT_FACE_FRONT + Math.PI, z: 0 }, lane: (isAB ? 'A' : 'C'), section: secName, centerModel: true
-            });
+            addMachine(
+                createDummyOp('Supermarket', secName),
+                (isAB ? 'A' : 'C'),
+                absEnd - sDims.width / 2 - 0.2,
+                undefined,
+                undefined,
+                secName,
+                true
+            );
+            const superM = layout[layout.length - 1];
+            if (superM) {
+                superM.rotation.y = ROT_FACE_FRONT + Math.PI;
+                superM.id = `super-${secName}`;
+            }
             const eX = absEnd;
             if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
             else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
-
-            // Length and position are now preset-fixed above
-            // No action needed here as we use fixed boxing
-        } else {
-            // No action needed here as we use fixed boxing
         }
 
         // --- SPACE MONITORING ---

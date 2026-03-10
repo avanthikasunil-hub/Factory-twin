@@ -101,7 +101,7 @@ export const Scene3D = ({
             const centerZ = section.position.z;
 
             return (
-              <group key={section.id} position={[centerX, 0.5, centerZ]} renderOrder={10}>
+              <group key={section.id} position={[centerX, 0.01, centerZ]} renderOrder={10}>
                 {/* Section Floor Area */}
                 <mesh rotation={[-Math.PI / 2, 0, 0]}>
                   <planeGeometry args={[section.length, section.width]} />
@@ -119,55 +119,64 @@ export const Scene3D = ({
                 {/* Section Border - Yellow for all zones */}
                 <WideBorder length={section.length} width={section.width} color="#facc15" />
 
-                {/* Section Label - Hanlde Dual Assembly Labels */}
+                {/* Section Label - Outside the zone, flat on ground */}
                 {section.name.toLowerCase().includes('assembly') ? (
                   <>
                     <Text
-                      position={[0, 0.6, -section.width / 2 - 0.5]}
+                      position={[0, 0.02, -section.width / 2 - 0.8]}
                       rotation={[-Math.PI / 2, 0, 0]}
-                      fontSize={0.6}
+                      fontSize={0.8}
                       color="white"
                       anchorX="center"
                       anchorY="middle"
-                      fontWeight="bold"
+                      fontWeight="black"
+                      fillOpacity={0.6}
                     >
                       {section.name.toLowerCase().includes('ab') ? "ASSEMBLY 1" : "ASSEMBLY 3"}
                     </Text>
                     <Text
-                      position={[0, 0.6, section.width / 2 + 0.5]}
+                      position={[0, 0.02, section.width / 2 + 0.8]}
                       rotation={[-Math.PI / 2, 0, 0]}
-                      fontSize={0.6}
+                      fontSize={0.8}
                       color="white"
                       anchorX="center"
                       anchorY="middle"
-                      fontWeight="bold"
+                      fontWeight="black"
+                      fillOpacity={0.6}
                     >
                       {section.name.toLowerCase().includes('ab') ? "ASSEMBLY 2" : "ASSEMBLY 4"}
                     </Text>
                   </>
                 ) : (
                   <Text
-                    position={[0, 0.6, centerZ < -3 ? (-section.width / 2 - 0.5) : (section.width / 2 + 0.5)]}
+                    position={[0, 0.02, centerZ < -3 ? (-section.width / 2 - 0.8) : (section.width / 2 + 0.8)]}
                     rotation={[-Math.PI / 2, 0, 0]}
-                    fontSize={0.6}
+                    fontSize={0.8}
                     color="white"
                     anchorX="center"
                     anchorY="middle"
-                    fontWeight="bold"
+                    fontWeight="black"
+                    fillOpacity={0.6}
                   >
-                    {section.name.replace(/Line \d+ /i, '').toUpperCase()}
+                    {section.name
+                      .replace(/Line \d+/gi, '')
+                      .replace(/undefined/gi, '')
+                      .replace(/cd/gi, '')
+                      .trim()
+                      .toUpperCase()}
                   </Text>
                 )}
 
-                {/* Line Start/End Markers - Positioning to match screenshot */}
+                {/* Line Start/End Markers - Grounded */}
                 {section.name.toLowerCase().includes('cuff') && (
-                  <group position={[-section.length / 2 - 6, 0.6, 3]}>
+                  <group position={[-section.length / 2 - 6, 0.02, 3]}>
                     <Text
                       rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
                       fontSize={1.8}
                       color="white"
                       fontWeight="black"
                       anchorX="center"
+                      fillOpacity={0.4}
                     >
                       {section.name.split(' ')[0] + ' ' + section.name.split(' ')[1]}
                     </Text>
@@ -175,12 +184,13 @@ export const Scene3D = ({
                 )}
 
                 {section.name.toLowerCase().includes('assembly cd') && (
-                  <group position={[section.length / 2 + 6, 0.6, -3]}>
+                  <group position={[section.length / 2 + 6, 0.02, -3]}>
                     <Text
                       rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
                       fontSize={1.8}
                       color="white"
                       fontWeight="black"
+                      fillOpacity={0.4}
                     >
                       {section.name.split(' ')[0] + ' ' + section.name.split(' ')[1]}
                     </Text>

@@ -31,6 +31,7 @@ const NAV_ITEMS = [
     { id: "overview", label: 'Overview', icon: LayoutDashboard, path: '/virtual-line/overview' },
     { id: "floor", label: 'Floor View', icon: Map, path: '/virtual-line/floor' },
     { id: "tracker", label: 'COT Tracker', icon: Activity, path: '/virtual-line/tracker' },
+    { id: "ob", label: 'Style OB', icon: Layers, path: '/virtual-line/ob' },
     { id: "dashboard", label: 'Dashboard', icon: Layout, path: '/' },
 ];
 

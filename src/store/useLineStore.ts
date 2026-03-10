@@ -38,6 +38,7 @@ interface LineStore {
     lineNo: string,
     styleNo: string,
     coneNo: string,
+    buyer: string,
     operations: Operation[],
     efficiency?: number,
     targetOutput?: number,
@@ -284,7 +285,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     set({ operations, selectedMachine: null });
   },
 
-  createLine: (lineNo, styleNo, coneNo, operations, efficiency = 100, inputTargetOutput = 1000, inputTotalSMV?: number, inputWorkingHours = 9, sourceSheet = "") => {
+  createLine: (lineNo, styleNo, coneNo, buyer, operations, efficiency = 100, inputTargetOutput = 1000, inputTotalSMV?: number, inputWorkingHours = 9, sourceSheet = "") => {
     (get() as any).takeSnapshot();
     const targetOutput = inputTargetOutput;
     const workingHours = inputWorkingHours;
@@ -298,7 +299,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const totalSMV = inputTotalSMV || calculatedTotal;
 
     const line: LineData = {
-      id: uuidv4(), lineNo, styleNo, coneNo, operations,
+      id: uuidv4(), lineNo, styleNo, coneNo, buyer, operations,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       machineLayout: machines, sectionLayout: sections, totalSMV,
       targetOutput, workingHours, efficiency, sourceSheet

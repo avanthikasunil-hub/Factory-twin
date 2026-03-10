@@ -17,15 +17,15 @@ import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 
 const LINE_DATA = [
-    { id: 1, name: "Line 1", floor: "Floor 1", style: "Polo Shirt V2", startDate: "01/03/2024", endDate: "15/03/2024", status: "Active" },
-    { id: 2, name: "Line 2", floor: "Floor 1", style: "Crew Neck Tee", startDate: "05/03/2024", endDate: "20/03/2024", status: "Active" },
-    { id: 3, name: "Line 3", floor: "Floor 1", style: "Running Shorts", startDate: "02/03/2024", endDate: "18/03/2024", status: "Pending" },
-    { id: 4, name: "Line 4", floor: "Floor 1", style: "Yoga Pants", startDate: "10/03/2024", endDate: "25/03/2024", status: "Active" },
-    { id: 5, name: "Line 5", floor: "Floor 1", style: "Hoodie Basic", startDate: "08/03/2024", endDate: "22/03/2024", status: "Active" },
-    { id: 6, name: "Line 6", floor: "Floor 1", style: "Cargo Shorts", startDate: "12/03/2024", endDate: "27/03/2024", status: "Maintenance" },
-    { id: 7, name: "Line 7", floor: "Floor 1", style: "Denim Jacket", startDate: "15/03/2024", endDate: "30/03/2024", status: "Pending" },
-    { id: 8, name: "Line 8", floor: "Floor 2", style: "Joggers Sport", startDate: "18/03/2024", endDate: "02/04/2024", status: "Active" },
-    { id: 9, name: "Line 9", floor: "Floor 2", style: "Performance Shorts", startDate: "20/03/2024", endDate: "05/04/2024", status: "Pending" },
+    { id: 1, name: "Line 1", floor: "Floor 1", style: "Polo Shirt V2", buyer: "Nike", startDate: "01/03/2024", endDate: "15/03/2024", status: "Active" },
+    { id: 2, name: "Line 2", floor: "Floor 1", style: "Crew Neck Tee", buyer: "Adidas", startDate: "05/03/2024", endDate: "20/03/2024", status: "Active" },
+    { id: 3, name: "Line 3", floor: "Floor 1", style: "Running Shorts", buyer: "Puma", startDate: "02/03/2024", endDate: "18/03/2024", status: "Pending" },
+    { id: 4, name: "Line 4", floor: "Floor 1", style: "Yoga Pants", buyer: "Nike", startDate: "10/03/2024", endDate: "25/03/2024", status: "Active" },
+    { id: 5, name: "Line 5", floor: "Floor 1", style: "Hoodie Basic", buyer: "Uniqlo", startDate: "08/03/2024", endDate: "22/03/2024", status: "Active" },
+    { id: 6, name: "Line 6", floor: "Floor 1", style: "Cargo Shorts", buyer: "Gap", startDate: "12/03/2024", endDate: "27/03/2024", status: "Maintenance" },
+    { id: 7, name: "Line 7", floor: "Floor 1", style: "Denim Jacket", buyer: "Levi's", startDate: "15/03/2024", endDate: "30/03/2024", status: "Pending" },
+    { id: 8, name: "Line 8", floor: "Floor 2", style: "Joggers Sport", buyer: "Nike", startDate: "18/03/2024", endDate: "02/04/2024", status: "Active" },
+    { id: 9, name: "Line 9", floor: "Floor 2", style: "Performance Shorts", buyer: "Adidas", startDate: "20/03/2024", endDate: "05/04/2024", status: "Pending" },
 ];
 
 export default function VirtualLineOverview() {
@@ -90,6 +90,7 @@ export default function VirtualLineOverview() {
                                 <tr className="bg-violet-950 rounded-[2rem] shadow-2xl shadow-violet-200/50 overflow-hidden border-none text-center">
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em] rounded-l-[2rem]">Production Line</th>
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Current Style</th>
+                                    <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Buyer</th>
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Start Date</th>
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">End Date</th>
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Status</th>
@@ -120,6 +121,9 @@ export default function VirtualLineOverview() {
                                         </td>
                                         <td className="px-8 py-8 bg-slate-50/50 border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
                                             <span className="text-sm font-bold text-slate-800 leading-tight">"{line.style}"</span>
+                                        </td>
+                                        <td className="px-8 py-8 bg-slate-50/50 border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
+                                            <span className="text-sm font-black text-slate-600 tracking-tight uppercase">{line.buyer}</span>
                                         </td>
                                         <td className="px-8 py-8 bg-slate-50/50 border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
                                             <span className="text-sm font-black text-slate-600 tracking-tight">{line.startDate}</span>

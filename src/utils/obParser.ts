@@ -20,6 +20,7 @@ const COLUMN_ALIASES = {
     'allocated time', 'target time', 'estimated time', 'val', 'standard val',
     'smv total', 'total smv', 'work content', 'mins', 'min', 'pitch time', 'standard minutes',
     'standard value', 'std value', 'std.min', 'smv/pc', 'smv / pc', 'machine smv',
+    'target smv', 'm/c smv', 'manual smv', 'cycle_time', 'pitch_time', 'smv_total', 'total_smv'
   ],
   section: ['section', 'sect', 'department', 'dept', 'area', 'zone', 'component', 'garment part'],
   tool_folder: ['tool/folder', 'tool', 'folder', 'attachment', 'guide', 'folder/tool'],
@@ -164,6 +165,7 @@ const isOperationRow = (
   opNameIndex: number,
   machineIndex: number,
   smvIndex: number,
+  wsRowIndex?: number
 ): boolean => {
   const opNo = opNoIndex >= 0 ? row[opNoIndex] : undefined;
   const opName = opNameIndex >= 0 ? row[opNameIndex] : undefined;
@@ -176,7 +178,7 @@ const isOperationRow = (
   const mStr = String(machine ?? '').trim().toLowerCase();
   const hasMachine = machine != null && mStr !== '' && mStr !== '0' && mStr !== 'n/a';
 
-  const smvNum = smv != null ? parseFloat(String(smv).replace(/[^\d.]/g, '')) : NaN;
+  const smvNum = smv != null ? parseFloat(String(smv).replace(/[^\d.,]/g, '').replace(',', '.')) : NaN;
   const hasSmv = !isNaN(smvNum) && smvNum > 0;
 
   // REJECTION LOGIC:
@@ -184,27 +186,44 @@ const isOperationRow = (
   if (!hasSmv) return false;
 
   // 2. Must have EITHER a Machine Type OR an Operation Name.
-  // If it only has an SMV and an Op No (like a subtotal row "69 | | | 5.3"), it's garbage.
-  if (!hasOpName && !hasMachine) return false;
+  if (!hasOpName && !hasMachine) {
+    if (typeof wsRowIndex === 'number' && wsRowIndex < 500) {
+      console.log(`[OB Parser] Row ${wsRowIndex} rejected: Has SMV (${smvNum}) but missing both Machine Type and Op Name.`);
+    }
+    return false;
+  }
 
   // 3. Reject summary/total rows based on keywords
-  const firstFive = row.slice(0, 5).map(c => String(c ?? '').toLowerCase());
-  if (firstFive.some(cell => TOTAL_KW.some(k => cell.includes(k)))) return false;
+  // We only check the FIRST cell for 'total' to avoid rejecting operations like "Total Inspection"
+  const firstCell = String(row[0] ?? '').toLowerCase();
+  if (TOTAL_KW.some(k => firstCell.includes(k) && !firstCell.includes('inspection'))) {
+    if (typeof wsRowIndex === 'number' && wsRowIndex < 500) {
+      console.log(`[OB Parser] Row ${wsRowIndex} rejected: Found total/summary keyword in first cell: "${firstCell}"`);
+    }
+    return false;
+  }
 
-  // 4. If name says "Total" or similar and it's not a production line
-  if (cn.includes('total') || cn.includes('sum of')) return false;
+  // 4. Specifically reject "Sub Total" or "Total Sewing" if they appear in op name column
+  if (cn.includes('sub total') || cn === 'total' || cn.includes('grand total')) {
+    return false;
+  }
 
   return true;
 };
 
 const parseValue = (val: unknown): number => {
   if (typeof val === 'number') return val;
-  if (typeof val === 'string') {
-    if (val.startsWith('=')) return 0; // skip formula strings
-    const n = parseFloat(val.replace(/[^\d.]/g, ''));
-    return isNaN(n) ? 0 : n;
-  }
-  return 0;
+  if (!val) return 0;
+
+  const s = String(val).trim();
+  if (!s || s === '0') return 0;
+
+  // If it's a formula string (starts with =), it shouldn't be here if XLSX found the value
+  // but if it is, we try to see if there's a numeric suffix or just skip.
+  if (s.startsWith('=')) return 0;
+
+  const n = parseFloat(s.replace(/[^\d.,]/g, '').replace(',', '.'));
+  return isNaN(n) ? 0 : n;
 };
 
 // ---------------------------------------------------------------------------
@@ -282,12 +301,14 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
     console.log('[OB Parser] No header row found in first 500 rows');
     return null;
   }
+  console.log(`[OB Parser] Found header at row ${headerWsRow}. Columns: opNo=${opNoIndex}, name=${opNameIndex}, machine=${machineIndex}, smv=${smvIndex}, section=${sectionIndex}`);
+
   if (smvIndex === -1) {
-    console.log('[OB Parser] Header found but MISSING SMV column');
+    console.log('[OB Parser] Header found but MISSING SMV column. Headers seen:', extractHeadersFromWorksheet(sheet, headerWsRow));
     return null;
   }
   if (opNoIndex === -1 && opNameIndex === -1) {
-    console.log('[OB Parser] Header found but MISSING Operation Name/No columns');
+    console.log('[OB Parser] Header found but MISSING Operation Name/No columns. Headers seen:', extractHeadersFromWorksheet(sheet, headerWsRow));
     return null;
   }
 
@@ -303,40 +324,69 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
 
   // --- Extract operations ---
   const operations: Operation[] = [];
+  let buyer = '';
   let currentSection = 'General';
   let extractedTotalSMV = 0;
   let calculatedTotalSMV = 0;
   const exactMachineTypes = new Set<string>();
 
   for (let wsRow = headerWsRow + 1; wsRow <= sheetRange.e.r; wsRow++) {
-    // Build dense row array for helper functions — always start from index 0
-    // even if the sheet range starts later, to keep column indexes stable.
     const row: (string | number)[] = [];
     for (let c = 0; c <= Math.max(sheetRange.e.c, opNameIndex, machineIndex, smvIndex); c++) {
       const v = readCell(wsRow, c);
       row[c] = v != null ? v : '';
     }
-    if (row.every(c => c === '' || c == null)) continue;
+
+    const rowIsEmpty = row.every(c => c === '' || c == null);
+    if (rowIsEmpty) continue;
 
     const rowStr = row.map(c => String(c).toLowerCase()).join(' ');
 
     // Capture total SMV
     if (rowStr.includes('grand total') || (rowStr.includes('total') && !rowStr.includes('sub'))) {
       const tv = parseValue(readCell(wsRow, smvIndex));
-      if (tv > extractedTotalSMV) extractedTotalSMV = tv;
+      if (tv > extractedTotalSMV) {
+        console.log(`[OB Parser] Detected Grand Total SMV: ${tv} at row ${wsRow}`);
+        extractedTotalSMV = tv;
+      }
     }
 
     const sectionLabel = isSectionHeader(row, opNoIndex, smvIndex);
-    if (sectionLabel) { currentSection = sectionLabel; continue; }
-    if (!isOperationRow(row, opNoIndex, opNameIndex, machineIndex, smvIndex)) continue;
+    if (sectionLabel) {
+      console.log(`[OB Parser] Section Header found: "${sectionLabel}" at row ${wsRow}`);
+      currentSection = sectionLabel;
+      continue;
+    }
+
+    const isOp = isOperationRow(row, opNoIndex, opNameIndex, machineIndex, smvIndex, wsRow);
+    if (!isOp) {
+      // Log why it was skipped if it looks like it might have been an operation
+      const hasSomething = row.some(c => String(c).trim().length > 0);
+      if (hasSomething && wsRow < headerWsRow + 20) {
+        console.log(`[OB Parser] Skipping row ${wsRow} (not an operation row):`, row.slice(0, 5));
+      }
+      continue;
+    }
+
+    // Capture Buyer from the FIRST column (index 0) of the first operation row if not already found
+    if (!buyer && row[0] != null) {
+      const bVal = String(row[0]).trim();
+      if (bVal && !bVal.toLowerCase().includes('buyer') && bVal.length > 2) {
+        buyer = bVal;
+      }
+    }
 
     const opNoRaw = opNoIndex >= 0 ? String(readCell(wsRow, opNoIndex) ?? '').trim() : '';
     const opName = opNameIndex >= 0 ? String(readCell(wsRow, opNameIndex) ?? '').trim() : '';
     const opNo = opNoRaw || (opName ? opName.substring(0, 10) : `OP-${operations.length + 1}`);
 
-    if (opName.toLowerCase().includes('allowance')) continue;
+    if (opName.toLowerCase().includes('allowance')) {
+      console.log(`[OB Parser] Skipping allowance row: ${opName}`);
+      continue;
+    }
 
-    const smv = parseValue(readCell(wsRow, smvIndex));
+    const smvValueRaw = readCell(wsRow, smvIndex);
+    const smv = parseValue(smvValueRaw);
     const machinist_smv = parseValue(machinistSmvIndex >= 0 ? readCell(wsRow, machinistSmvIndex) : null);
     const non_machinist_smv = parseValue(nonMachinistSmvIndex >= 0 ? readCell(wsRow, nonMachinistSmvIndex) : null);
     const rowSmv = smv || (machinist_smv + non_machinist_smv);
@@ -352,6 +402,7 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
     const lowerName = opName.toLowerCase();
     const lowerType = machineType.toLowerCase();
 
+    // Helper logic
     if (
       lowerType.includes('manual') || lowerType.includes('hand') || lowerType.includes('helper') ||
       lowerName.includes('manual') || lowerName.includes('helper') || lowerName.includes('hand')
@@ -388,8 +439,33 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
 
   if (operations.length === 0) return null;
 
+  // Fallback search in header area (rows 0-20) if not found in first column
+  if (!buyer) {
+    const searchLimit = Math.min(sheetRange.e.r, 20);
+    for (let r = 0; r <= searchLimit; r++) {
+      for (let c = 0; c <= sheetRange.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        const cell = sheet[addr];
+        if (cell && cell.v) {
+          const content = String(cell.v).toLowerCase();
+          if (content.includes('buyer')) {
+            if (content.includes(':')) {
+              buyer = String(cell.v).split(':')[1].trim();
+            } else {
+              const nextCell = sheet[XLSX.utils.encode_cell({ r, c: c + 1 })];
+              if (nextCell && nextCell.v) buyer = String(nextCell.v).trim();
+            }
+            if (buyer) break;
+          }
+        }
+      }
+      if (buyer) break;
+    }
+  }
+
   return {
     operations,
+    buyer,
     totalSMV: extractedTotalSMV > 0 ? extractedTotalSMV : calculatedTotalSMV,
     machineTypesCount: exactMachineTypes.size,
   };
@@ -413,7 +489,7 @@ const SUBOPTIMAL_SHEET_NAMES = ['base', 'template', 'master', 'demo', 'example',
 
 export const parseOBExcel = async (
   file: File,
-): Promise<{ operations: Operation[]; totalSMV: number; machineTypesCount: number; sourceSheet: string }> => {
+): Promise<{ operations: Operation[]; buyer: string; totalSMV: number; machineTypesCount: number; sourceSheet: string }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -429,7 +505,7 @@ export const parseOBExcel = async (
 
         let bestSheet = {
           name: '',
-          data: null as { operations: Operation[]; totalSMV: number; machineTypesCount: number } | null,
+          data: null as { operations: Operation[]; buyer: string; totalSMV: number; machineTypesCount: number } | null,
           score: -1
         };
 
@@ -438,17 +514,24 @@ export const parseOBExcel = async (
           if (!result) continue;
 
           // Scoring logic:
-          // +100 base score for having >= 5 operations (likely a production sheet)
-          // -50 penalty for suboptimal names (Base, Template, etc.)
-          // + result.operations.length as tie-breaker
+          // +1000 base score for having >= 10 operations (definitely a production sheet)
+          // + result.operations.length (prefer more complete sheets)
+          // -500 penalty for suboptimal names (Base, Template, etc.)
           let score = result.operations.length;
-          if (result.operations.length >= 5) score += 100;
+          if (result.operations.length >= 10) score += 1000;
+          else if (result.operations.length >= 5) score += 500;
 
-          if (SUBOPTIMAL_SHEET_NAMES.some(sub => sheetName.toLowerCase().includes(sub))) {
-            score -= 50;
+          const lowerSheet = sheetName.toLowerCase();
+          if (SUBOPTIMAL_SHEET_NAMES.some(sub => lowerSheet.includes(sub))) {
+            score -= 800;
           }
 
-          console.log(`[OB Parser] Sheet "${sheetName}" candidate score: ${score} (${result.operations.length} ops)`);
+          // Bonus for sheets named after lines or containing "OB"
+          if (lowerSheet.includes('line') || lowerSheet.includes('ob') || lowerSheet.includes('sheet')) {
+            score += 200;
+          }
+
+          console.log(`[OB Parser] Sheet "${sheetName}" score: ${score} (${result.operations.length} ops, SMV: ${result.totalSMV})`);
 
           if (score > bestSheet.score) {
             bestSheet = { name: sheetName, data: result, score };

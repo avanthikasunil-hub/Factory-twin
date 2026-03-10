@@ -227,15 +227,6 @@ export const Machine3D = ({ machineData, relativePosition }: Machine3DProps) => 
           <boxGeometry args={[1.5, 0.5, 0.1]} />
           <meshStandardMaterial color="#ffffff" />
         </mesh>
-        <Text
-          position={[0, 0, 0.06]}
-          fontSize={0.2}
-          color="#000000"
-          anchorX="center"
-          anchorY="middle"
-        >
-          {machineData.section}
-        </Text>
       </group>
     );
   }
@@ -283,15 +274,6 @@ export const Machine3D = ({ machineData, relativePosition }: Machine3DProps) => 
           dashSize={0.2}
           gapSize={0.1}
         />
-        <Text
-          position={[0, 0.2, 0]}
-          fontSize={0.12}
-          color="#555"
-          rotation={[-Math.PI / 2, 0, 0]}
-          fontWeight="bold"
-        >
-          {isUnused ? "UNUSED POSITION" : machineData.operation.machine_type.toUpperCase()}
-        </Text>
       </group>
     );
   }
@@ -488,21 +470,6 @@ export const Machine3D = ({ machineData, relativePosition }: Machine3DProps) => 
               )}
             </div>
           </Html>
-        )}
-        {/* Machine Type Label (Always Visible) */}
-        {!mType.includes('pathway') && !mType.startsWith('board') && (
-          <Text
-            position={[0, 1.25, 0]}
-            fontSize={0.15}
-            color="white"
-            anchorX="center"
-            anchorY="middle"
-            fontWeight="bold"
-            outlineWidth={0.02}
-            outlineColor="#000000"
-          >
-            {machineData.operation.machine_type.toUpperCase()}
-          </Text>
         )}
       </group>
 

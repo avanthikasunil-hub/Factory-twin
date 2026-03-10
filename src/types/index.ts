@@ -72,6 +72,7 @@ export interface LineData {
   lineNo: string;
   styleNo: string;
   coneNo: string;
+  buyer?: string;
   createdAt: string;
   updatedAt: string;
   operations: Operation[];

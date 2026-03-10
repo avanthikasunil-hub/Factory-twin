@@ -7,8 +7,6 @@ import { SectionLayout } from "@/types";
 import {
     PlayCircle,
     PauseCircle,
-    Filter,
-    Download,
     Activity,
     User,
     Hash,

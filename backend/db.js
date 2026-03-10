@@ -8,7 +8,8 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       line_no TEXT,
       style_no TEXT,
-      cone_no TEXT
+      cone_no TEXT,
+      buyer TEXT
     )
   `);
 });

@@ -259,9 +259,19 @@ const LinePlannerPage = () => {
               {currentLine ? `${currentLine.lineNo}` : 'Factory Twin'}
             </h1>
             {currentLine?.styleNo && (
-              <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-black text-left">
-                {currentLine.styleNo}
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-black text-left">
+                  {currentLine.styleNo}
+                </p>
+                {currentLine.buyer && (
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">
+                    <Users className="w-3 h-3 text-primary" />
+                    <span className="text-[9px] font-black uppercase tracking-widest text-primary">
+                      {currentLine.buyer}
+                    </span>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

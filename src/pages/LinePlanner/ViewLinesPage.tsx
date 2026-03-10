@@ -10,7 +10,9 @@ import {
   Calendar,
   ChevronRight,
   AlertCircle,
-  Filter
+  Filter,
+  Users,
+  Spool
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLineStore } from '@/store/useLineStore';
@@ -255,11 +257,25 @@ const ViewLinesPage = () => {
                               <h3 className="text-2xl font-black text-foreground uppercase tracking-tight truncate group-hover:text-primary transition-colors">
                                 {line.styleNo || "Unnamed Style"}
                               </h3>
-                              <div className="flex items-center gap-2">
-                                <Calendar className="w-3.5 h-3.5 text-primary" />
-                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                  {format(new Date(line.updatedAt || line.createdAt || Date.now()), 'MMMM dd, yyyy')}
-                                </span>
+                              <div className="flex flex-col gap-1.5 mt-1">
+                                <div className="flex items-center gap-2">
+                                  <Users className="w-3.5 h-3.5 text-primary" />
+                                  <span className="text-[11px] font-black uppercase tracking-tight text-foreground/80">
+                                    Buyer: {line.buyer || "N/A"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Spool className="w-3.5 h-3.5 text-primary" />
+                                  <span className="text-[11px] font-black uppercase tracking-tight text-foreground/80">
+                                    CON NO: {line.coneNo || "N/A"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Calendar className="w-3.5 h-3.5 text-muted-foreground/60" />
+                                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                    {format(new Date(line.updatedAt || line.createdAt || Date.now()), 'MMMM dd, yyyy')}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                             <Button

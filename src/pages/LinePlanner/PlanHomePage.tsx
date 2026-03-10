@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Plus, FolderOpen, Factory, Zap } from 'lucide-react';
+import { Plus, FolderOpen, Factory, Zap, ChevronLeft, Home } from 'lucide-react';
 import { AnimatedBackground } from '@/components/ui/AnimatedBackground';
 import { useLineStore } from '@/store/useLineStore';
 
@@ -40,6 +40,21 @@ const PlanHomePage = () => {
       <AnimatedBackground />
 
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-8">
+
+        {/* Back to Home Button */}
+        <motion.button
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => navigate('/')}
+          className="absolute top-8 left-8 flex items-center gap-2 px-4 py-2 rounded-full glass-card border border-border/50 hover:border-primary/40 text-muted-foreground hover:text-foreground transition-all duration-300 text-sm font-medium"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          <Home className="w-4 h-4" />
+          <span>Home</span>
+        </motion.button>
 
         {/* Header */}
         <motion.div

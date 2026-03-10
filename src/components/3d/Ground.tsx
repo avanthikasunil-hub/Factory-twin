@@ -21,7 +21,7 @@ export const Ground = () => {
   return (
     <group>
       {/* Ground plane */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]} receiveShadow>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
         <planeGeometry args={[10000, 10000]} />
         <meshStandardMaterial
           color="#1e293b"
@@ -34,7 +34,7 @@ export const Ground = () => {
       <gridHelper
         ref={gridRef}
         args={[10000, 2000, '#334155', '#334155']}
-        position={[0, -0.45, 0]}
+        position={[0, -0.005, 0]}
       />
 
       {/* Lane Zones - Temporarily removed for better clarity of measured boxes */}

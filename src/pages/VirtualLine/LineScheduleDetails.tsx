@@ -17,10 +17,10 @@ import { cn } from "@/lib/utils";
 
 // Mock data for the styles in a specific line for the month
 const STYLE_SCHEDULE = [
-    { id: 1, no: "ORD-001", style: "Polo Shirt V2", con: "450", startDate: "01/03/2024", endDate: "12/03/2024", smv: "14.5" },
-    { id: 2, no: "ORD-042", style: "Slim Fit Tee", con: "600", startDate: "13/03/2024", endDate: "18/03/2024", smv: "10.2" },
-    { id: 3, no: "ORD-089", style: "Crew Neck V3", con: "400", startDate: "19/03/2024", endDate: "25/03/2024", smv: "12.8" },
-    { id: 4, no: "ORD-112", style: "Performance Polo", con: "350", startDate: "26/03/2024", endDate: "02/04/2024", smv: "15.4" },
+    { id: 1, no: "ORD-001", style: "Polo Shirt V2", con: "450", buyer: "Nike", startDate: "01/03/2024", endDate: "12/03/2024", smv: "14.5" },
+    { id: 2, no: "ORD-042", style: "Slim Fit Tee", con: "600", buyer: "Adidas", startDate: "13/03/2024", endDate: "18/03/2024", smv: "10.2" },
+    { id: 3, no: "ORD-089", style: "Crew Neck V3", con: "400", buyer: "Puma", startDate: "19/03/2024", endDate: "25/03/2024", smv: "12.8" },
+    { id: 4, no: "ORD-112", style: "Performance Polo", con: "350", buyer: "Nike", startDate: "26/03/2024", endDate: "02/04/2024", smv: "15.4" },
 ];
 
 export default function LineScheduleDetails() {
@@ -97,6 +97,7 @@ export default function LineScheduleDetails() {
                                 <th className="px-6 py-8 text-center text-sm font-black text-slate-100 uppercase tracking-[0.25em] rounded-l-[2rem]">SL NO</th>
                                 <th className="px-6 py-8 text-center text-sm font-black text-slate-100 uppercase tracking-[0.25em]">Style Name</th>
                                 <th className="px-6 py-8 text-center text-sm font-black text-slate-100 uppercase tracking-[0.25em]">OC NO.</th>
+                                <th className="px-6 py-8 text-center text-sm font-black text-slate-100 uppercase tracking-[0.25em]">Buyer</th>
                                 <th className="px-6 py-8 text-center text-sm font-black text-slate-100 uppercase tracking-[0.25em]">Start Date</th>
                                 <th className="px-6 py-8 text-center text-sm font-black text-slate-100 uppercase tracking-[0.25em]">End Date</th>
                                 <th className="px-6 py-8 text-center text-sm font-black text-slate-100 uppercase tracking-[0.25em] rounded-r-[2rem]">Upload OB</th>
@@ -119,6 +120,9 @@ export default function LineScheduleDetails() {
                                     </td>
                                     <td className="px-8 py-8 bg-slate-50/50 group-hover:bg-purple-50 transition-all duration-300 text-center text-sm font-bold text-slate-700">
                                         {item.con}
+                                    </td>
+                                    <td className="px-8 py-8 bg-slate-50/50 group-hover:bg-purple-50 transition-all duration-300 text-center text-sm font-bold text-slate-700">
+                                        {item.buyer}
                                     </td>
                                     <td className="px-8 py-8 bg-slate-50/50 group-hover:bg-purple-50 transition-all duration-300 text-center text-sm font-bold text-slate-700 uppercase tracking-widest">
                                         {item.startDate}
