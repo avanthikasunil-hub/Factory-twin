@@ -243,9 +243,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const lineNo = state.currentLine?.lineNo || "Line 1";
     const { machines, sections, warnings } = generateLayout(currentOps, targetOutput, workingHours, efficiency, lineNo);
 
-    if (warnings && warnings.length > 0) {
-      warnings.forEach(w => toast.error(w));
-    }
+    // Toasts removed to comply with 'alerts should only come from border violations' rule
 
     const currentLine = state.currentLine;
     const updatedLine = currentLine ? {
@@ -279,9 +277,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const lineNo = currentLine?.lineNo || "Line 1";
     const { machines, sections, warnings } = generateLayout(operations, targetOutput, workingHours, efficiency, lineNo);
 
-    if (warnings && warnings.length > 0) {
-      warnings.forEach(w => toast.error(w));
-    }
+    // Toasts removed
 
     set({ machineLayout: machines, sectionLayout: sections, warnings: warnings || [] });
     setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
@@ -299,9 +295,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const workingHours = inputWorkingHours;
     const { machines, sections, warnings } = generateLayout(operations, targetOutput, workingHours, efficiency, lineNo);
 
-    if (warnings && warnings.length > 0) {
-      warnings.forEach(w => toast.error(w));
-    }
+    // Toasts removed
 
     const calculatedTotal = operations.reduce((sum, op) => sum + op.smv, 0);
     const totalSMV = inputTotalSMV || calculatedTotal;
@@ -368,9 +362,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       lineNo
     );
 
-    if (warnings?.length > 0) {
-      warnings.forEach(w => toast.error(w));
-    }
+    // Toasts removed
 
     const newTotalSMV = newOperations.reduce((sum, op) => sum + op.smv, 0);
 
@@ -562,11 +554,26 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
 
   checkLayoutAlerts: () => {
     const layout = get().machineLayout;
-    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-    const newAlerts: { id: string; type: 'green' | 'red'; message: string }[] = [];
+    if (!layout || layout.length === 0) return;
 
-    const PART_BOUNDS_LOCAL = PART_BOUNDS as Record<string, { start: number; end: number }>;
-    const overflowPairs = new Set<string>();
+    const cap = (s: string) => {
+      const mapping: Record<string, string> = {
+        'cuff': 'Cuff',
+        'sleeve': 'Sleeve',
+        'back': 'Back',
+        'collar': 'Collar',
+        'front': 'Front',
+        'assemblyAB': 'Assembly AB',
+        'assemblyCD': 'Assembly CD'
+      };
+      return mapping[s] || s.charAt(0).toUpperCase() + s.slice(1);
+    };
+
+    const specs = getLayoutSpecs(get().currentLine?.lineNo);
+    const sections = specs.sections;
+    const newAlerts: { id: string; type: 'green' | 'red'; message: string }[] = [];
+    const violationKeys = new Set<string>();
+
     layout.forEach(m => {
       if (m.isInspection || m.operation.machine_type.toLowerCase().includes('inspection')) return;
       if (m.operation.machine_type.toLowerCase().includes('supermarket')) return;
@@ -575,110 +582,55 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       if (!labelSec) return;
 
       const machineX = m.position.x;
+      const dims = getMachineZoneDims(m.operation.machine_type);
+      const halfLen = dims.length / 2;
 
-      // Find which physical section the machine is actually in (by X position)
-      let physicalSec = labelSec;
-      for (const [part, bounds] of Object.entries(PART_BOUNDS_LOCAL)) {
-        if (machineX >= bounds.start - 1.0 && machineX <= bounds.end + 1.0) {
-          physicalSec = part.toLowerCase();
-          break;
+      let targetSecKey = labelSec;
+      if (labelSec.includes('assembly') || labelSec.includes('a1') || labelSec.includes('a2')) {
+        targetSecKey = m.position.z < -2 ? 'assemblyAB' : 'assemblyCD';
+      }
+
+      const targetBounds = (sections as any)[targetSecKey];
+      if (!targetBounds) return;
+
+      const isOutside = (machineX + halfLen > targetBounds.end + 0.1) || (machineX - halfLen < targetBounds.start - 0.1);
+
+      if (isOutside) {
+        let actualSecKey = null;
+        for (const [sKey, sBounds] of Object.entries(sections)) {
+          if (machineX >= (sBounds as any).start - 0.5 && machineX <= (sBounds as any).end + 0.5) {
+            actualSecKey = sKey;
+            break;
+          }
         }
-      }
 
-      // If physical section differs from label section, this machine has overflowed
-      const normLabel = labelSec.includes('assembly') ? 'assembly' : labelSec;
-      const normPhys = physicalSec.includes('assembly') ? 'assembly' : physicalSec;
-      if (normLabel !== normPhys) {
-        overflowPairs.add(`${normLabel}→${normPhys}`);
-      }
-
-      // Also detect by operation.section vs m.section (old method, fallback)
-      const origSec = (m.operation.section || '').toLowerCase().trim();
-      const curSec = (m.section || '').toLowerCase().trim();
-      if (origSec && curSec && origSec !== curSec) {
-        const normOrig = origSec.includes('assembly') ? 'assembly' : origSec;
-        const normCur = curSec.includes('assembly') ? 'assembly' : curSec;
-        if (normOrig !== normCur) overflowPairs.add(`${normOrig}→${normCur}`);
-      }
-    });
-
-    overflowPairs.forEach(pair => {
-      const [orig = '', cur = ''] = pair.split('→');
-      const id = `overflow-${pair}`;
-      const displayOrig = orig === 'assembly' ? 'Assembly' : cap(orig);
-      const displayCur = cur === 'assembly' ? 'Assembly' : cap(cur);
-      newAlerts.push({
-        id,
-        type: 'green',
-        message: `${displayOrig} overflow handled – machines placed in ${displayCur} section`
-      });
-    });
-
-
-    const allSections = new Set<string>(layout.map(m => (m.section || '').toLowerCase()).filter(Boolean) as string[]);
-    let assemblyViolated = false;
-
-    allSections.forEach(sec => {
-      const specs = getLayoutSpecs(get().currentLine?.lineNo);
-      const targetSpecs = specs.sections[sec as keyof typeof specs.sections];
-      const sectionEnd = targetSpecs?.end || 500 * FT;
-      if (!sectionEnd) return;
-
-      const violated = layout.some(m => {
-        if ((m.section || '').toLowerCase() !== sec) return false;
-        if (m.isInspection || m.operation.machine_type.toLowerCase().includes('inspection')) return false;
-        if (m.operation.machine_type.toLowerCase().includes('supermarket')) return false;
-        // If a machine is physically outside sectionEnd check if it really belongs here
-        // (machines that overflowed cleanly into the next section are tagged with the original
-        // source section name, so their X position will be beyond sectionEnd — that is NOT
-        // a violation, it is handled as a green overflow info).
-        const halfLen = getMachineZoneDims(m.operation.machine_type).length / 2;
-        const isOverSectionEnd = (m.position.x + halfLen) > (sectionEnd + 0.1);
-        if (!isOverSectionEnd) return false;
-        // Determine if this machine is an expected overflow (green) — if any overflow alert
-        // covers this sec→*, it means the system moved it intentionally.
-        const isIntentionalOverflow = newAlerts.some(
-          a => a.type === 'green' && a.id.startsWith(`overflow-${sec}→`)
-        );
-        return !isIntentionalOverflow;
-      });
-
-      if (violated) {
-        if (sec.includes('assembly')) {
-          assemblyViolated = true;
+        if (actualSecKey && actualSecKey !== targetSecKey) {
+          const pair = [targetSecKey, actualSecKey].sort().join('&');
+          violationKeys.add(pair);
         } else {
-          newAlerts.push({
-            id: `violation-${sec}`,
-            type: 'red',
-            message: `Space limit exceeded – ${cap(sec)} section`
-          });
+          violationKeys.add(targetSecKey);
         }
       }
     });
 
-    if (assemblyViolated) {
-      newAlerts.push({
-        id: `violation-assembly`,
-        type: 'red',
-        message: `Space limit exceeded – Assembly section`
-      });
-    }
-
-    const prev = get().layoutAlerts;
-    const dismissedGreenIds = new Set(prev.filter((a: any) => a.type === 'green').map((a: any) => a.id));
-
-    const merged = newAlerts.filter(a => {
-      if (a.type === 'green' && dismissedGreenIds.has(a.id)) return false;
-      return true;
+    violationKeys.forEach(key => {
+      if (key.includes('&')) {
+        const [s1, s2] = key.split('&');
+        newAlerts.push({
+          id: `violation-${key}`,
+          type: 'red',
+          message: `${cap(s1)} & ${cap(s2)}`
+        });
+      } else {
+        newAlerts.push({
+          id: `violation-${key}`,
+          type: 'red',
+          message: `${cap(key)} Space Violation`
+        });
+      }
     });
 
-    set({ layoutAlerts: merged });
-
-    merged.filter(a => a.type === 'green').forEach(a => {
-      setTimeout(() => {
-        set((state: any) => ({ layoutAlerts: state.layoutAlerts.filter((x: any) => x.id !== a.id) }));
-      }, 5000);
-    });
+    set({ layoutAlerts: newAlerts, layoutError: null, warnings: [] });
   },
 
   moveSelectedMachines: (deltaX, deltaZ) => {
@@ -1078,8 +1030,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const segment = activeZones.find(z => startX >= z.start && startX <= z.end);
     if (segment && maxSectionX > segment.end + 0.1) {
       const errorMsg = `No space in ${secLower}`;
-      if (isFinalCommit && get().layoutError !== errorMsg) {
-        toast.error(`Architecture Alert: This is not possible because no space in ${secLower}!`);
+      if (isFinalCommit) {
         set({ layoutError: errorMsg });
       }
     } else {

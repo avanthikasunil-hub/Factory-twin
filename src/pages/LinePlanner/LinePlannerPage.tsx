@@ -316,30 +316,7 @@ const LinePlannerPage = () => {
 
       {/* Status banners */}
       <AnimatePresence>
-        {(layoutError || (warnings && warnings.length > 0)) && (
-          <motion.div
-            key="layout-status"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className={`${layoutError ? 'bg-red-600 border-red-500/50' : 'bg-emerald-600 border-emerald-500/50'} text-white px-6 py-3 flex items-center justify-between shadow-2xl z-20 border-b`}
-          >
-            <div className="flex items-center gap-3">
-              <div className={`p-1.5 ${layoutError ? 'bg-white/20 animate-pulse' : 'bg-white/10'} rounded-full`}>
-                <AlertCircle className="w-5 h-5" />
-              </div>
-              <div className="flex flex-col">
-                <span className="font-black text-[11px] uppercase tracking-[0.2em]">Layout Status Alert</span>
-                <p className="text-[12px] font-bold opacity-90 leading-tight">
-                  {layoutError || (warnings && warnings[0])}
-                </p>
-              </div>
-            </div>
-            <Button variant="ghost" size="icon" onClick={() => clearWarnings()} className="h-8 w-8 text-white/50 hover:text-white hover:bg-white/10 rounded-full">
-              <X className="w-5 h-5" />
-            </Button>
-          </motion.div>
-        )}
+        {/* Redundant banners suppressed as per user request to only show border violations */}
 
         {layoutAlerts.map(alert => (
           <motion.div
