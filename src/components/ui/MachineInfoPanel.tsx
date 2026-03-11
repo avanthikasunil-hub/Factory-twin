@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Settings, Cpu, Clock, Layers, RotateCw, Trash2, Plus, Edit3, Move, Activity } from 'lucide-react';
 import { useLineStore } from '@/store/useLineStore';
@@ -77,6 +77,15 @@ export const MachineInfoPanel = () => {
       calcOutput = Math.floor(effectiveTime / operation.smv);
     }
   }
+
+  // Reactive section machine list sorted by X position (for hover panel numbered list)
+  const sectionMachines = useMemo(() => {
+    if (!selectedMachine?.section && !operation?.section) return [];
+    const sec = (selectedMachine?.section || operation?.section || "").toLowerCase();
+    return machineLayout
+      .filter(m => (m.section || "").toLowerCase() === sec && !m.isInspection)
+      .sort((a, b) => (a.position?.x ?? 0) - (b.position?.x ?? 0));
+  }, [machineLayout, selectedMachine?.section, operation?.section]);
 
   return (
     <AnimatePresence>
@@ -381,32 +390,29 @@ export const MachineInfoPanel = () => {
               </div>
 
               {/* Machine List: 1 to X */}
-              {(() => {
-                const sectionMachines = useLineStore.getState().machineLayout
-                  .filter(m => (m.section || "").toLowerCase() === (operation.section || "").toLowerCase() && !m.isInspection)
-                  .sort((a, b) => (a.position?.x ?? 0) - (b.position?.x ?? 0));
-                return sectionMachines.length > 0 ? (
-                  <div className="mt-3 space-y-1 border-t border-border/40 pt-2">
-                    <span className="text-muted-foreground font-bold uppercase tracking-wider text-[9px]">All Machines (1 – {sectionMachines.length})</span>
-                    <div className="max-h-40 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar">
-                      {sectionMachines.map((m, i) => (
-                        <div
-                          key={m.id}
-                          className={`flex items-center gap-1.5 py-0.5 px-1.5 rounded text-[10px] cursor-pointer transition-colors ${
-                            m.id === selectedMachine?.id
-                              ? 'bg-primary/20 text-primary font-black'
-                              : 'hover:bg-secondary/60 text-muted-foreground'
-                          }`}
-                          onClick={() => useLineStore.getState().setSelectedMachine(m)}
-                        >
-                          <span className="font-black text-[9px] min-w-[18px] text-center opacity-60">{i + 1}</span>
-                          <span className="truncate">{m.operation.op_name || m.operation.machine_type}</span>
-                        </div>
-                      ))}
-                    </div>
+              {sectionMachines.length > 0 && (
+                <div className="mt-3 space-y-1 border-t border-border/40 pt-2">
+                  <span className="text-muted-foreground font-bold uppercase tracking-wider text-[9px]">
+                    All Machines (1 – {sectionMachines.length})
+                  </span>
+                  <div className="max-h-40 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar">
+                    {sectionMachines.map((m, i) => (
+                      <div
+                        key={m.id}
+                        className={`flex items-center gap-1.5 py-0.5 px-1.5 rounded text-[10px] cursor-pointer transition-colors ${
+                          m.id === selectedMachine?.id
+                            ? 'bg-primary/20 text-primary font-black'
+                            : 'hover:bg-secondary/60 text-muted-foreground'
+                        }`}
+                        onClick={() => setSelectedMachine(m)}
+                      >
+                        <span className="font-black text-[9px] min-w-[20px] text-right opacity-50">{i + 1}</span>
+                        <span className="truncate font-medium">{m.operation.op_name || m.operation.machine_type}</span>
+                      </div>
+                    ))}
                   </div>
-                ) : null;
-              })()}
+                </div>
+              )}
             </div>
 
           </div>

@@ -717,9 +717,8 @@ export const generateLayout = (
         else { cursors.C = Math.max(cursors.C, lCX); cursors.D = Math.max(cursors.D, rCX); }
 
         // --- PHASE A: INSPECTION PLACEMENT ---
-        if (!isSpilledForward[secName]) {
-            addInspection(secName, cursors, isAB, zones, inspectionOps);
-        }
+        // Always place inspection in the source section regardless of overflow.
+        addInspection(secName, cursors, isAB, zones, inspectionOps);
 
         // --- PHASE B: PLACE PENDING SPILLOVERS FROM THE END OF THE SECTION ---
         if (matchedTag && spillPending[matchedTag]) {
