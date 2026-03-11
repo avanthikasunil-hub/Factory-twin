@@ -38,14 +38,19 @@ const MODEL_MAP: Record<string, string> = {
   pointing: 'pointing mc.glb',
   contour: 'contourmc.glb', // User Requested: contourmc.glb
   iron: 'iron press.glb',
-  press: 'iron press.glb',
+  pressing: 'pressing.glb',
+  press: 'pressing.glb',
 
   // Button Family
+  buttonhole: 'buttonhole.glb',
   hole: 'buttonhole.glb',
   bhole: 'buttonhole.glb',
   bholemc: 'buttonhole.glb', // Explicit match for B/Hole M/C
-  button: 'buttonmakinggg.glb',
+  'b/h': 'buttonhole.glb',
+  bh: 'buttonhole.glb',
   buttonmaking: 'buttonmakinggg.glb',
+  buttonsew: 'buttonmakinggg.glb',
+  button: 'buttonmakinggg.glb',
 
   // Others
   bartack: 'bartack.finalglb.glb',
