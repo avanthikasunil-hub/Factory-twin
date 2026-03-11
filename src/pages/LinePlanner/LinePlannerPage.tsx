@@ -173,13 +173,13 @@ const LinePlannerPage = () => {
       const isAssySec = sec.toLowerCase().includes('assembly');
 
       const relevantOps = operations.filter(op => {
-        const opSec = (op.section || "Other").toLowerCase();
+        const opSec = (op.section || "Other").trim().toLowerCase();
         const opNameKey = (op.op_name || '').trim().toLowerCase();
         if (isAssySec) {
           const countInThisSec = opsBySection[sec]?.[opNameKey]?.count || 0;
           return opSec.includes('assembly') && countInThisSec > 0;
         }
-        return opSec === sec.toLowerCase();
+        return opSec === sec;
       });
 
       if (relevantOps.length === 0 && !opsBySection[sec]) return;
@@ -510,11 +510,11 @@ const LinePlannerPage = () => {
                 </div>
                 <div className="p-3 space-y-1.5 max-h-48 overflow-y-auto">
                   {preparatoryOps.map((op, i) => (
-                    <div key={i} className="flex items-center gap-2.5 px-2.5 py-2 rounded-2xl hover:bg-amber-500/5 transition-colors group">
-                      <span className="text-[9px] font-black text-amber-500/50 min-w-[16px] text-right">{i + 1}</span>
+                    <div key={i} className="flex items-center gap-2.5 px-3 py-2.5 rounded-2xl hover:bg-amber-500/5 transition-colors group">
+                      <span className="text-[11px] font-black text-amber-500/50 min-w-[20px] text-right">{i + 1}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-semibold text-foreground/85 truncate">{op.op_name}</p>
-                        <p className="text-[9px] text-muted-foreground/50 mt-0.5">{op.machine_type} · {op.smv?.toFixed(2)} min</p>
+                        <p className="text-[13px] font-bold text-foreground/90 truncate">{op.op_name}</p>
+                        <p className="text-[10px] font-medium text-muted-foreground/60 mt-0.5">{op.machine_type} · {op.smv?.toFixed(2)} min</p>
                       </div>
                     </div>
                   ))}
