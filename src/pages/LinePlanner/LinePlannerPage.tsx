@@ -536,8 +536,8 @@ const LinePlannerPage = () => {
                     <Target className="w-6 h-6" />
                   </div>
                   <div className="flex-1">
-                    <span className="text-[9px] uppercase font-black text-purple-600/80 block mb-0.5 tracking-widest">Line Capacity</span>
-                    <p className="text-[26px] font-black leading-none tracking-tight">{stats.lineCapacity.toLocaleString()}</p>
+                    <span className="text-[9px] uppercase font-black text-purple-600/80 block mb-0.5 tracking-widest">Line Capacity @ 90% Eff</span>
+                    <p className="text-[26px] font-black leading-none tracking-tight">1,800</p>
                   </div>
                 </div>
 

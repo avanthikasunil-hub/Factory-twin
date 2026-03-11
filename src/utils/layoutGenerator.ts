@@ -3,7 +3,7 @@ import type { Operation, MachinePosition, SectionLayout } from '@/types';
 import { calculateMachineRequirements } from './lineBalancing';
 
 // Constants (Units: Approx Meters)
-export const LANE_Z_CENTER_AB = -6.0;
+export const LANE_Z_CENTER_AB = -3.92;
 export const LANE_Z_CENTER_CD = 0.0;
 
 export const LANE_Z_A = -5.2;
