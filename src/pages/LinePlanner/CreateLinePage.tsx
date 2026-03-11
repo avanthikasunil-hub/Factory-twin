@@ -154,7 +154,8 @@ const CreateLinePage = () => {
       parseFloat(targetOutput || "1800"),
       parsedTotalSMV,
       parseFloat(workingHours || "9"),
-      sourceSheet
+      sourceSheet,
+      useLineStore.getState().preparatoryOps || []
     );
     saveLine(line);
     toast({ title: "Line Created Successfully", description: `${lineNo} created.` });

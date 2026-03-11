@@ -46,7 +46,8 @@ interface LineStore {
     targetOutput?: number,
     totalSMV?: number,
     workingHours?: number,
-    sourceSheet?: string
+    sourceSheet?: string,
+    preparatoryOps?: Operation[]
   ) => LineData;
 
   saveLine: (line: LineData) => void;
@@ -97,7 +98,7 @@ interface LineStore {
   layoutAlerts: { id: string; type: 'green' | 'red'; message: string }[];
   dismissLayoutAlert: (id: string) => void;
   checkLayoutAlerts: () => void;
-  updateLineWithNewOB: (newOperations: Operation[], sourceSheet?: string) => void;
+  updateLineWithNewOB: (newOperations: Operation[], sourceSheet?: string, preparatoryOps?: Operation[]) => void;
   resetLine: () => void;
   setMachineLayout: (layout: MachinePosition[]) => void;
   fetchAndApplyOB: (lineNo: string, styleNo: string, conNo: string) => Promise<void>;
@@ -292,7 +293,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     set({ operations, selectedMachine: null });
   },
 
-  createLine: (lineNo, styleNo, coneNo, buyer, operations, efficiency = 90, inputTargetOutput = 1800, inputTotalSMV?: number, inputWorkingHours = 9, sourceSheet = "") => {
+  createLine: (lineNo, styleNo, coneNo, buyer, operations, efficiency = 90, inputTargetOutput = 1800, inputTotalSMV?: number, inputWorkingHours = 9, sourceSheet = "", preparatoryOps = []) => {
     (get() as any).takeSnapshot();
     const targetOutput = inputTargetOutput;
     const workingHours = inputWorkingHours;
@@ -306,7 +307,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const totalSMV = inputTotalSMV || calculatedTotal;
 
     const line: LineData = {
-      id: uuidv4(), lineNo, styleNo, coneNo, buyer, operations,
+      id: uuidv4(), lineNo, styleNo, coneNo, buyer, operations, preparatoryOps,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       machineLayout: machines, sectionLayout: sections, totalSMV,
       targetOutput, workingHours, efficiency, sourceSheet
@@ -316,6 +317,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       machineLayout: machines,
       sectionLayout: sections,
       operations,
+      preparatoryOps,
       currentLine: line,
       selectedMachine: null,
       targetOutput,
@@ -332,9 +334,12 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   // Previously it remapped old machine positions to new operation labels,
   // which meant the 3D layout never changed after the first OB upload.
   // ─────────────────────────────────────────────────────────────────────────
-  updateLineWithNewOB: (newOperations: Operation[], sourceSheet = "") => {
+  updateLineWithNewOB: (newOperations: Operation[], sourceSheet = "", preparatoryOpsParam?: Operation[]) => {
     (get() as any).takeSnapshot();
-    const { targetOutput, workingHours, efficiency, currentLine } = get();
+    const state = get();
+    // Default to the argument array, or fallback to the store's current preparatoryOps
+    const preparatoryOpsToUse = preparatoryOpsParam ?? state.preparatoryOps;
+    const { targetOutput, workingHours, efficiency, currentLine } = state;
 
     console.log(`[Store] updateLineWithNewOB — ${newOperations.length} operations received`);
 
@@ -347,6 +352,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       selectedMachines: [],
       warnings: [],
       currentLine: null,
+      preparatoryOps: preparatoryOpsToUse,
     });
 
     if (newOperations.length === 0) return;
@@ -378,6 +384,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         ? {
           ...currentLine,
           operations: newOperations,
+          preparatoryOps: preparatoryOpsToUse,
           machineLayout: machines,
           sectionLayout: sections,
           totalSMV: newTotalSMV,
@@ -427,6 +434,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     set({
       currentLine: line,
       operations: line.operations,
+      preparatoryOps: line.preparatoryOps || [],
       machineLayout: line.machineLayout,
       sectionLayout: line.sectionLayout || [],
       targetOutput: line.targetOutput || 1800,
@@ -1136,8 +1144,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       ];
       const layoutOps = allOps.filter(op => !PREP_NAMES.some(p => op.op_name?.toLowerCase().includes(p)) && !op.op_name?.toLowerCase().includes('allowance'));
       const prepOps = allOps.filter(op => PREP_NAMES.some(p => op.op_name?.toLowerCase().includes(p)) || op.op_name?.toLowerCase().includes('allowance'));
-      get().updateLineWithNewOB(layoutOps);
-      set({ preparatoryOps: prepOps });
+      get().updateLineWithNewOB(layoutOps, undefined, prepOps);
     } catch (err) {
       console.error("[Store] Error fetching OB from server:", err);
     }

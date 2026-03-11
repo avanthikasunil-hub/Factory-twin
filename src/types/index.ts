@@ -85,6 +85,7 @@ export interface LineData {
   workingHours: number;
   efficiency?: number;
   sourceSheet?: string;
+  preparatoryOps?: Operation[];
 }
 
 /**
