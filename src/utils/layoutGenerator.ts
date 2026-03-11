@@ -228,7 +228,23 @@ export const generateLayout = (
         const opName = item.operation.op_name.toLowerCase();
         const mType = item.operation.machine_type.toLowerCase();
 
-        if (opName.includes('washing allowance') || opName.includes('washing_allowance')) return;
+        const IGNORED_OPERATIONS = [
+            'washing allowance',
+            'washing_allowance',
+            'right placket tape iron',
+            'gusset iron',
+            'press sleeve placket',
+            'press pocket',
+            'right placket self fold iron',
+            'left placket self fold iron',
+            'stitch tape to pocket',
+            'triangle patch ironing',
+            'pocket overlock',
+            'pocket iron with fusing',
+            'pocket hem stitch'
+        ];
+
+        if (IGNORED_OPERATIONS.some(ignored => opName.includes(ignored))) return;
 
         if (!item.operation.machine_type || item.operation.machine_type.toLowerCase() === 'unknown') {
             item.operation.machine_type = 'Helper Table';

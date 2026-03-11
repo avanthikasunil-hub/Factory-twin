@@ -68,7 +68,24 @@ export const generateCotLayout = (
         count: Math.max(1, Math.ceil(op.no_of_machines || 1))
     })).filter(item => {
         const opName = item.operation.op_name.toLowerCase();
-        return !opName.includes('washing allowance') && !opName.includes('washing_allowance');
+        
+        const IGNORED_OPERATIONS = [
+            'washing allowance',
+            'washing_allowance',
+            'right placket tape iron',
+            'gusset iron',
+            'press sleeve placket',
+            'press pocket',
+            'right placket self fold iron',
+            'left placket self fold iron',
+            'stitch tape to pocket',
+            'triangle patch ironing',
+            'pocket overlock',
+            'pocket iron with fusing',
+            'pocket hem stitch'
+        ];
+
+        return !IGNORED_OPERATIONS.some(ignored => opName.includes(ignored));
     });
 
     const { zonesAB, zonesCD, partBounds, specs } = getLayoutSpecs(lineNo);
