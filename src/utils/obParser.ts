@@ -208,6 +208,27 @@ const isOperationRow = (
     return false;
   }
 
+  // 5. Exclude specific preparatory / ironing operations from layout
+  const IGNORED_OPERATIONS = [
+      'washing allowance',
+      'washing_allowance',
+      'right placket tape iron',
+      'gusset iron',
+      'press sleeve placket',
+      'press pocket',
+      'right placket self fold iron',
+      'left placket self fold iron',
+      'stitch tape to pocket',
+      'triangle patch ironing',
+      'pocket overlock',
+      'pocket iron with fusing',
+      'pocket hem stitch'
+  ];
+
+  if (IGNORED_OPERATIONS.some(ignored => cn.includes(ignored))) {
+      return false;
+  }
+
   return true;
 };
 
