@@ -21,7 +21,7 @@ const ROT_FACE_BACK = Math.PI / 2;
 
 const FT = 0.3048;
 
-export const LAYOUT_LOGIC_VERSION = 53;
+export const LAYOUT_LOGIC_VERSION = 54;
 export const FIXED_ASSEMBLY_START = 0;
 
 export interface SectionPreset {
@@ -557,10 +557,18 @@ export const generateLayout = (
         const machineZoneEnd = supermarketStart - reservation;
 
         const rawZones = isAB ? zonesAB : zonesCD;
-        const zones = rawZones.map(z => ({
-            start: z.start,
-            end: (z.end > machineZoneEnd && z.start < machineZoneEnd) ? machineZoneEnd : z.end
-        }));
+        // Restrict placement zones to ONLY this section's physical bounds.
+        // Without this, getNextValidX would silently jump machines into the
+        // next section's zone when the current zone is full.
+        const thisSectionBounds = targetSpecs
+            ? { start: targetSpecs.start, end: Math.min(targetSpecs.end, machineZoneEnd) }
+            : { start: alternatingX, end: machineZoneEnd };
+        const zones = rawZones
+            .filter(z => z.start < thisSectionBounds.end && z.end > thisSectionBounds.start)
+            .map(z => ({
+                start: Math.max(z.start, thisSectionBounds.start),
+                end: Math.min(z.end, thisSectionBounds.end)
+            }));
 
         let lCX = alternatingX, rCX = alternatingX;
         let alt = 0;
