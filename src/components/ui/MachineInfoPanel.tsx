@@ -107,13 +107,15 @@ export const MachineInfoPanel = () => {
                 </div>
                 <div>
                   <h3 className="font-semibold text-foreground tracking-tight">
-                    {selectedMachine.machineIndex !== undefined ?
-                      `MC #${selectedMachine.machineIndex + 1}` :
-                      `${selectedMachine.operation.machine_type.toUpperCase()} EQUIPMENT`
-                    }
+                    {(() => {
+                      const posIdx = sectionMachines.findIndex(m => m.id === selectedMachine.id);
+                      const pos = posIdx >= 0 ? posIdx + 1 : (selectedMachine.machineIndex !== undefined ? selectedMachine.machineIndex + 1 : '?');
+                      const total = sectionMachines.length || '?';
+                      return `Machine ${pos} / ${total}`;
+                    })()}
                   </h3>
-                  <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
-                    Op #{operation.op_no || "N/A"}
+                  <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest truncate max-w-[160px]">
+                    {operation.op_name || operation.machine_type}
                   </p>
                 </div>
               </div>

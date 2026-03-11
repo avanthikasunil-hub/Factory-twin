@@ -31,6 +31,7 @@ interface LineStore {
   machineLayout: MachinePosition[];
   sectionLayout: SectionLayout[];
   operations: Operation[];
+  preparatoryOps: Operation[];
 
   selectedMachines: string[];
   selectedMachine: MachinePosition | null;
@@ -53,6 +54,7 @@ interface LineStore {
   deleteLine: (id: string) => void;
 
   setOperations: (operations: Operation[]) => void;
+  setPreparatoryOps: (ops: Operation[]) => void;
   generateMachineLayout: (operations: Operation[]) => void;
 
   targetOutput: number;
@@ -152,6 +154,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   targetOutput: 1800,
   workingHours: 9,
   visibleSection: null,
+  preparatoryOps: [],
   setVisibleSection: (section) => set({ visibleSection: section }),
   layoutLogicVersion: 0,
   setLayoutLogicVersion: (v) => set({ layoutLogicVersion: v }),
@@ -181,12 +184,14 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   dismissLayoutAlert: (id: string) => set((state: any) => ({ layoutAlerts: state.layoutAlerts.filter((a: any) => a.id !== id) })),
 
   setMachineLayout: (layout: MachinePosition[]) => set({ machineLayout: layout }),
+  setPreparatoryOps: (ops: Operation[]) => set({ preparatoryOps: ops }),
 
   resetLine: () => set({
     currentLine: null,
     machineLayout: [],
     sectionLayout: [],
     operations: [],
+    preparatoryOps: [],
     selectedMachine: null,
     selectedMachines: [],
     warnings: [],

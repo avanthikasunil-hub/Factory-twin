@@ -28,7 +28,7 @@ const LinePlannerPage = () => {
     setLineParameters, visibleSection, setVisibleSection, undo, redo,
     canUndo, canRedo, isMoveMode, setMoveMode, selectedMachines,
     isDraggingActive, setDraggingActive, layoutError, warnings, clearWarnings,
-    layoutAlerts, dismissLayoutAlert, fetchAndApplyOB
+    layoutAlerts, dismissLayoutAlert, fetchAndApplyOB, preparatoryOps
   } = useLineStore();
 
   // ─── Local input state (UI only — committed on blur/Enter, NOT on every keystroke) ───
@@ -536,8 +536,8 @@ const LinePlannerPage = () => {
                     <Target className="w-6 h-6" />
                   </div>
                   <div className="flex-1">
-                    <span className="text-[9px] uppercase font-black text-purple-600/80 block mb-0.5 tracking-widest">Line Capacity @ 90% Eff</span>
-                    <p className="text-[26px] font-black leading-none tracking-tight">1,800</p>
+                    <span className="text-[9px] uppercase font-black text-purple-600/80 block mb-0.5 tracking-widest">Line Capacity</span>
+                    <p className="text-[26px] font-black leading-none tracking-tight">{stats.lineCapacity.toLocaleString()}</p>
                   </div>
                 </div>
 
@@ -656,6 +656,28 @@ const LinePlannerPage = () => {
                 Pro-Tip: Use Efficiency to simulate real-world conditions on your current floor layout.
               </p>
             </div>
+
+            {/* Preparatory Processes */}
+            {preparatoryOps && preparatoryOps.length > 0 && (
+              <div className="pt-6 border-t border-border/50 text-left">
+                <h3 className="text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4 flex items-center gap-3">
+                  <Scissors className="w-4 h-4 text-amber-500" /> Preparatory Processes
+                  <span className="ml-auto text-[10px] bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full border border-amber-500/20 font-black">{preparatoryOps.length}</span>
+                </h3>
+                <p className="text-[10px] text-muted-foreground/70 italic mb-3">Excluded from floor layout — done offline before line entry.</p>
+                <div className="space-y-1.5">
+                  {preparatoryOps.map((op, i) => (
+                    <div key={i} className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/15 text-[11px]">
+                      <span className="text-amber-500/40 font-black min-w-[18px] text-right mt-0.5">{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-foreground/80 truncate">{op.op_name}</p>
+                        <p className="text-muted-foreground/60 text-[9px] mt-0.5">{op.machine_type} · {op.smv?.toFixed(2)} min</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
           </div>
         </aside>

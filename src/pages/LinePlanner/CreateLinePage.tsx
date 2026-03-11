@@ -107,13 +107,14 @@ const CreateLinePage = () => {
     updateLineWithNewOB([], "");
 
     try {
-      const { operations, buyer: parsedBuyer, totalSMV, machineTypesCount, sourceSheet: sheetName } = await parseOBExcel(file);
+      const { operations, preparatoryOps, buyer: parsedBuyer, totalSMV, machineTypesCount, sourceSheet: sheetName } = await parseOBExcel(file);
 
       if (!operations || operations.length === 0) {
         throw new Error("No operations found in the uploaded Excel file.");
       }
 
       updateLineWithNewOB(operations, sheetName);
+      useLineStore.getState().setPreparatoryOps(preparatoryOps || []);
 
       setParsedOperations(operations);
       if (parsedBuyer) setBuyer(parsedBuyer);

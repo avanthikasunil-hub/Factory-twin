@@ -208,29 +208,25 @@ const isOperationRow = (
     return false;
   }
 
-  // 5. Exclude specific preparatory / ironing operations from layout
-  const IGNORED_OPERATIONS = [
-      'washing allowance',
-      'washing_allowance',
-      'right placket tape iron',
-      'gusset iron',
-      'press sleeve placket',
-      'press pocket',
-      'right placket self fold iron',
-      'left placket self fold iron',
-      'stitch tape to pocket',
-      'triangle patch ironing',
-      'pocket overlock',
-      'pocket iron with fusing',
-      'pocket hem stitch'
-  ];
-
-  if (IGNORED_OPERATIONS.some(ignored => cn.includes(ignored))) {
-      return false;
-  }
-
   return true;
 };
+
+// Preparatory operations excluded from the 3D layout
+export const PREPARATORY_OP_NAMES = [
+  'washing allowance',
+  'washing_allowance',
+  'right placket tape iron',
+  'gusset iron',
+  'press sleeve placket',
+  'press pocket',
+  'right placket self fold iron',
+  'left placket self fold iron',
+  'stitch tape to pocket',
+  'triangle patch ironing',
+  'pocket overlock',
+  'pocket iron with fusing',
+  'pocket hem stitch',
+];
 
 const parseValue = (val: unknown): number => {
   if (typeof val === 'number') return val;
@@ -345,6 +341,7 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
 
   // --- Extract operations ---
   const operations: Operation[] = [];
+  const preparatoryOps: Operation[] = [];
   let buyer = '';
   let currentSection = 'General';
   let extractedTotalSMV = 0;
@@ -446,7 +443,7 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
       ? (String(readCell(wsRow, sectionIndex) ?? '').trim() || currentSection)
       : currentSection;
 
-    operations.push({
+    const parsedOp: Operation = {
       op_no: opNo,
       op_name: opName,
       machine_type: machineType,
@@ -455,7 +452,15 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
       tool_folder: toolIndex >= 0 ? String(readCell(wsRow, toolIndex) ?? '').trim() : '',
       machinist_smv,
       non_machinist_smv,
-    });
+    };
+
+    // Route: preparatory ops go to separate list; all others to main operations
+    if (PREPARATORY_OP_NAMES.some(ignored => lowerName.includes(ignored)) ||
+        lowerName.includes('allowance')) {
+      preparatoryOps.push(parsedOp);
+    } else {
+      operations.push(parsedOp);
+    }
   }
 
   if (operations.length === 0) return null;
@@ -486,6 +491,7 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
 
   return {
     operations,
+    preparatoryOps,
     buyer,
     totalSMV: extractedTotalSMV > 0 ? extractedTotalSMV : calculatedTotalSMV,
     machineTypesCount: exactMachineTypes.size,
@@ -510,7 +516,7 @@ const SUBOPTIMAL_SHEET_NAMES = ['base', 'template', 'master', 'demo', 'example',
 
 export const parseOBExcel = async (
   file: File,
-): Promise<{ operations: Operation[]; buyer: string; totalSMV: number; machineTypesCount: number; sourceSheet: string }> => {
+): Promise<{ operations: Operation[]; preparatoryOps: Operation[]; buyer: string; totalSMV: number; machineTypesCount: number; sourceSheet: string }> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -526,7 +532,7 @@ export const parseOBExcel = async (
 
         let bestSheet = {
           name: '',
-          data: null as { operations: Operation[]; buyer: string; totalSMV: number; machineTypesCount: number } | null,
+          data: null as { operations: Operation[]; preparatoryOps: Operation[]; buyer: string; totalSMV: number; machineTypesCount: number } | null,
           score: -1
         };
 
