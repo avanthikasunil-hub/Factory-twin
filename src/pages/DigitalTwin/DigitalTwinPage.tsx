@@ -3,6 +3,9 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import {
   OrbitControls,
   Environment,
+  useGLTF,
+  useTexture,
+  useCursor,
 } from "@react-three/drei";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -40,8 +43,8 @@ const SPECS = {
   rackDepth: 1.5,
   bayWidth: 2.8,
   levels: [0.6, 2.2, 3.8],
-  postColor: "#001f3f",
-  beamColor: "#c2410c",
+  postColor: "#001f3f",   // Dark Blue Uprights
+  beamColor: "#c2410c",   // Orange Beams
 };
 
 /* ───── 2. POSITION HELPERS ───── */
@@ -106,7 +109,7 @@ const FloatingLabel = ({ text, position = [0, 3, 0], bgColor = "#fbbf24", textCo
     const padding = 80;
     const maxWidth = 1200;
     if (!ctx) return new THREE.Texture();
-    ctx.font = `bold ${fontSize}px Inter, sans-serif`;
+    ctx.font = `bold ${fontSize}px Inter, system-ui, sans-serif`;
     const words = text.toUpperCase().split(" ");
     const lines: string[] = [];
     let currentLine = words[0];
@@ -117,17 +120,22 @@ const FloatingLabel = ({ text, position = [0, 3, 0], bgColor = "#fbbf24", textCo
         else { lines.push(currentLine); currentLine = word; }
     }
     lines.push(currentLine);
-    let maxW = 0; lines.forEach(l => maxW = Math.max(maxW, ctx.measureText(l).width));
-    const canvasW = Math.max(maxW, 200) + padding * 2;
-    const canvasH = lines.length * lineHeight + padding * 1.5;
-    canvas.width = canvasW; canvas.height = canvasH;
-    ctx.clearRect(0,0,canvasW,canvasH);
+    let maxMeasuredWidth = 0; lines.forEach(line => maxMeasuredWidth = Math.max(maxMeasuredWidth, ctx.measureText(line).width));
+    const canvasWidth = Math.max(maxMeasuredWidth, 200) + padding * 2;
+    const canvasHeight = lines.length * lineHeight + padding * 1.5;
+    canvas.width = canvasWidth; canvas.height = canvasHeight;
+    ctx.clearRect(0,0,canvasWidth,canvasHeight);
     ctx.fillStyle = bgColor;
-    ctx.beginPath(); ctx.roundRect(0, 0, canvasW, canvasH, 30); ctx.fill();
+    ctx.shadowColor = "rgba(0,0,0,0.3)"; ctx.shadowBlur = 10; ctx.shadowOffsetY = 5;
+    ctx.beginPath(); ctx.roundRect(0, 0, canvasWidth, canvasHeight, 30); ctx.fill();
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
     ctx.fillStyle = textColor;
-    ctx.font = `bold ${fontSize}px Inter, sans-serif`;
+    ctx.font = `bold ${fontSize}px Inter, system-ui, sans-serif`;
     ctx.textAlign="center"; ctx.textBaseline="middle";
-    lines.forEach((l, i) => ctx.fillText(l, canvasW/2, (canvasH/2) - ((lines.length-1)*lineHeight/2) + (i*lineHeight)));
+    lines.forEach((line, index) => {
+      const yOffset = (canvasHeight / 2) - ((lines.length - 1) * lineHeight / 2) + (index * lineHeight);
+      ctx.fillText(line, canvasWidth / 2, yOffset);
+    });
     return new THREE.CanvasTexture(canvas);
   }, [text, bgColor, textColor]);
 
@@ -136,8 +144,8 @@ const FloatingLabel = ({ text, position = [0, 3, 0], bgColor = "#fbbf24", textCo
     if (!spriteRef.current) return;
     spriteRef.current.position.y = position[1] + Math.sin(state.clock.getElapsedTime() * 1.5) * 0.1;
     const dist = state.camera.position.distanceTo(spriteRef.current.position);
-    const sf = THREE.MathUtils.clamp(dist / 55, 0.45, 2.0);
-    spriteRef.current.scale.set(scale * sf * aspect, scale * sf, 1);
+    const scaleFactor = THREE.MathUtils.clamp(dist / 55, 0.45, 2.0);
+    spriteRef.current.scale.set(scale * scaleFactor * aspect, scale * scaleFactor, 1);
   });
   return <sprite ref={spriteRef} position={new THREE.Vector3(...position)}><spriteMaterial map={texture} depthTest={false} transparent opacity={0.95} /></sprite>;
 };
@@ -171,7 +179,7 @@ const FabricRollPallet = ({ position, rotation = [0, 0, 0], rollColor = "#64748b
   );
 };
 
-const DoubleRack = ({ position, label, rollColor }: any) => {
+const DoubleRack = ({ position, label, rollColor, emptySlots = [] }: any) => {
   const [clicked, setClicked] = useState(false);
   const twinDepth = 2.8;
   return (
@@ -190,10 +198,18 @@ const DoubleRack = ({ position, label, rollColor }: any) => {
           {[twinDepth/2-0.1, -(twinDepth/2-0.1)].map((z, j) => (
             <mesh key={j} position={[0, -0.7, z]}><boxGeometry args={[SPECS.bayWidth*2.1,0.2,0.1]} /><meshStandardMaterial color={SPECS.beamColor} /></mesh>
           ))}
-          <FabricRollPallet position={[-SPECS.bayWidth/2, -0.6, 0.65]} rollColor={rollColor} />
-          <FabricRollPallet position={[SPECS.bayWidth/2, -0.6, 0.65]} rollColor={rollColor} />
-          <FabricRollPallet position={[-SPECS.bayWidth/2, -0.6, -0.65]} rollColor={rollColor} />
-          <FabricRollPallet position={[SPECS.bayWidth/2, -0.6, -0.65]} rollColor={rollColor} />
+          {idx === 0 && Array.isArray(emptySlots) && emptySlots.includes(0) ? null : <FabricRollPallet position={[-SPECS.bayWidth/2, -0.6, 0.65]} rollColor={rollColor} />}
+          {idx === 0 && Array.isArray(emptySlots) && emptySlots.includes(1) ? null : <FabricRollPallet position={[SPECS.bayWidth/2, -0.6, 0.65]} rollColor={rollColor} />}
+          {idx === 0 && Array.isArray(emptySlots) && emptySlots.includes(2) ? null : <FabricRollPallet position={[-SPECS.bayWidth/2, -0.6, -0.65]} rollColor={rollColor} />}
+          {idx === 0 && Array.isArray(emptySlots) && emptySlots.includes(3) ? null : <FabricRollPallet position={[SPECS.bayWidth/2, -0.6, -0.65]} rollColor={rollColor} />}
+          {idx > 0 && (
+            <>
+              <FabricRollPallet position={[-SPECS.bayWidth / 2, -0.6, 0.65]} rollColor={rollColor} />
+              <FabricRollPallet position={[SPECS.bayWidth / 2, -0.6, 0.65]} rollColor={rollColor} />
+              <FabricRollPallet position={[-SPECS.bayWidth / 2, -0.6, -0.65]} rollColor={rollColor} />
+              <FabricRollPallet position={[SPECS.bayWidth / 2, -0.6, -0.65]} rollColor={rollColor} />
+            </>
+          )}
         </group>
       ))}
       {label && clicked && <FloatingLabel text={label} position={[0, SPECS.rackHeight+0.5, 0]} />}
@@ -224,32 +240,66 @@ const ZoneBoundary = ({ positions, zoneName, rW=5.8, rD=3.0 }: any) => {
 /* ───── 4. RESTORED WAREHOUSE ASSETS ───── */
 
 const Truck = ({ position, rotation = [0, 0, 0] }: any) => {
-  const [clicked, setClicked] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  useCursor(hovered);
+  const maroonPaint = <meshStandardMaterial color="#4a0404" metalness={0.1} roughness={0.9} />;
+  const tireMat = <meshStandardMaterial color="#111111" roughness={0.9} />;
+  const glassMat = <meshPhysicalMaterial color="#0f172a" metalness={1} roughness={0.1} opacity={0.6} transparent />;
+
   return (
-    <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)} onClick={(e) => { e.stopPropagation(); setClicked(!clicked); }}>
-      {clicked && <FloatingLabel text="TRUCK" position={[0, 4.5, 0]} />}
-      <mesh position={[0, 2.5, -2]} castShadow><boxGeometry args={[4, 4.2, 14]} /><meshStandardMaterial color="#4a0404" /></mesh>
-      <mesh position={[0, 1.9, 7.2]} castShadow><boxGeometry args={[3.6, 3.8, 4.4]} /><meshStandardMaterial color="#4a0404" /></mesh>
-      <mesh position={[0, 2.8, 9.42]}><boxGeometry args={[3.2, 1.8, 0.05]} /><meshPhysicalMaterial color="#0f172a" opacity={0.6} transparent /></mesh>
-      {[[1.8, 8.2], [-1.8, 8.2], [1.8, -5.5], [-1.8, -5.5]].map((p, i) => (
-        <mesh key={i} position={[p[0], 0.6, p[1]]} rotation={[0,0,Math.PI/2]} castShadow><cylinderGeometry args={[0.6, 0.6, 0.5, 32]} /><meshStandardMaterial color="#111" /></mesh>
+    <group 
+      position={new THREE.Vector3(...position)} 
+      rotation={new THREE.Euler(...rotation)}
+      onPointerOver={() => setHovered(true)}
+      onPointerOut={() => setHovered(false)}
+    >
+      {hovered && <FloatingLabel text="TRUCK" position={[0, 4.5, 0]} />}
+      <mesh position={[0, 2.5, -2]} castShadow><boxGeometry args={[4, 4.2, 14]} />{maroonPaint}</mesh>
+      <mesh position={[0, 1.9, 7.2]} castShadow><boxGeometry args={[3.6, 3.8, 4.4]} />{maroonPaint}</mesh>
+      <mesh position={[0, 2.8, 9.42]}><boxGeometry args={[3.2, 1.8, 0.05]} />{glassMat}</mesh>
+      {[1.81, -1.81].map((x, i) => (
+        <mesh key={i} position={[x, 2.8, 7.8]}><boxGeometry args={[0.02, 1.6, 2.2]} />{glassMat}</mesh>
       ))}
+      {[
+        [1.8, 8.2], [-1.8, 8.2],   // Front Cab Wheels
+        [1.8, -5.5], [-1.8, -5.5], // Rear Trailer Wheels Axle 1
+        [1.8, -7.5], [-1.8, -7.5], // Rear Trailer Wheels Axle 2
+        [1.8, 3.5], [-1.8, 3.5]    // Mid Chassis Wheels
+      ].map((pos, i) => (
+        <mesh key={i} position={[pos[0], 0.6, pos[1]]} rotation={[0, 0, Math.PI / 2]} castShadow>
+          <cylinderGeometry args={[0.6, 0.6, 0.5, 32]} />
+          {tireMat}
+        </mesh>
+      ))}
+      <mesh position={[0, 0.8, -0.5]}><boxGeometry args={[3.0, 0.4, 18]} /><meshStandardMaterial color="#111827" metalness={0.8} /></mesh>
     </group>
   );
 };
 
-const InspectionMachine = ({ position, rotation, scale=[1,1,1], name }: any) => {
-  const [clicked, setClicked] = useState(false);
+const InspectionMachine = ({ position = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1], name = "Inspection Machine", showLabel = false, labelText = "" }: any) => {
+  const [hovered, setHovered] = useState(false);
+  useCursor(hovered);
   return (
-    <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)} scale={new THREE.Vector3(...scale)} onClick={e => { e.stopPropagation(); setClicked(!clicked); }}>
-      <mesh position={[-1.4, 1, 0]}><boxGeometry args={[0.3, 2, 2.2]} /><meshStandardMaterial color="#1d4ed8" /></mesh>
-      <mesh position={[1.4, 1, 0]}><boxGeometry args={[0.3, 2, 2.2]} /><meshStandardMaterial color="#1d4ed8" /></mesh>
-      <group position={[0, 1.5, 0.2]} rotation={[-Math.PI/6, 0,0]}>
-        <mesh><boxGeometry args={[2.5, 1.6, 0.1]} /><meshStandardMaterial color="#334155" /></mesh>
-        <mesh position={[0,0,0.06]}><boxGeometry args={[2.3, 1.4, 0.02]} /><meshStandardMaterial color="#fff" emissive="#fff" emissiveIntensity={0.8} /></mesh>
+    <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)}>
+      <group 
+        scale={new THREE.Vector3(...scale)} 
+        onPointerOver={() => setHovered(true)}
+        onPointerOut={() => setHovered(false)}
+      >
+        <mesh position={[-1.4, 1, 0]}><boxGeometry args={[0.3, 2, 2.2]} /><meshStandardMaterial color="#1d4ed8" metalness={0.5} /></mesh>
+        <mesh position={[1.4, 1, 0]}><boxGeometry args={[0.3, 2, 2.2]} /><meshStandardMaterial color="#1d4ed8" metalness={0.5} /></mesh>
+        <group position={[0, 1.5, 0.2]} rotation={[-Math.PI / 6, 0, 0]}>
+          <mesh><boxGeometry args={[2.5, 1.6, 0.1]} /><meshStandardMaterial color="#334155" /></mesh>
+          <mesh position={[0, 0, 0.06]}><boxGeometry args={[2.3, 1.4, 0.02]} /><meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.8} /></mesh>
+        </group>
+        {[0.4, 2.4].map((y, i) => (
+          <mesh key={i} position={[0, y, 0.8]} rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[0.08, 0.08, 2.6, 16]} /><meshStandardMaterial color="#cbd5e1" metalness={0.8} /></mesh>
+        ))}
+        <mesh position={[0, 0.05, 0]}><boxGeometry args={[3.2, 0.1, 2.4]} /><meshStandardMaterial color="#1e293b" /></mesh>
       </group>
-      <mesh position={[0, 0.05, 0]}><boxGeometry args={[3.2, 0.1, 2.4]} /><meshStandardMaterial color="#1e293b" /></mesh>
-      {clicked && <FloatingLabel text={name} position={[0, 2.5, 0]} />}
+      {(hovered || showLabel) && (
+        <FloatingLabel text={showLabel ? labelText : name} position={[0, 1.2 * (Array.isArray(scale) ? scale[1] : scale), 0]} bgColor={showLabel ? "#0284c7" : "#fbbf24"} textColor={showLabel ? "#ffffff" : "#000000"} scale={showLabel ? 1.5 : 1.0} />
+      )}
     </group>
   );
 };
@@ -261,34 +311,71 @@ const StandingOperator = ({ position, rotation = [0, 0, 0] }: any) => (
       <mesh position={[0, 1.025, 0]}><boxGeometry args={[0.4, 0.55, 0.3]} /><meshStandardMaterial color="#800000" /></mesh>
       <mesh position={[0, 1.45, 0]}><sphereGeometry args={[0.13, 16, 16]} /><meshStandardMaterial color="#ffdbac" /></mesh>
       <mesh position={[0, 1.52, -0.02]} scale={[1, 0.5, 1]}><sphereGeometry args={[0.135, 16, 16]} /><meshStandardMaterial color="#4b2c20" /></mesh>
+      <mesh position={[0.22, 1.1, 0.25]} rotation={[-Math.PI / 3, 0, 0.1]}><boxGeometry args={[0.1, 0.55, 0.1]} /><meshStandardMaterial color="#800000" /></mesh>
+      <mesh position={[-0.22, 1.1, 0.25]} rotation={[-Math.PI / 3, 0, -0.1]}><boxGeometry args={[0.1, 0.55, 0.1]} /><meshStandardMaterial color="#800000" /></mesh>
     </group>
   </group>
 );
 
-const IndustrialWorkTable = ({ position, rotation, scale=[1,1,1], name }: any) => {
-  const [clicked, setClicked] = useState(false);
+const IndustrialWorkTable = ({ position = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1], name = "Work Table" }: any) => {
+  const [hovered, setHovered] = useState(false);
+  useCursor(hovered);
   return (
-    <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)} scale={new THREE.Vector3(...scale)} onClick={e => { e.stopPropagation(); setClicked(!clicked); }}>
-      <mesh position={[0, 0.9, 0]}><boxGeometry args={[3, 0.15, 1.5]} /><meshStandardMaterial color="#b45309" /></mesh>
-      {[[-1.4, -0.6], [1.4, -0.6], [-1.4, 0.6], [1.4, 0.6]].map((p, i) => (
-        <mesh key={i} position={[p[0], 0.45, p[1]]}><boxGeometry args={[0.12, 0.9, 0.12]} /><meshStandardMaterial color="#334155" /></mesh>
-      ))}
-      {clicked && <FloatingLabel text={name} position={[0, 1.2, 0]} />}
+    <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)}>
+      <group 
+        scale={new THREE.Vector3(...scale)} 
+        onPointerOver={() => setHovered(true)}
+        onPointerOut={() => setHovered(false)}
+      >
+        <mesh position={[0, 0.9, 0]}><boxGeometry args={[3, 0.15, 1.5]} /><meshStandardMaterial color="#b45309" /></mesh>
+        {[[-1.4, -0.6], [1.4, -0.6], [-1.4, 0.6], [1.4, 0.6]].map((pos, i) => (
+          <mesh key={i} position={[pos[0], 0.45, pos[1]]}><boxGeometry args={[0.12, 0.9, 0.12]} /><meshStandardMaterial color="#334155" /></mesh>
+        ))}
+        <mesh position={[0, 0.25, 0]}><boxGeometry args={[2.7, 0.05, 1.3]} /><meshStandardMaterial color="#475569" /></mesh>
+      </group>
+      {hovered && <FloatingLabel text={name} position={[0, 0.6 * (Array.isArray(scale) ? scale[1] : scale[0]), 0]} />}
     </group>
   );
 };
 
-const AccurateAGV = ({ position, rotation, scale=[1,1,1] }: any) => (
-  <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)} scale={new THREE.Vector3(...scale)}>
-    <mesh position={[0, 0.15, 0]} castShadow><boxGeometry args={[0.9, 0.3, 1.2]} /><meshStandardMaterial color="#111827" metalness={0.6} /></mesh>
-    <mesh position={[0, 0.8, 0.1]} castShadow><boxGeometry args={[0.9, 1.1, 0.6]} /><meshStandardMaterial color="#111827" /></mesh>
-    <group position={[0, 0.3, -0.45]}>
-       <mesh position={[0, 0.375, 0]}><boxGeometry args={[0.35, 0.75, 0.25]} /><meshStandardMaterial color="#800000" /></mesh>
-       <mesh position={[0, 1.025, 0]}><boxGeometry args={[0.4, 0.55, 0.3]} /><meshStandardMaterial color="#800000" /></mesh>
-       <mesh position={[0, 1.45, 0]}><sphereGeometry args={[0.13, 16, 16]} /><meshStandardMaterial color="#ffdbac" /></mesh>
+const AccurateAGV = ({ position = [0, 0, 0], rotation = [0, 0, 0], scale = [1, 1, 1], name = "AGV" }: any) => {
+  const [hovered, setHovered] = useState(false);
+  useCursor(hovered);
+  const primaryColor = "#d97706"; const secondaryColor = "#111827"; const maroonMat = "#800000"; const greyMat = secondaryColor; const darkGreyMat = primaryColor;
+  return (
+    <group 
+      position={new THREE.Vector3(...position)} 
+      rotation={new THREE.Euler(...rotation)} 
+      scale={new THREE.Vector3(...scale)}
+      onPointerOver={() => setHovered(true)}
+      onPointerOut={() => setHovered(false)}
+    >
+      {hovered && <FloatingLabel text={name} position={[0, 2.2, 0]} />}
+      <mesh position={[0, 0.15, 0]} castShadow><boxGeometry args={[0.9, 0.3, 1.2]} /><meshStandardMaterial color={greyMat} metalness={0.6} /></mesh>
+      <group position={[0, 0, 0.6]}>
+        {[0.25, -0.25].map((x, i) => (
+          <mesh key={i} position={[x, 0.05, 0.65]} castShadow><boxGeometry args={[0.2, 0.04, 1.3]} /><meshStandardMaterial color={darkGreyMat} /></mesh>
+        ))}
+      </group>
+      <mesh position={[0, 0.8, 0.1]} castShadow><boxGeometry args={[0.9, 1.1, 0.6]} /><meshStandardMaterial color={greyMat} metalness={0.5} /></mesh>
+      <group position={[0, 1.8, 0.4]}>
+        <mesh position={[0.42, 0, 0]}><boxGeometry args={[0.06, 1.0, 0.06]} /><meshStandardMaterial color={darkGreyMat} /></mesh>
+        <mesh position={[-0.42, 0, 0]}><boxGeometry args={[0.06, 1.0, 0.06]} /><meshStandardMaterial color={darkGreyMat} /></mesh>
+        <mesh position={[0, 0.5, 0]}><boxGeometry args={[0.9, 0.06, 0.06]} /><meshStandardMaterial color={darkGreyMat} /></mesh>
+      </group>
+      <mesh position={[0, 1.35, 0.35]} rotation={[0.4, 0, 0]}><cylinderGeometry args={[0.02, 0.02, 0.4]} /><meshStandardMaterial color="#000000" /></mesh>
+      <mesh position={[0, 1.55, 0.45]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[0.08, 0.02, 8, 16]} /><meshStandardMaterial color="#000000" /></mesh>
+      <group position={[0, 0.3, -0.45]}>
+        <mesh position={[0, 0.375, 0]}><boxGeometry args={[0.35, 0.75, 0.25]} /><meshStandardMaterial color={maroonMat} /></mesh>
+        <mesh position={[0, 1.025, 0]}><boxGeometry args={[0.4, 0.55, 0.3]} /><meshStandardMaterial color={maroonMat} /></mesh>
+        <mesh position={[0.22, 1.1, 0.25]} rotation={[-Math.PI / 3, 0, 0.1]}><capsuleGeometry args={[0.06, 0.45, 4, 8]} /><meshStandardMaterial color={maroonMat} /></mesh>
+        <mesh position={[-0.22, 1.1, 0.25]} rotation={[-Math.PI / 3, 0, -0.1]}><capsuleGeometry args={[0.06, 0.45, 4, 8]} /><meshStandardMaterial color={maroonMat} /></mesh>
+        <mesh position={[0, 1.45, 0]}><sphereGeometry args={[0.13, 16, 16]} /><meshStandardMaterial color="#ffdbac" /></mesh>
+        <mesh position={[0, 1.52, -0.02]} scale={[1, 0.5, 1]}><sphereGeometry args={[0.135, 16, 16]} /><meshStandardMaterial color="#4b2c20" /></mesh>
+      </group>
     </group>
-  </group>
-);
+  );
+};
 
 const HybridConveyor = ({ position, rotation, count=4 }: any) => (
   <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)}>
@@ -307,16 +394,58 @@ const AutoScannerShed = ({ position }: any) => (
   </group>
 );
 
-const MonitoringTV = ({ position, rotation, scale=[1,1,1] }: any) => (
-  <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)} scale={new THREE.Vector3(...scale)}>
-    <mesh position={[0,0.05,0]}><boxGeometry args={[0.8,0.1,0.8]} /><meshStandardMaterial color="#1e293b" /></mesh>
-    <mesh position={[0,1.2,0]}><cylinderGeometry args={[0.04,0.04,2.4,16]} /><meshStandardMaterial color="#475569" /></mesh>
-    <group position={[0, 2.4, 0.05]}>
-      <mesh><boxGeometry args={[1.8, 1.1, 0.1]} /><meshStandardMaterial color="#0f172a" /></mesh>
-      <mesh position={[0,0,0.07]}><planeGeometry args={[1.7, 1.0]} /><meshStandardMaterial color="#fff" emissive="#0284c7" emissiveIntensity={0.5} /></mesh>
+const MonitoringScreen = ({ image }: any) => {
+  const texture = useTexture(image);
+  
+  return (
+    <mesh position={[0, 0, 0.07]}>
+      <planeGeometry args={[1.7, 1.0]} />
+      <meshBasicMaterial map={texture as any} />
+    </mesh>
+  );
+};
+
+const MonitoringTV = ({ position, rotation = [0, 0, 0], scale = [1, 1, 1], image }: any) => {
+  const [hovered, setHovered] = useState(false);
+  useCursor(hovered);
+  return (
+    <group 
+      position={new THREE.Vector3(...position)} 
+      rotation={new THREE.Euler(...rotation)} 
+      scale={new THREE.Vector3(...scale)}
+      onPointerOver={() => setHovered(true)}
+      onPointerOut={() => setHovered(false)}
+    >
+      <mesh position={[0, 0.05, 0]} castShadow><boxGeometry args={[0.8, 0.1, 0.8]} /><meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} /></mesh>
+      <mesh position={[0, 1.2, 0]} castShadow><cylinderGeometry args={[0.04, 0.04, 2.4, 16]} /><meshStandardMaterial color="#475569" metalness={0.9} roughness={0.1} /></mesh>
+      <group position={[0, 2.4, 0.05]}>
+        <mesh castShadow><boxGeometry args={[1.8, 1.1, 0.1]} /><meshStandardMaterial color="#0f172a" roughness={0.5} /></mesh>
+        <Suspense fallback={<mesh position={[0, 0, 0.07]}><planeGeometry args={[1.7, 1.0]} /><meshStandardMaterial color="#ffffff" emissive="#0284c7" emissiveIntensity={0.5} roughness={0.2}/></mesh>}>
+          {image ? <MonitoringScreen image={image} /> : <mesh position={[0, 0, 0.07]}><planeGeometry args={[1.7, 1.0]} /><meshStandardMaterial color="#ffffff" emissive="#0284c7" emissiveIntensity={0.5} roughness={0.2}/></mesh>}
+        </Suspense>
+        <mesh position={[0, 0, 0.055]}><boxGeometry args={[1.75, 1.05, 0.01]} /><meshStandardMaterial color="#000" /></mesh>
+      </group>
+      {hovered && <FloatingLabel text="MONITORING DASHBOARD" position={[0, 3.5, 0]} />}
     </group>
-  </group>
-);
+  );
+};
+
+const QRScannerStation = ({ position, rotation = [0, 0, 0], scale = [1, 1, 1] }: any) => {
+  const tableMat = "#966F33";
+  return (
+    <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)} scale={new THREE.Vector3(...scale)}>
+      <mesh position={[0, 1.5, 0]} castShadow receiveShadow><boxGeometry args={[2.5, 0.1, 1.5]} /><meshStandardMaterial color={tableMat} roughness={0.6} metalness={0.1} /></mesh>
+      {[1.1, -1.1].map((x) => [[0.6, x], [-0.6, x]].map(([z, xx], i) => (
+        <mesh key={`${xx}-${z}`} position={[xx, 0.75, z]} castShadow><boxGeometry args={[0.1, 1.5, 0.1]} /><meshStandardMaterial color={tableMat} roughness={0.6} metalness={0.1} /></mesh>
+      )))}
+      <group position={[0, 1.55, 0]} scale={[0.5, 0.5, 0.5]}>
+        <mesh position={[0, 0.5, 0]} castShadow><boxGeometry args={[0.8, 1, 0.8]} /><meshPhysicalMaterial color="#fff" roughness={0.2} clearcoat={1.0} /></mesh>
+        <mesh position={[0, 0.7, 0.41]} rotation={[-0.2, 0, 0]}><planeGeometry args={[0.6, 0.5]} /><meshStandardMaterial color="#000" emissive="#111111" roughness={0.1} /></mesh>
+        <mesh position={[0, 0.3, 0.4]}><boxGeometry args={[0.5, 0.1, 0.1]} /><meshBasicMaterial color="#00ffff" /></mesh>
+      </group>
+    </group>
+  );
+};
 
 const FabricSquare = ({ position, color }: any) => (
   <mesh position={new THREE.Vector3(...position)} castShadow><boxGeometry args={[0.8, 0.1, 0.8]} /><meshStandardMaterial color={color} /></mesh>
@@ -346,7 +475,7 @@ const SIDEBAR_ITEMS = [
 
 export default function DigitalTwinPage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("sewing");
+  const [activeTab, setActiveTab] = useState("warehouse");
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
   const [lineStatuses, setLineStatuses] = useState<any[]>([]);
@@ -464,26 +593,53 @@ export default function DigitalTwinPage() {
 
         <div className="w-full h-full flex flex-row">
            <div className="flex-1 h-full bg-[#080a0f]">
-              {activeTab === 'warehouse' ? (
-                 <Canvas shadows camera={{ position: [55, 55, 55], fov: 45 }}>
-                    <Suspense fallback={null}>
-                       <ambientLight intensity={0.5} /><directionalLight position={[40,60,20]} intensity={1.5} /><Environment preset="warehouse" /><OrbitControls makeDefault dampingFactor={0.1} />
-                       <mesh rotation={[-Math.PI/2,0,0]} position={[0,-0.05,0]}><planeGeometry args={[200,200]}/><meshStandardMaterial color="#0f172a" /></mesh>
-                       {Object.entries(ZONE_LAYOUT).map(([z, cfg]) => <ZoneBoundary key={z} positions={cfg.positions} zoneName={z} />)}
-                       {racks.map((r,idx) => <DoubleRack key={r.id} position={r.pos} label={r.id} rollColor={PALETTE[idx%PALETTE.length]} />)}
-                       <InspectionMachine position={[17,0,52]} rotation={[-Math.PI/2, Math.PI, Math.PI/2]} scale={[2,2,2]} name="INS 1" />
-                       <InspectionMachine position={[10,0,51.5]} rotation={[-Math.PI/2, Math.PI, -Math.PI/2]} scale={[2,2,2]} name="INS 2" />
-                       <Truck position={[-14,0,90]} />
-                       <StandingOperator position={[5,0,51.8]} rotation={[0,Math.PI/2,0]} />
-                       <StandingOperator position={[23,0,52]} rotation={[0,-Math.PI/2,0]} />
-                       <IndustrialWorkTable position={[40,0,52]} rotation={[0,Math.PI/2,0]} scale={[2.5,2.5,2.5]} name="T1" />
-                       <group position={[40,1.6,52]}><FabricSquare position={[0.5,0,0.5]} color={PALETTE[2]} /><FabricSquare position={[-0.5,0,-0.5]} color={PALETTE[3]} /></group>
-                       <AccurateAGV position={[-21.5,0,55]} rotation={[0,Math.PI,0]} scale={[2,2,2]} />
-                       <HybridConveyor position={[-14,0,58.5]} rotation={[0,-Math.PI/2,0]} />
-                       <AutoScannerShed position={[-14,0,67.5]} />
-                       <MonitoringTV position={[5,0,63]} rotation={[0,Math.PI,0]} scale={[1.4,1.4,1.4]} />
-                    </Suspense>
-                 </Canvas>
+               {activeTab === 'warehouse' ? (
+                  <Canvas shadows camera={{ position: [55, 55, 55], fov: 45 }} gl={{ antialias: true }}>
+                     <Suspense fallback={null}>
+                        <ambientLight intensity={0.8} />
+                        <pointLight position={[10, 10, 10]} intensity={1} />
+                        <directionalLight position={[40, 60, 20]} intensity={1.5} castShadow />
+                        <Environment preset="warehouse" />
+                        <OrbitControls makeDefault dampingFactor={0.1} enableDamping />
+                        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 10]}><planeGeometry args={[180, 180]} /><meshStandardMaterial color="#fdf5e6" opacity={0.6} transparent /></mesh>
+                        {Object.entries(ZONE_LAYOUT).map(([z, cfg]) => <ZoneBoundary key={z} positions={cfg.positions} zoneName={z} />)}
+                        {racks.map((r,idx) => (
+                          <DoubleRack 
+                            key={r.id} 
+                            position={r.pos} 
+                            label={r.id} 
+                            rollColor={r.id.startsWith("Q") ? PALETTE[13] : PALETTE[idx % PALETTE.length]} 
+                            emptySlots={r.id === "F2-R2" ? [1] : []}
+                          />
+                        ))}
+                         <InspectionMachine position={[17.2, 0, 60.3]} rotation={[0, Math.PI, 0]} scale={[1.2, 1.2, 1.2]} name="Fabric Inspection 1" />
+                         <InspectionMachine position={[23.2, 0, 60.3]} rotation={[0, Math.PI, 0]} scale={[1.2, 1.2, 1.2]} name="Fabric Inspection 2" showLabel={true} labelText="Vision AI active" />
+                         <FabricRollPallet position={[17.2, 0, 56]} rollColor={PALETTE[5]} rotation={[0, 0, 0]} />
+                         <FabricRollPallet position={[23.2, 0, 56]} rollColor={PALETTE[8]} rotation={[0, 0, 0]} />
+                         <Truck position={[-12.2, 0, 71.3]} rotation={[0, -Math.PI / 2, 0]} />
+                         <IndustrialWorkTable position={[45, 0, 63]} rotation={[0, Math.PI / 2, 0]} scale={[1.5, 1.5, 1.5]} name="Workstation A" />
+                         <group position={[45, 1.0, 63]}><FabricSquare position={[0.3, 0, 0.3]} color={PALETTE[2]} /><FabricSquare position={[-0.3, 0, -0.3]} color={PALETTE[3]} /></group>
+                         <IndustrialWorkTable position={[45, 0, 58]} rotation={[0, Math.PI / 2, 0]} scale={[1.5, 1.5, 1.5]} name="Workstation B" />
+                         <group position={[45, 1.0, 58]}><FabricSquare position={[0, 0, 0]} color={PALETTE[7]} /></group>
+                         <StandingOperator position={[19.2, 0, 60.3]} rotation={[0, Math.PI / 2, 0]} />
+                         <StandingOperator position={[25.2, 0, 60.3]} rotation={[0, Math.PI / 2, 0]} />
+                         <StandingOperator position={[47.5, 0, 63]} rotation={[0, -Math.PI / 2, 0]} />
+                         <StandingOperator position={[47.5, 0, 58]} rotation={[0, -Math.PI / 2, 0]} />
+                         <StandingOperator position={[-1, 0, 68]} rotation={[0, Math.PI / 2, 0]} />
+                         <AccurateAGV position={[-18, 0, 64.9]} rotation={[0, Math.PI, 0]} scale={[1.4, 1.4, 1.4]} name="Logistics AGV 1" />
+                         <AccurateAGV position={[20, 0, 48]} rotation={[0, 0, 0]} scale={[1.4, 1.4, 1.4]} name="Logistics AGV 2" />
+                         <HybridConveyor position={[-1, 0, 60.3]} rotation={[0, -Math.PI / 2, 0]} count={15} />
+                         <QRScannerStation position={[-1, 0, 67.5]} rotation={[0, -Math.PI / 2, 0]} scale={[1.2, 1.2, 1.2]} />
+                         <AutoScannerShed position={[-1, 0, 78]} />
+                         <MonitoringTV position={[10, 0, 73]} rotation={[0, Math.PI, 0]} scale={[1.2, 1.2, 1.2]} image="/models/tv1.jpeg" />
+                         <MonitoringTV position={[-3, 0, 71]} rotation={[0, Math.PI / 2, 0]} scale={[1.2, 1.2, 1.2]} image="/models/tv2.jpeg" />
+                         <group position={[-15.5, 0, 66]} rotation={[0, -Math.PI / 2, 0]}>
+                           {[0, 1, 2].map((i) => (
+                             <FabricRollPallet key={`truck-pal-${i}`} position={[i * 2.0, 0, 0]} rotation={[0, Math.PI / 2, 0]} rollColor={PALETTE[(i + 12) % PALETTE.length]} />
+                          ))}
+                        </group>
+                     </Suspense>
+                  </Canvas>
               ) : activeTab === 'sewing' ? (
                  <Scene3D key={activeFloor+activeLine} showMachines={true} machines={activeMachines} sections={floorSections} isOverview={activeLine==="All Lines"} cameraPosition={cameraConfig.pos as any} cameraFov={cameraConfig.fov} />
               ) : (
@@ -491,7 +647,7 @@ export default function DigitalTwinPage() {
               )}
            </div>
 
-           {activeTab === 'sewing' && (
+            {['cutting', 'sewing', 'finishing'].includes(activeTab) && (
               <div className="w-[340px] bg-slate-900 border-l border-white/5 flex flex-col shadow-2xl relative z-20">
                  <div className="p-6 border-b border-white/5 bg-slate-900/50 backdrop-blur-md">
                     <h3 className="text-white font-black text-xs uppercase tracking-[0.2em] flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live Status</h3>

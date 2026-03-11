@@ -368,8 +368,12 @@ export const generateCotLayout = (
         const sectionLimit = targetSpecs?.end || Infinity;
         const hasSupermarket = (matchedTag === 'front' || matchedTag === 'back');
         const supermarketStart = sectionLimit - (hasSupermarket ? sDims.width : 0);
+        
+        const hasCollarSupermarkets = matchedTag === 'collar';
+        const collarSupermarketReserve = hasCollarSupermarkets ? (sDims.width + sDims.length + 0.3) : 0;
+        
         const reservation = (iDims.length + 0.2 + 0.1);
-        const machineZoneEnd = supermarketStart - reservation;
+        const machineZoneEnd = supermarketStart - reservation - collarSupermarketReserve;
 
         const currentZones = [{
             start: targetSpecs ? targetSpecs.start : 0,
@@ -518,6 +522,24 @@ export const generateCotLayout = (
             addMachine(createDummyOp('Supermarket', secName), (isAB ? 'A' : 'C'), targetSpecs!.end - sDims.width / 2 - 0.2, undefined, undefined, secName, true);
             const sm = layout[layout.length - 1]; if (sm) { sm.rotation.y = ROT_FACE_FRONT + Math.PI; sm.id = `super-${secName}`; }
             const eX = targetSpecs!.end;
+            if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
+            else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
+        }
+
+        if (secLower.includes('collar')) {
+            const armsX = targetSpecs!.end + sDims.length / 2;
+            const sm2X = targetSpecs!.end + sDims.length + sDims.width / 2;
+
+            addMachine(createDummyOp('Supermarket', secName), 'D', armsX, undefined, ROT_FACE_FRONT, secName, true);
+            const sm1 = layout[layout.length - 1]; if (sm1) { sm1.position.z = LANE_Z_D; sm1.id = `super1-${secName}`; }
+
+            addMachine(createDummyOp('Supermarket', secName), 'C', armsX, undefined, ROT_FACE_FRONT, secName, true);
+            const sm3 = layout[layout.length - 1]; if (sm3) { sm3.position.z = LANE_Z_C; sm3.id = `super3-${secName}`; }
+
+            addMachine(createDummyOp('Supermarket', secName), 'C', sm2X, undefined, 0, secName, true);
+            const sm2 = layout[layout.length - 1]; if (sm2) { sm2.position.z = LANE_Z_CENTER_CD; sm2.id = `super2-${secName}`; }
+
+            const eX = targetSpecs!.end + sDims.length + sDims.width + 0.5;
             if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
             else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
         }

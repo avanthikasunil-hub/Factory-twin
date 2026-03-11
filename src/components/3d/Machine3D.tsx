@@ -85,8 +85,8 @@ const getModelUrl = (type: string) => {
 
   for (const key of sortedKeys) {
     // default override should only be hit if nothing else matches
-    if (key === 'default') continue; 
-    
+    if (key === 'default') continue;
+
     if (t.includes(key) || cleanType.includes(key)) {
       return `/models/${MODEL_MAP[key]}`;
     }
@@ -110,6 +110,8 @@ const getTargetDimensionsMeters = (type: string) => {
     l = 4.5 * FT; w = 3 * FT; h = 4.0 * FT;
   } else if (t.includes('notch')) {
     l = 4 * FT; w = 2.5 * FT; h = 3.5 * FT;
+  } else if (t.includes('pressing') || (t.includes('press') && !t.includes('iron'))) {
+    l = 4.72 * FT; w = 4 * FT; h = 5 * FT;
   } else if (t.includes('iron') || t.includes('press')) {
     l = 4.0 * FT; w = 3.0 * FT; h = 3.0 * FT;
   } else if (t.includes('helper') || t.includes('work table') || t.includes('table') || t.includes('trolley')) {

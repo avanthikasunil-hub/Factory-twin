@@ -183,6 +183,7 @@ export const getMachineZoneDims = (type: string) => {
     else if (t.includes('turning')) { l = 4.0 * FT; w = 2.5 * FT; }
     else if (t.includes('pointing')) { l = 3.5 * FT; w = 2.5 * FT; }
     else if (t.includes('contour')) { l = 4.5 * FT; w = 3 * FT; }
+    else if (t.includes('pressing') || (t.includes('press') && !t.includes('iron'))) { l = 4.72 * FT; w = 3.5 * FT; }
     else if (t.includes('iron') || t.includes('press')) { l = 4.0 * FT; w = 3.0 * FT; }
     else if (t.includes('helper') || t.includes('work table') || t.includes('table') || t.includes('trolley')) { l = 4.5 * FT; w = 2.5 * FT; }
     else if (t.includes('inspection')) { l = 5.0 * FT; w = 4.0 * FT; }
@@ -489,8 +490,11 @@ export const generateLayout = (
         const hasSupermarket = (matchedTag === 'front' || matchedTag === 'back');
         const supermarketStart = sectionLimit - (hasSupermarket ? sDims.width : 0);
 
+        const hasCollarSupermarkets = matchedTag === 'collar';
+        const collarSupermarketReserve = hasCollarSupermarkets ? (sDims.width + sDims.length + 0.3) : 0;
+
         const reservation = (iDims.length + 3 * INSPECTION_GAP + 0.01);
-        const machineZoneEnd = supermarketStart - reservation;
+        const machineZoneEnd = supermarketStart - reservation - collarSupermarketReserve;
 
         const rawZones = isAB ? zonesAB : zonesCD;
         // Restrict placement zones to ONLY this section's physical bounds.
@@ -775,6 +779,26 @@ export const generateLayout = (
                 superM.id = `super-${secName}`;
             }
             const eX = absEnd;
+            if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
+            else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
+        }
+
+        if (secLower.includes('collar')) {
+            const sDims = getMachineZoneDims('supermarket');
+            const targetSpecs = specs.collar;
+            const armsX = targetSpecs.end + sDims.width + sDims.length / 2;
+            const sm2X = targetSpecs.end + sDims.width / 2;
+
+            addMachine(createDummyOp('Supermarket', secName), 'D', armsX, undefined, ROT_FACE_FRONT, secName, true);
+            const sm1 = layout[layout.length - 1]; if (sm1) { sm1.position.z = LANE_Z_D; sm1.id = `super1-${secName}`; }
+
+            addMachine(createDummyOp('Supermarket', secName), 'C', armsX, undefined, ROT_FACE_FRONT, secName, true);
+            const sm3 = layout[layout.length - 1]; if (sm3) { sm3.position.z = LANE_Z_C; sm3.id = `super3-${secName}`; }
+
+            addMachine(createDummyOp('Supermarket', secName), 'C', sm2X, undefined, 0, secName, true);
+            const sm2 = layout[layout.length - 1]; if (sm2) { sm2.position.z = LANE_Z_CENTER_CD; sm2.id = `super2-${secName}`; }
+
+            const eX = targetSpecs.end + sDims.length + sDims.width + 0.5;
             if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
             else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
         }

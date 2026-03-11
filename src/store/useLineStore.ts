@@ -566,12 +566,12 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         'assemblyAB': 'Assembly AB',
         'assemblyCD': 'Assembly CD'
       };
-      return mapping[s] || s.charAt(0).toUpperCase() + s.slice(1);
+      return mapping[s] || s.charAt(0).toUpperCase() + s.slice(1).replace(/([a-z])([A-Z])/g, '$1 $2');
     };
 
     const specs = getLayoutSpecs(get().currentLine?.lineNo);
     const sections = specs.sections;
-    const newAlerts: { id: string; type: 'green' | 'red'; message: string }[] = [];
+    const newAlerts: { id: string; type: 'red'; message: string }[] = [];
     const violationKeys = new Set<string>();
 
     layout.forEach(m => {
@@ -613,22 +613,33 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       }
     });
 
+    const allViolatingSections = new Set<string>();
     violationKeys.forEach(key => {
       if (key.includes('&')) {
-        const [s1, s2] = key.split('&');
-        newAlerts.push({
-          id: `violation-${key}`,
-          type: 'red',
-          message: `${cap(s1)} & ${cap(s2)}`
-        });
+        key.split('&').forEach(k => allViolatingSections.add(cap(k)));
       } else {
-        newAlerts.push({
-          id: `violation-${key}`,
-          type: 'red',
-          message: `${cap(key)} Space Violation`
-        });
+        allViolatingSections.add(cap(key));
       }
     });
+
+    if (allViolatingSections.size > 0) {
+      const sectionsArray = Array.from(allViolatingSections);
+      let message = "";
+      if (sectionsArray.length === 1) {
+        message = `${sectionsArray[0]}`;
+      } else if (sectionsArray.length === 2) {
+        message = `${sectionsArray[0]} & ${sectionsArray[1]}`;
+      } else {
+        const last = sectionsArray.pop();
+        message = `${sectionsArray.join(", ")} & ${last}`;
+      }
+
+      newAlerts.push({
+        id: 'global-space-violation',
+        type: 'red',
+        message
+      });
+    }
 
     set({ layoutAlerts: newAlerts, layoutError: null, warnings: [] });
   },

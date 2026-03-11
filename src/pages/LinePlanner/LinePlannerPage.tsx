@@ -324,19 +324,15 @@ const LinePlannerPage = () => {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className={
-              alert.type === 'red'
-                ? 'bg-red-600 text-white px-6 py-3 flex items-center justify-between shadow-xl z-20 border-b border-red-500/40'
-                : 'bg-emerald-600 text-white px-6 py-3 flex items-center justify-between shadow-xl z-20 border-b border-emerald-500/40'
-            }
+            className="bg-red-600 text-white px-6 py-3 flex items-center justify-between shadow-xl z-20 border-b border-red-500/40"
           >
             <div className="flex items-center gap-3">
-              <div className={`p-1.5 rounded-full ${alert.type === 'red' ? 'bg-white/20 animate-pulse' : 'bg-white/10'}`}>
+              <div className="p-1.5 rounded-full bg-white/20 animate-pulse">
                 <AlertCircle className="w-5 h-5" />
               </div>
               <div className="flex flex-col">
                 <span className="font-black text-[11px] uppercase tracking-[0.2em]">
-                  {alert.type === 'red' ? 'Space Violation' : 'Overflow Info'}
+                  Space Violation
                 </span>
                 <p className="text-[12px] font-bold opacity-90 leading-tight">{alert.message}</p>
               </div>
