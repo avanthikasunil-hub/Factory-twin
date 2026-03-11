@@ -30,8 +30,8 @@ const CreateLinePage = () => {
   const [styleNo, setStyleNo] = useState("");
   const [coneNo, setConeNo] = useState("");
   const [buyer, setBuyer] = useState("");
-  const [efficiency, setEfficiency] = useState("100");
-  const [targetOutput, setTargetOutput] = useState("1000");
+  const [efficiency, setEfficiency] = useState("90");
+  const [targetOutput, setTargetOutput] = useState("1800");
   const [workingHours, setWorkingHours] = useState("9");
 
   const [lines, setLines] = useState<string[]>(DEFAULT_LINES);
@@ -149,8 +149,8 @@ const CreateLinePage = () => {
       coneNo,
       buyer,
       parsedOperations,
-      parseFloat(efficiency || "100"),
-      parseFloat(targetOutput || "1000"),
+      parseFloat(efficiency || "90"),
+      parseFloat(targetOutput || "1800"),
       parsedTotalSMV,
       parseFloat(workingHours || "9"),
       sourceSheet

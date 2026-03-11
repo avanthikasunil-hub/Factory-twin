@@ -13,7 +13,7 @@ export const calculateMachineRequirements = (
     operations: Operation[],
     targetOutput: number,
     workingHours: number,
-    efficiency: number = 100
+    efficiency: number = 90
 ): { operation: Operation; count: number }[] => {
     if (targetOutput <= 0 || workingHours <= 0 || efficiency <= 0) {
         // Fallback if parameters are missing/zero: 1 machine per op

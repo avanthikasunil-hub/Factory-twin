@@ -149,13 +149,13 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   operations: [],
   selectedMachines: [],
   selectedMachine: null,
-  targetOutput: 1000,
+  targetOutput: 1800,
   workingHours: 9,
   visibleSection: null,
   setVisibleSection: (section) => set({ visibleSection: section }),
   layoutLogicVersion: 0,
   setLayoutLogicVersion: (v) => set({ layoutLogicVersion: v }),
-  efficiency: 100,
+  efficiency: 90,
   past: [] as any[],
   future: [] as any[],
   canUndo: false,
@@ -287,7 +287,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     set({ operations, selectedMachine: null });
   },
 
-  createLine: (lineNo, styleNo, coneNo, buyer, operations, efficiency = 100, inputTargetOutput = 1000, inputTotalSMV?: number, inputWorkingHours = 9, sourceSheet = "") => {
+  createLine: (lineNo, styleNo, coneNo, buyer, operations, efficiency = 90, inputTargetOutput = 1800, inputTotalSMV?: number, inputWorkingHours = 9, sourceSheet = "") => {
     (get() as any).takeSnapshot();
     const targetOutput = inputTargetOutput;
     const workingHours = inputWorkingHours;
@@ -424,9 +424,9 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       operations: line.operations,
       machineLayout: line.machineLayout,
       sectionLayout: line.sectionLayout || [],
-      targetOutput: line.targetOutput || 1000,
+      targetOutput: line.targetOutput || 1800,
       workingHours: line.workingHours || 9,
-      efficiency: line.efficiency || 100,
+      efficiency: line.efficiency || 90,
       selectedMachine: null,
       selectedMachines: [],
       warnings: [],
