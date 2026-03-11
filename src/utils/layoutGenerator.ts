@@ -21,7 +21,7 @@ const ROT_FACE_BACK = Math.PI / 2;
 
 const FT = 0.3048;
 
-export const LAYOUT_LOGIC_VERSION = 55;
+export const LAYOUT_LOGIC_VERSION = 56;
 export const FIXED_ASSEMBLY_START = 0;
 
 export interface SectionPreset {
@@ -406,74 +406,8 @@ export const generateLayout = (
         }
     }
 
-    for (const secName of processingOrder) {
-        const secLower = secName.toLowerCase();
-        const ops = sectionsMap.get(secName)!;
-        const matchedTag = PARTS_ORDER.find(tag => secLower.includes(tag));
-        const isAB = abSections.some(s => secLower.includes(s));
-
-        if (matchedTag && !secLower.includes('assembly')) {
-            const spaceInfo = sectionSpace[matchedTag];
-            // Only spill when the section is GENUINELY full (usedLen strictly exceeds available)
-            if (spaceInfo.usedLen > spaceInfo.availableLen) {
-                const excess = spaceInfo.usedLen - spaceInfo.availableLen;
-                const overflowTarget = findOverflowSection(secLower, cursors, isAB);
-
-                if (overflowTarget.toLowerCase() !== secLower && !overflowTarget.toLowerCase().includes('assembly')) {
-                    const targetTag = PARTS_ORDER.find(t => overflowTarget.toLowerCase().includes(t));
-                    if (targetTag && sectionSpace[targetTag]) {
-                        const targetSpace = sectionSpace[targetTag];
-                        const targetAvailableSpace = Math.max(0, targetSpace.availableLen - targetSpace.usedLen);
-
-                        if (targetAvailableSpace >= excess) {
-                            targetSpace.usedLen += excess;
-                            spaceInfo.usedLen -= excess;
-
-                            const targetIdx = PARTS_ORDER.indexOf(targetTag);
-                            const sourceIdx = PARTS_ORDER.indexOf(matchedTag);
-                            const isNext = targetIdx > sourceIdx;
-
-                            // Move machines from the overflow end of the section
-                            const movedOps: any[] = [];
-                            let remainingExcess = excess;
-                            while (ops.length > 0 && remainingExcess > 0) {
-                                const item = isNext ? ops[ops.length - 1] : ops[0];
-                                const machineWidth = getMachineZoneDims(item.operation.machine_type).length;
-                                // Each machine contributes its full width to the excess calculation (per-lane widths)
-                                const lenPerMachine = machineWidth;
-
-                                let countToMove = 0;
-                                while (countToMove < item.count && (countToMove * lenPerMachine) < remainingExcess) {
-                                    countToMove++;
-                                }
-
-                                if (countToMove >= item.count) {
-                                    if (isNext) movedOps.unshift(ops.pop()!);
-                                    else movedOps.push(ops.shift()!);
-                                    remainingExcess -= item.count * lenPerMachine;
-                                } else {
-                                    const splitItem = { ...item, count: countToMove };
-                                    item.count -= countToMove;
-                                    if (isNext) movedOps.unshift(splitItem);
-                                    else movedOps.push(splitItem);
-                                    remainingExcess -= countToMove * lenPerMachine;
-                                }
-                            }
-                            if (isNext) isSpilledForward[secName] = true;
-                            spillPending[targetTag] = { ops: movedOps, isNext: isNext, sourceSection: secName };
-                            warnings.unshift(`${secName} overflow (${movedOps.reduce((s, o) => s + o.count, 0)} machines) moved to ${overflowTarget}`);
-                        } else {
-                            warnings.unshift(`Space limit exceeded on ${secName}. No space left in ${overflowTarget}.`);
-                            sectionSpaceViolators.push(secName);
-                        }
-                    }
-                } else if (overflowTarget.toLowerCase() === secLower) {
-                    warnings.unshift(`Space limit exceeded on ${secName}. Section is completely full.`);
-                    sectionSpaceViolators.push(secName);
-                }
-            }
-        }
-    }
+    // Phase 1 ops-movement removed: overflow is now handled greedily in Phase 2.
+    // Machines fill each section to machineZoneEnd, then remaining ops carry forward.
 
     const sectionCounters: Record<string, number> = {};
     Array.from(sectionsMap.keys()).forEach(k => sectionCounters[k] = 1);
@@ -703,26 +637,36 @@ export const generateLayout = (
             else { cur.C = Math.max(cur.C, iEnd); cur.D = Math.max(cur.D, iEnd); }
         };
 
-        const placeOps = (opsToPlace: any[], sourceSecLabel: string) => {
-            for (const item of opsToPlace) {
+        // placeOps: place machines greedily; stops at machineZoneEnd and returns overflow ops
+        const placeOps = (opsToPlace: any[], sourceSecLabel: string): any[] => {
+            const overflow: any[] = [];
+            let overflowing = false;
+
+            for (let opIdx = 0; opIdx < opsToPlace.length; opIdx++) {
+                const item = opsToPlace[opIdx];
+                if (overflowing) { overflow.push({ ...item }); continue; }
+
                 const dims = getMachineZoneDims(item.operation.machine_type);
                 const w = dims.length;
+
                 for (let k = 0; k < item.count; k++) {
                     const targetLane = (alt % 2 === 0) ? lLane : rLane;
+                    const cursorVal = (targetLane === lLane) ? lCX : rCX;
+                    const nextX = getNextValidX(cursorVal, w, zones);
+
+                    if (nextX + w > machineZoneEnd + 0.01) {
+                        // Zone full — collect remaining count of this op plus all subsequent ops
+                        const leftover = item.count - k;
+                        if (leftover > 0) overflow.push({ ...item, count: leftover });
+                        overflowing = true;
+                        break;
+                    }
 
                     if (targetLane === lLane) {
-                        const nextX = getNextValidX(lCX, w, zones);
-                        if (nextX + w > machineZoneEnd + 0.01) {
-                            sectionSpaceViolators.push(sourceSecLabel);
-                        }
                         lCX = nextX;
                         addMachine(item.operation, lLane, lCX + w / 2, sectionCounters[sourceSecLabel]++, undefined, sourceSecLabel, true);
                         lCX += w + MACHINE_SPACING_X;
                     } else {
-                        const nextX = getNextValidX(rCX, w, zones);
-                        if (nextX + w > machineZoneEnd + 0.01) {
-                            sectionSpaceViolators.push(sourceSecLabel);
-                        }
                         rCX = nextX;
                         addMachine(item.operation, rLane, rCX + w / 2, sectionCounters[sourceSecLabel]++, undefined, sourceSecLabel, true);
                         rCX += w + MACHINE_SPACING_X;
@@ -730,6 +674,7 @@ export const generateLayout = (
                     alt++;
                 }
             }
+            return overflow;
         };
 
         // 1. If this section is a target for "Next" spillovers
@@ -748,7 +693,21 @@ export const generateLayout = (
         const inspectionOps = ops.filter(o => o.operation.machine_type.toLowerCase().includes('inspection'));
         const smOps = ops.filter(o => o.operation.machine_type.toLowerCase().includes('supermarket'));
 
-        placeOps(regularOps, secName);
+        const overflowOps = placeOps(regularOps, secName);
+
+        // Forward overflow: inject into the next same-lane section's ops BEFORE it is processed
+        if (overflowOps.length > 0 && matchedTag) {
+            const overflowTarget = findOverflowSection(secLower, cursors, isAB);
+            const nextSecName = processingOrder.find(s =>
+                s !== secName &&
+                PARTS_ORDER.find(t => s.toLowerCase().includes(t)) === PARTS_ORDER.find(t => overflowTarget.toLowerCase().includes(t))
+            );
+            if (nextSecName && sectionsMap.has(nextSecName)) {
+                sectionsMap.get(nextSecName)!.push(...overflowOps);
+                isSpilledForward[secName] = true;
+                warnings.unshift(`${secName}: ${overflowOps.reduce((s, o) => s + o.count, 0)} machines forwarded to ${nextSecName}`);
+            }
+        }
 
         if (matchedTag) {
             sectionTails[matchedTag] = { lTail: lCX, rTail: rCX };
