@@ -1126,7 +1126,18 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       const res = await fetch(`${API_BASE_URL}/get-ob?line_no=${encodeURIComponent(lineNo)}&style_no=${encodeURIComponent(styleNo)}&con_no=${encodeURIComponent(conNo)}`);
       if (!res.ok) throw new Error("OB not found"); const data = await res.json();
       console.log(`[Store] Applying custom OB from server for ${styleNo}`);
-      get().updateLineWithNewOB(data.operations);
+      const allOps: Operation[] = data.operations || [];
+      // Split into layout ops and preparatory ops (same filter as obParser)
+      const PREP_NAMES = [
+        'washing allowance','washing_allowance','right placket tape iron','gusset iron',
+        'press sleeve placket','press pocket','right placket self fold iron',
+        'left placket self fold iron','stitch tape to pocket','triangle patch ironing',
+        'pocket overlock','pocket iron with fusing','pocket hem stitch',
+      ];
+      const layoutOps = allOps.filter(op => !PREP_NAMES.some(p => op.op_name?.toLowerCase().includes(p)) && !op.op_name?.toLowerCase().includes('allowance'));
+      const prepOps = allOps.filter(op => PREP_NAMES.some(p => op.op_name?.toLowerCase().includes(p)) || op.op_name?.toLowerCase().includes('allowance'));
+      get().updateLineWithNewOB(layoutOps);
+      set({ preparatoryOps: prepOps });
     } catch (err) {
       console.error("[Store] Error fetching OB from server:", err);
     }
@@ -1142,6 +1153,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     currentLine: state.currentLine,
     machineLayout: state.machineLayout,
     operations: state.operations,
+    preparatoryOps: state.preparatoryOps,
     sectionLayout: state.sectionLayout,
     targetOutput: state.targetOutput,
     workingHours: state.workingHours,

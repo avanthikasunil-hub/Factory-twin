@@ -463,8 +463,8 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
                 <span style={{ fontSize: '9px', fontWeight: 900, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
                   {machineData.operation.machine_type}
                 </span>
-                <span style={{ fontSize: '9px', fontWeight: 900, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.05em' }}>
-                  MC {sectionMcNumber.pos}/{sectionMcNumber.total}
+                <span style={{ fontSize: '10px', fontWeight: 900, color: '#111827', backgroundColor: '#eab308', padding: '1px 6px', borderRadius: '4px', letterSpacing: '0.05em', boxShadow: '0 2px 4px rgba(234,179,8,0.3)' }}>
+                  MC {sectionMcNumber.pos}
                 </span>
               </div>
               {/* Operation name */}

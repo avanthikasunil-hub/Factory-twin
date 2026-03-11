@@ -38,10 +38,14 @@ const LinePlannerPage = () => {
   const [isAssemblyExpanded, setIsAssemblyExpanded] = useState(false);
 
   useEffect(() => {
+    // Only fetch from backend if we don't already have operations loaded locally
     if (currentLine?.lineNo && (currentLine as any).styleNo && (currentLine as any).coneNo) {
-      fetchAndApplyOB(currentLine.lineNo, (currentLine as any).styleNo, (currentLine as any).coneNo);
+      if (operations.length === 0) {
+        fetchAndApplyOB(currentLine.lineNo, (currentLine as any).styleNo, (currentLine as any).coneNo);
+      }
     }
-  }, [currentLine?.lineNo, (currentLine as any)?.styleNo, (currentLine as any)?.coneNo, fetchAndApplyOB]);
+  }, [currentLine?.lineNo, (currentLine as any)?.styleNo, (currentLine as any)?.coneNo, fetchAndApplyOB, operations.length]);
+
 
   // ─── HOT REFRESH: Auto-update layout when logic code changes ──────────────────
   const { layoutLogicVersion, setLayoutLogicVersion } = useLineStore();
