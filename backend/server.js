@@ -497,12 +497,6 @@ app.get("/active-layouts", (req, res) => {
   });
 });
 
-app.use(express.static(path.join(__dirname, "../dist")));
-
-app.get(/.*/, (req, res) => {
-  res.sendFile(path.join(__dirname, "../dist/index.html"));
-});
-
 app.get("/cons", async (req, res) => {
   const line = req.query.line;
   if (!line) return res.json([]);
@@ -544,6 +538,12 @@ app.get("/styles-by-oc", async (req, res) => {
     }
   });
   res.json(Array.from(styles));
+});
+
+app.use(express.static(path.join(__dirname, "../dist")));
+
+app.get(/.*/, (req, res) => {
+  res.sendFile(path.join(__dirname, "../dist/index.html"));
 });
 
 const PORT = process.env.PORT || 4000;
