@@ -78,7 +78,14 @@ const getModelUrl = (type: string) => {
   // Clean string for easier matching
   const cleanType = t.replace(/[^a-z0-9]/g, '');
 
-  for (const key of Object.keys(MODEL_MAP)) {
+  // Sort keys by length descending to match most specific names first
+  // (e.g. 'buttonhole' before 'hole', 'trolley' before 'ol')
+  const sortedKeys = Object.keys(MODEL_MAP).sort((a, b) => b.length - a.length);
+
+  for (const key of sortedKeys) {
+    // default override should only be hit if nothing else matches
+    if (key === 'default') continue; 
+    
     if (t.includes(key) || cleanType.includes(key)) {
       return `/models/${MODEL_MAP[key]}`;
     }
