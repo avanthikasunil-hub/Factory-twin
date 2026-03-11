@@ -496,6 +496,28 @@ const LinePlannerPage = () => {
               </div>
             </div>
 
+            {/* Preparatory Processes — right after Production Specs */}
+            {preparatoryOps && preparatoryOps.length > 0 && (
+              <div className="rounded-3xl overflow-hidden border border-amber-500/20 shadow-sm text-left">
+                <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 px-5 py-3.5 flex items-center gap-3 border-b border-amber-500/15">
+                  <Scissors className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                  <span className="text-[11px] font-black uppercase tracking-[0.15em] text-foreground">Preparatory Processes</span>
+                  <span className="ml-auto text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-black shadow-sm shadow-amber-500/30">{preparatoryOps.length}</span>
+                </div>
+                <div className="p-3 space-y-1.5 max-h-48 overflow-y-auto">
+                  {preparatoryOps.map((op, i) => (
+                    <div key={i} className="flex items-center gap-2.5 px-2.5 py-2 rounded-2xl hover:bg-amber-500/5 transition-colors group">
+                      <span className="text-[9px] font-black text-amber-500/50 min-w-[16px] text-right">{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-semibold text-foreground/85 truncate">{op.op_name}</p>
+                        <p className="text-[9px] text-muted-foreground/50 mt-0.5">{op.machine_type} · {op.smv?.toFixed(2)} min</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Line Statistics */}
             <div className="text-left py-2">
               <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-6 px-1">Line Statistics</h2>
@@ -656,28 +678,6 @@ const LinePlannerPage = () => {
                 Pro-Tip: Use Efficiency to simulate real-world conditions on your current floor layout.
               </p>
             </div>
-
-            {/* Preparatory Processes */}
-            {preparatoryOps && preparatoryOps.length > 0 && (
-              <div className="pt-6 border-t border-border/50 text-left">
-                <h3 className="text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4 flex items-center gap-3">
-                  <Scissors className="w-4 h-4 text-amber-500" /> Preparatory Processes
-                  <span className="ml-auto text-[10px] bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full border border-amber-500/20 font-black">{preparatoryOps.length}</span>
-                </h3>
-                <p className="text-[10px] text-muted-foreground/70 italic mb-3">Excluded from floor layout — done offline before line entry.</p>
-                <div className="space-y-1.5">
-                  {preparatoryOps.map((op, i) => (
-                    <div key={i} className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/15 text-[11px]">
-                      <span className="text-amber-500/40 font-black min-w-[18px] text-right mt-0.5">{i + 1}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-foreground/80 truncate">{op.op_name}</p>
-                        <p className="text-muted-foreground/60 text-[9px] mt-0.5">{op.machine_type} · {op.smv?.toFixed(2)} min</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
           </div>
         </aside>

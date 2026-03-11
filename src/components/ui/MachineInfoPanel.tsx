@@ -390,31 +390,6 @@ export const MachineInfoPanel = () => {
                   </span>
                 </div>
               </div>
-
-              {/* Machine List: 1 to X */}
-              {sectionMachines.length > 0 && (
-                <div className="mt-3 space-y-1 border-t border-border/40 pt-2">
-                  <span className="text-muted-foreground font-bold uppercase tracking-wider text-[9px]">
-                    All Machines (1 – {sectionMachines.length})
-                  </span>
-                  <div className="max-h-40 overflow-y-auto space-y-0.5 pr-1 custom-scrollbar">
-                    {sectionMachines.map((m, i) => (
-                      <div
-                        key={m.id}
-                        className={`flex items-center gap-1.5 py-0.5 px-1.5 rounded text-[10px] cursor-pointer transition-colors ${
-                          m.id === selectedMachine?.id
-                            ? 'bg-primary/20 text-primary font-black'
-                            : 'hover:bg-secondary/60 text-muted-foreground'
-                        }`}
-                        onClick={() => setSelectedMachine(m)}
-                      >
-                        <span className="font-black text-[9px] min-w-[20px] text-right opacity-50">{i + 1}</span>
-                        <span className="truncate font-medium">{m.operation.op_name || m.operation.machine_type}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
           </div>

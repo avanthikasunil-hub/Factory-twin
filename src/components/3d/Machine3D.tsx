@@ -182,6 +182,17 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
   // Bottleneck Color Logic
   const { workingHours, efficiency, targetOutput, machineLayout } = useLineStore();
+
+  // Compute this machine's sequential number within its section (sorted by X position)
+  const sectionMcNumber = useMemo(() => {
+    const sec = (machineData.section || machineData.operation.section || "").toLowerCase();
+    const secMachines = machineLayout
+      .filter(m => (m.section || "").toLowerCase() === sec && !m.isInspection)
+      .sort((a, b) => a.position.x - b.position.x);
+    const idx = secMachines.findIndex(m => m.id === machineData.id);
+    return { pos: idx >= 0 ? idx + 1 : '?', total: secMachines.length };
+  }, [machineLayout, machineData.id, machineData.section, machineData.operation.section]);
+
   const bottleneckColor = useMemo(() => {
     if (!machineData.operation || machineData.operation.smv <= 0) return null;
 
@@ -435,14 +446,35 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
         {/* Info Label (Visible on Hover) */}
         {(hovered && !isSelected) && (
-          <Html position={[0, 2, 0]} center style={{ pointerEvents: 'none' }}>
-            <div className="bg-black/95 text-white px-3 py-2 rounded-xl text-[10px] whitespace-nowrap backdrop-blur-md pointer-events-none border border-white/20 shadow-2xl">
-              <div className="font-black text-indigo-400 uppercase tracking-tight mb-1">
+          <Html position={[0, 2.2, 0]} center style={{ pointerEvents: 'none' }}>
+            <div style={{
+              background: 'rgba(10,10,20,0.97)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '12px',
+              padding: '8px 12px',
+              minWidth: '140px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(16px)',
+              pointerEvents: 'none',
+              fontFamily: 'system-ui, sans-serif',
+            }}>
+              {/* Machine type badge */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                <span style={{ fontSize: '9px', fontWeight: 900, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+                  {machineData.operation.machine_type}
+                </span>
+                <span style={{ fontSize: '9px', fontWeight: 900, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.05em' }}>
+                  MC {sectionMcNumber.pos}/{sectionMcNumber.total}
+                </span>
+              </div>
+              {/* Operation name */}
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#ffffff', lineHeight: 1.3, marginBottom: '5px', maxWidth: '180px', wordBreak: 'break-word' }}>
                 {machineData.operation.op_name || machineData.operation.machine_type}
               </div>
-              <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-1">
-                <span className="text-white/50 text-[8px]">Op {machineData.operation.op_no || "N/A"}</span>
-                <span className="text-accent font-black">{machineData.operation.smv?.toFixed(2)} min</span>
+              {/* Section + SMV row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '4px' }}>
+                <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.4)', fontWeight: 700 }}>{machineData.section}</span>
+                <span style={{ marginLeft: 'auto', fontSize: '9px', color: '#10b981', fontWeight: 900 }}>{machineData.operation.smv?.toFixed(2)} min</span>
               </div>
             </div>
           </Html>
