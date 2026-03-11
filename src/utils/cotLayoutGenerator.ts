@@ -304,10 +304,10 @@ export const generateCotLayout = (
             ops.forEach((item) => {
                 const { operation, count } = item;
                 const dims = getMachineZoneDims(operation.machine_type);
-                const step = dims.width + 0.4;
+                const step = Math.max(dims.width + 0.4, 1.3);
                 for (let c = 0; c < count; c++) {
-                    const xPosAB = currentX_AB + (dims.width / 2);
-                    const xPosCD = currentX_CD + (dims.width / 2);
+                    const xPosAB = currentX_AB + 0.65;
+                    const xPosCD = currentX_CD + 0.65;
                     addMachine(operation, 'B', xPosAB, sectionCounters[secName], -Math.PI / 2, "Assembly 1", true);
                     addMachine(operation, 'A', xPosAB, sectionCounters[secName], Math.PI / 2, "Assembly 2", true);
                     addMachine(operation, 'D', xPosCD, sectionCounters[secName], Math.PI / 2, "Assembly 3", true);

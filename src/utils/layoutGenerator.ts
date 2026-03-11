@@ -488,11 +488,11 @@ export const generateLayout = (
             ops.forEach((item) => {
                 const { operation, count } = item;
                 const dims = getMachineZoneDims(operation.machine_type);
-                const step = dims.width + 0.4;
+                const step = Math.max(dims.width + 0.4, 1.3);
 
                 for (let c = 0; c < count; c++) {
-                    const xPosAB = currentX_AB + (dims.width / 2);
-                    const xPosCD = currentX_CD + (dims.width / 2);
+                    const xPosAB = currentX_AB + 0.65;
+                    const xPosCD = currentX_CD + 0.65;
 
                     addMachine(operation, 'B', xPosAB, sectionCounters[secName], -Math.PI / 2, "Assembly 1", true);
                     addMachine(operation, 'A', xPosAB, sectionCounters[secName], Math.PI / 2, "Assembly 2", true);
@@ -521,13 +521,16 @@ export const generateLayout = (
             const finalX_AB = currentX_AB;
             const finalX_CD = Math.max(currentX_CD, hX);
 
+            const lengthAB = Math.max(specs.assemblyAB.end - specs.assemblyAB.start, finalX_AB - startX_AssemblyAB);
+            const lengthCD = Math.max(specs.assemblyCD.end - specs.assemblyCD.start, finalX_CD - startX_AssemblyCD);
+
             sectionLayouts.push({
                 id: uuidv4(), name: "Assembly AB", position: { x: startX_AssemblyAB, y: 0, z: LANE_Z_CENTER_AB },
-                length: specs.assemblyAB.end - specs.assemblyAB.start, width: specs.widthAB, color: '#f06b43'
+                length: lengthAB, width: specs.widthAB, color: '#f06b43'
             });
             sectionLayouts.push({
                 id: uuidv4(), name: "Assembly CD", position: { x: startX_AssemblyCD, y: 0, z: LANE_Z_CENTER_CD },
-                length: specs.assemblyCD.end - specs.assemblyCD.start, width: specs.widthCD, color: '#14b8a6'
+                length: lengthCD, width: specs.widthCD, color: '#14b8a6'
             });
             continue;
         }
