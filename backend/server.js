@@ -503,6 +503,49 @@ app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "../dist/index.html"));
 });
 
+app.get("/cons", async (req, res) => {
+  const line = req.query.line;
+  if (!line) return res.json([]);
+  const sheetData = await fetchGraphData(line);
+  if (sheetData.length < 4) return res.json([]);
+  
+  const buyers = new Set();
+  sheetData.slice(3).forEach(row => {
+    if (row[0]) buyers.add(String(row[0]).trim());
+  });
+  res.json(Array.from(buyers));
+});
+
+app.get("/oc-by-buyer", async (req, res) => {
+  const { line, buyer } = req.query;
+  if (!line || !buyer) return res.json([]);
+  const sheetData = await fetchGraphData(line);
+  if (sheetData.length < 4) return res.json([]);
+  
+  const ocs = new Set();
+  sheetData.slice(3).forEach(row => {
+    if (row[0] && String(row[0]).trim() === buyer) {
+      if (row[1]) ocs.add(String(row[1]).trim());
+    }
+  });
+  res.json(Array.from(ocs));
+});
+
+app.get("/styles-by-oc", async (req, res) => {
+  const { line, oc } = req.query;
+  if (!line || !oc) return res.json([]);
+  const sheetData = await fetchGraphData(line);
+  if (sheetData.length < 4) return res.json([]);
+  
+  const styles = new Set();
+  sheetData.slice(3).forEach(row => {
+    if (row[1] && String(row[1]).trim() === oc) {
+      if (row[4]) styles.add(String(row[4]).trim());
+    }
+  });
+  res.json(Array.from(styles));
+});
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);
