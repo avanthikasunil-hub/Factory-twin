@@ -21,7 +21,7 @@ const ROT_FACE_BACK = Math.PI / 2;
 
 const FT = 0.3048;
 
-export const LAYOUT_LOGIC_VERSION = 54;
+export const LAYOUT_LOGIC_VERSION = 55;
 export const FIXED_ASSEMBLY_START = 0;
 
 export interface SectionPreset {
@@ -368,13 +368,15 @@ export const generateLayout = (
     // usedLen = sum of machine widths (alternating lanes share same X cursor, so each machine contributes 1× its width to X)
     const sectionSpace: Record<string, { availableLen: number, usedLen: number }> = {};
     for (const tag of PARTS_ORDER) {
-        const zoneBounds = PART_BOUNDS[tag as keyof typeof PART_BOUNDS];
-        const zoneLen = zoneBounds.end - zoneBounds.start;
+        // Use line-specific specs (not global PART_BOUNDS) so shorter lines calculate correctly
+        const tagSpec = specs.sections[tag as keyof typeof specs.sections];
+        const zoneLen = tagSpec ? (tagSpec.end - tagSpec.start) : 0;
         const iDims = getMachineZoneDims('inspection');
         const sDims = getMachineZoneDims('supermarket');
-        let reservedX = iDims.length + 0.1;
+        // IMPORTANT: Use the SAME reservation formula as Phase 2 (machineZoneEnd calculation)
+        let reservedX = iDims.length + 3 * INSPECTION_GAP + 0.01;
         if (tag === 'front' || tag === 'back') reservedX += sDims.width + 0.1;
-        sectionSpace[tag] = { availableLen: (zoneLen - reservedX), usedLen: 0 };
+        sectionSpace[tag] = { availableLen: Math.max(0, zoneLen - reservedX), usedLen: 0 };
     }
 
     // Calculate X-consumption per section:
@@ -483,10 +485,10 @@ export const generateLayout = (
 
         const isAB = abSections.some(s => secLower.includes(s));
         const matchedTag = PARTS_ORDER.find(tag => secLower.includes(tag));
-        const zoneBounds = matchedTag ? PART_BOUNDS[matchedTag] : { start: 0, end: 500 };
+        const targetSpecsEarly = matchedTag ? specs.sections[matchedTag as keyof typeof specs.sections] : null;
+        const zoneBounds = targetSpecsEarly || (matchedTag ? PART_BOUNDS[matchedTag] : { start: 0, end: 500 });
 
-        // Every section ALWAYS starts from its own section border.
-        // We never continue placing from where the previous section left off.
+        // Every section ALWAYS starts from its own section border (line-specific, not global).
         let alternatingX = zoneBounds.start;
 
         const isAssemblySec = secLower.includes('assembly');
