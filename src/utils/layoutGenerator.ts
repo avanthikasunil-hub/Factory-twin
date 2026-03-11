@@ -21,7 +21,7 @@ const ROT_FACE_BACK = Math.PI / 2;
 
 const FT = 0.3048;
 
-export const LAYOUT_LOGIC_VERSION = 56;
+export const LAYOUT_LOGIC_VERSION = 57;
 export const FIXED_ASSEMBLY_START = 0;
 
 export interface SectionPreset {
@@ -583,20 +583,23 @@ export const generateLayout = (
         }
 
         const addInspection = (sName: string, cur: LaneCursors, isAB_sect: boolean, _zns: any[], baseOps?: any[]) => {
-            console.log(`[Layout] Placing ${baseOps?.length || 1} Inspection(s) for ${sName}`);
             const iDims = getMachineZoneDims('inspection');
 
-            // Inspection goes DIRECTLY after the last machine — no zone-jumping.
-            // We reserved space at end of section (machineZoneEnd) precisely for this.
-            let iStart = Math.max(lCX, rCX) + 0.2;
-
-            // Hard limit: must stay within section boundary
+            // Anchor inspection to the reserved space at the end of the section.
+            // machineZoneEnd is where regular machines stop; inspection starts right there.
+            // This is more reliable than deriving from lCX/rCX (which can drift when overflow happens).
             const capTarget = (matchedTag === 'front' || matchedTag === 'back') ? supermarketStart : sectionLimit;
-            const maxIStart = capTarget - iDims.length - INSPECTION_GAP;
-            if (iStart > maxIStart) iStart = maxIStart;
+            const reservedStart = capTarget - iDims.length - INSPECTION_GAP;
 
-            // Must not go before section start
-            if (iStart < (targetSpecs?.start || 0)) iStart = (targetSpecs?.start || 0) + 0.01;
+            // Fall back to cursor position if machines didn't fill the zone
+            const cursorPos = Math.max(lCX, rCX) + INSPECTION_GAP;
+            let iStart = Math.min(cursorPos, reservedStart);
+
+            // Must stay within section bounds
+            const secStart = targetSpecs?.start || 0;
+            if (iStart < secStart + 0.01) iStart = secStart + 0.01;
+
+            console.log(`[Layout] Inspection for ${sName}: iStart=${iStart.toFixed(2)}, limit=${capTarget.toFixed(2)}, lCX=${lCX.toFixed(2)}`);
 
             let finalSection = sName;
             const midX = iStart + iDims.length / 2;
@@ -609,18 +612,19 @@ export const generateLayout = (
 
             const opsToUse = (baseOps && baseOps.length > 0) ? baseOps : [{ operation: createDummyOp(`${sName} Inspection`, finalSection), count: 1 }];
 
+            let runX = iStart;
             for (const item of opsToUse) {
                 for (let k = 0; k < item.count; k++) {
                     addMachine(
                         item.operation,
                         (isAB_sect ? 'A' : 'C'),
-                        iStart + iDims.length / 2,
+                        runX + iDims.length / 2,
                         undefined,
                         -Math.PI / 2,
                         sName,
                         true
                     );
-                    iStart += iDims.length + INSPECTION_GAP;
+                    runX += iDims.length + INSPECTION_GAP;
                 }
             }
 
@@ -630,7 +634,8 @@ export const generateLayout = (
                 lastM.id = `inspect-${sName}-${uuidv4()}`;
             }
 
-            const iEnd = iStart + iDims.length;
+            // Advance cursors past the inspection block
+            const iEnd = runX;
             lCX = iEnd;
             rCX = iEnd;
             if (isAB_sect) { cur.A = Math.max(cur.A, iEnd); cur.B = Math.max(cur.B, iEnd); }
