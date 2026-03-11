@@ -38,6 +38,7 @@ const MODEL_MAP: Record<string, string> = {
   pointing: 'pointing mc.glb',
   contour: 'contourmc.glb', // User Requested: contourmc.glb
   iron: 'iron press.glb',
+  'iron table': 'iron press.glb',
   pressing: 'pressing.glb',
   press: 'pressing.glb',
 

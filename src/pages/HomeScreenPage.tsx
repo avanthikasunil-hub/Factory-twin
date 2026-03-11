@@ -84,27 +84,28 @@ export default function HomeScreenPage() {
             </Card>
           </motion.div>
 
-          {/* Machine Library */}
+          {/* Digital Twin */}
           <motion.div whileHover={{ y: -6 }}>
-            <Card className="rounded-3xl shadow-xl border-0 bg-gray-50 cursor-not-allowed opacity-70 h-full">
+            <Card
+              className="rounded-3xl shadow-xl border-0 bg-white cursor-pointer hover:shadow-2xl transition h-full"
+              onClick={() => navigate("/digital-twin")}
+            >
               <CardContent className="p-10 flex flex-col items-center text-center gap-5 min-h-[340px] justify-between">
                 <div className="flex flex-col items-center gap-5">
                   <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center">
                     <Database className="text-emerald-600" size={32} />
                   </div>
 
-                  <h3 className="text-2xl font-semibold text-gray-500">
-                    Machine Library
+                  <h3 className="text-2xl font-semibold">
+                    Digital Twin
                   </h3>
 
-                  <p className="text-gray-400 text-sm leading-relaxed">
-                    Centralized database of all sewing and finishing machines.
+                  <p className="text-gray-500 text-sm leading-relaxed">
+                    View the real-time status and 3D layout of the entire factory floor.
                   </p>
                 </div>
 
-                <span className="text-sm text-gray-400 mt-2">
-                  Coming Soon
-                </span>
+                <Button className="mt-6">Open Digital Twin</Button>
               </CardContent>
             </Card>
           </motion.div>
