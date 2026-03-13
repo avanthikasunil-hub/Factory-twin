@@ -1,13 +1,17 @@
 import { useMemo, useEffect, useState } from "react";
+import { useLineStore } from "@/store/useLineStore";
 import { useSearchParams } from "react-router-dom";
 import { Scene3D } from "@/components/3d/Scene3D";
-import { getLayoutSpecs, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD } from "@/utils/layoutGenerator";
+import { getLayoutSpecs, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD, getMachineZoneDims } from "@/utils/layoutGenerator";
 import { generateCotLayout } from "@/utils/cotLayoutGenerator";
 import { SectionLayout, MachinePosition } from "@/types";
 import { cn } from "@/lib/utils";
 import { API_BASE_URL } from "../../config";
 import { Users, Hash, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
+import { db } from "@/firebase";
+import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore";
+import { parseOBExcel } from "@/utils/obParser";
 
 const LINE_COLORS = [
     '#3b82f6', // Blue
@@ -28,6 +32,12 @@ export default function VirtualFloor() {
 
     const [lineStatuses, setLineStatuses] = useState<any[]>([]);
     const [activeMachines, setActiveMachines] = useState<MachinePosition[]>([]);
+    const { setVisibleSection } = useLineStore();
+
+    // Reset visible section when entering Floor View
+    useEffect(() => {
+        setVisibleSection(null);
+    }, []);
 
     // Fetch line statuses for the sidebar
     useEffect(() => {
@@ -78,6 +88,9 @@ export default function VirtualFloor() {
             if (activeLine !== "All Lines" && lineLabelValue !== activeLine) {
                 continue;
             }
+
+            // FIXED: Use line-specific specs instead of hardcoded "Line 1"
+            const { specs, sections } = getLayoutSpecs(lineLabelValue);
 
             const lineColor = LINE_COLORS[colorIndex % LINE_COLORS.length];
 
@@ -200,32 +213,128 @@ export default function VirtualFloor() {
                     floorData = floorData.filter(s => getLineNum(s.line_no) === targetLNum);
                 }
 
-                floorData = floorData.filter((s: any) => Array.isArray(s.operations) && s.operations.length > 0);
-
-                if (floorData.length === 0) {
-                    setActiveMachines([]);
-                    return;
-                }
-
                 const data = getLayoutSpecs("Line 1");
                 const { specs } = data;
                 const minZ = LANE_Z_CENTER_AB - (specs.widthAB / 2);
                 const maxZ = LANE_Z_CENTER_CD + (specs.widthCD / 2);
                 const zStep = (maxZ - minZ) + 3.7;
 
-                const allMachines = floorData.flatMap((item: any) => {
-                    const ops = item.operations;
-                    const result = generateCotLayout(ops, item.line_no);
-                    const lineNum = getLineNum(item.line_no)!;
-                    const relativeIdx = (lineNum <= 6) ? (lineNum - 1) : (lineNum - 7);
-                    const zOffset = relativeIdx * zStep;
-                    return result.machines.map(m => ({
-                        ...m,
-                        position: { ...m.position, z: m.position.z + zOffset }
-                    }));
-                });
+                console.log(`[VirtualFloor] Fetched ${activeData.length} active layouts. Filtering for ${activeFloor}...`);
 
-                setActiveMachines(allMachines);
+                // 1. Initial load from Backend (Fast)
+                const backendMachines = floorData.flatMap((item: any) => {
+                    try {
+                        const ops = item.operations;
+                        if (!ops || ops.length === 0) return [];
+                        const result = generateCotLayout(ops, item.line_no);
+                        const lineNum = getLineNum(item.line_no)!;
+                        const relativeIdx = (lineNum <= 6) ? (lineNum - 1) : (lineNum - 7);
+                        const zOffset = relativeIdx * zStep;
+                        return result.machines.map(m => ({
+                            ...m,
+                            position: { ...m.position, z: m.position.z + zOffset }
+                        }));
+                    } catch (e) {
+                        console.error(`[VirtualFloor] Layout generation failed for ${item.line_no}:`, e);
+                        return [];
+                    }
+                });
+                setActiveMachines(backendMachines);
+
+                // 2. Background Enrichment from Firebase (Async, Non-blocking)
+                let linesToCheck = [...floorData];
+
+                // If backend is empty, we query Firestore for the most recent OB files on this floor
+                if (linesToCheck.length === 0) {
+                    try {
+                        console.log("[VirtualFloor] Backend empty. Trying to find recent OB files in Firestore...");
+                        const obMetaRef = collection(db, "styleOBmetadata");
+                        // We can't easily filter by date without an index, so we'll just get a bunch 
+                        // and filter by floor on client side.
+                        const q = query(obMetaRef, limit(50));
+                        const querySnapshot = await getDocs(q);
+
+                        const floorLines = activeFloor === "Floor 1" ? [1, 2, 3, 4, 5, 6] : [7, 8, 9];
+                        const foundStyles: any[] = [];
+
+                        querySnapshot.forEach(doc => {
+                            const data = doc.data();
+                            const lNum = getLineNum(data.uploadLine);
+                            if (lNum && floorLines.includes(lNum)) {
+                                // Only take the most recent one for each line if we find multiples
+                                if (!foundStyles.find(s => getLineNum(s.line_no) === lNum)) {
+                                    foundStyles.push({
+                                        line_no: data.uploadLine || `Line ${lNum}`,
+                                        style_no: data.style,
+                                        con_no: data.conNo,
+                                        isFallback: true
+                                    });
+                                }
+                            }
+                        });
+
+                        if (foundStyles.length > 0) {
+                            console.log(`[VirtualFloor] Found ${foundStyles.length} styles in Firestore for floor fallback.`);
+                            linesToCheck = foundStyles;
+                        }
+                    } catch (e) {
+                        console.error("[VirtualFloor] Firestore fallback style search failed:", e);
+                    }
+                }
+
+                // If a specific line is requested but not in our list, add it as a shell
+                if (activeLine && activeLine !== "All Lines" && !linesToCheck.find(l => getLineNum(l.line_no) === getLineNum(activeLine))) {
+                    linesToCheck.push({ line_no: activeLine, style_no: '', con_no: '' });
+                }
+
+                linesToCheck.forEach(async (item: any) => {
+                    const line_no = item.line_no;
+                    const style_no = item.style_no;
+                    if (!style_no) return; // Skip if no style info
+                    const con_no = item.con_no || '';
+
+                    // Use a query without orderBy to avoid needing a composite index
+                    const obMetaRef = collection(db, "styleOBmetadata");
+                    const q = query(
+                        obMetaRef,
+                        where("style", "==", style_no),
+                        where("conNo", "==", con_no),
+                        limit(1)
+                    );
+
+                    try {
+                        const querySnapshot = await getDocs(q);
+                        if (!querySnapshot.empty) {
+                            const metaData = querySnapshot.docs[0].data();
+                            if (metaData.fileUrl) {
+                                console.log(`[VirtualFloor] Found Firebase OB for ${line_no}. Updating in background...`);
+                                const fileRes = await fetch(metaData.fileUrl);
+                                const blob = await fileRes.blob();
+                                const file = new File([blob], metaData.originalFileName || "ob_file.xlsx");
+                                const parsed = await parseOBExcel(file);
+
+                                if (parsed.operations && parsed.operations.length > 0) {
+                                    const result = generateCotLayout(parsed.operations, item.line_no);
+                                    const lineNum = getLineNum(item.line_no)!;
+                                    const relativeIdx = (lineNum <= 6) ? (lineNum - 1) : (lineNum - 7);
+                                    const zOffset = relativeIdx * zStep;
+                                    const updatedLineMachines = result.machines.map(m => ({
+                                        ...m,
+                                        position: { ...m.position, z: m.position.z + zOffset }
+                                    }));
+
+                                    setActiveMachines(prev => {
+                                        // Replace only the machines for THIS line
+                                        const others = prev.filter(m => getLineNum(m.section?.split(' ')[0] || m.id) !== lineNum);
+                                        return [...others, ...updatedLineMachines];
+                                    });
+                                }
+                            }
+                        }
+                    } catch (fbErr) {
+                        console.error(`[VirtualFloor] Firebase background enrichment failed for ${line_no}:`, fbErr);
+                    }
+                });
             } catch (err) {
                 console.error("[VirtualFloor] Error:", err);
             }
@@ -275,8 +384,8 @@ export default function VirtualFloor() {
                                 transition={{ delay: id * 0.05 }}
                                 className={cn(
                                     "p-4 rounded-2xl border transition-all duration-300 group relative overflow-hidden",
-                                    isActive 
-                                        ? "bg-violet-600/20 border-violet-500/50 shadow-lg shadow-violet-500/10" 
+                                    isActive
+                                        ? "bg-violet-600/20 border-violet-500/50 shadow-lg shadow-violet-500/10"
                                         : "bg-white/[0.02] border-white/5 hover:bg-white/[0.05] hover:border-white/10"
                                 )}
                             >
@@ -295,12 +404,12 @@ export default function VirtualFloor() {
                                             isActive ? "text-white" : "text-slate-300"
                                         )}>{lineName}</span>
                                     </div>
-                                    
+
                                     <div className={cn(
                                         "px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border",
                                         status?.status === "Running" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
-                                        status?.status === "Changeover" ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400" :
-                                        "bg-slate-800 border-white/5 text-slate-500"
+                                            status?.status === "Changeover" ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400" :
+                                                "bg-slate-800 border-white/5 text-slate-500"
                                     )}>
                                         {status?.status || "Idle"}
                                     </div>
@@ -334,7 +443,7 @@ export default function VirtualFloor() {
                                     }}
                                     className={cn(
                                         "mt-3 w-full py-2 rounded-xl flex items-center justify-center gap-2 transition-all duration-300",
-                                        isActive 
+                                        isActive
                                             ? "bg-violet-600 text-white font-black text-[9px] uppercase tracking-widest"
                                             : "bg-slate-800 text-slate-400 font-bold text-[9px] uppercase tracking-widest hover:bg-slate-700 hover:text-white"
                                     )}

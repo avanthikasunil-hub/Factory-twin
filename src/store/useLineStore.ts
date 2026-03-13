@@ -152,7 +152,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   operations: [],
   selectedMachines: [],
   selectedMachine: null,
-  targetOutput: 1800,
+  targetOutput: 1200,
   workingHours: 9,
   visibleSection: null,
   preparatoryOps: [],
@@ -170,6 +170,9 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   preDragLayout: null,
   setDraggingActive: (active) => {
     if (active) {
+      // Snapshot BEFORE drag starts so Ctrl-Z restores the clean pre-drag state,
+      // not an intermediate live-preview state.
+      (get() as any).takeSnapshot();
       const snapshot: Record<string, { x: number; y: number; z: number }> = {};
       get().machineLayout.forEach(m => { snapshot[m.id] = { ...m.position }; });
       set({ isDraggingActive: true, preDragLayout: snapshot });
@@ -289,7 +292,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     set({ operations, selectedMachine: null });
   },
 
-  createLine: (lineNo, styleNo, coneNo, buyer, operations, efficiency = 90, inputTargetOutput = 1800, inputTotalSMV?: number, inputWorkingHours = 9, sourceSheet = "", preparatoryOps = []) => {
+  createLine: (lineNo, styleNo, coneNo, buyer, operations, efficiency = 90, inputTargetOutput = 1200, inputTotalSMV?: number, inputWorkingHours = 9, sourceSheet = "", preparatoryOps = []) => {
     (get() as any).takeSnapshot();
     const targetOutput = inputTargetOutput;
     const workingHours = inputWorkingHours;
@@ -429,7 +432,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       preparatoryOps: line.preparatoryOps || [],
       machineLayout: line.machineLayout,
       sectionLayout: line.sectionLayout || [],
-      targetOutput: line.targetOutput || 1800,
+      targetOutput: line.targetOutput || 1200,
       workingHours: line.workingHours || 9,
       efficiency: line.efficiency || 90,
       selectedMachine: null,
@@ -450,7 +453,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const newSelection = isAlreadySelected
       ? state.selectedMachines.filter(id => id !== machineId)
       : [...state.selectedMachines, machineId];
-    const lastMachine = state.machineLayout.find(m => m.id === (newSelection[newSelection.length - 1]));
+    const lastId = newSelection.length > 0 ? newSelection[newSelection.length - 1] : null;
+    const lastMachine = lastId ? state.machineLayout.find(m => m.id === lastId) : null;
     return { selectedMachines: newSelection, selectedMachine: lastMachine || null, isDraggingActive: false };
   }),
 
@@ -530,27 +534,6 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     });
   },
 
-  updateMachinesPositions: (machineIds) => {
-    (get() as any).takeSnapshot();
-
-    const affectedSections = new Set<string>();
-    let workLayout = get().machineLayout.map(m => {
-      if (machineIds.includes(m.id)) {
-        const info = getSpatialInfo(m.position.x, m.position.z, get().currentLine?.lineNo, m.section);
-        if (m.section) affectedSections.add(m.section.toLowerCase());
-        affectedSections.add(info.section.toLowerCase());
-        return { ...m, section: info.section, lane: info.lane, hasManualPosition: true };
-      }
-      return m;
-    });
-
-    affectedSections.forEach(secLower => {
-      workLayout = (get() as any)._reLayoutSection(workLayout, secLower, true);
-    });
-
-    set({ machineLayout: workLayout, isDraggingActive: false });
-    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
-  },
 
   checkLayoutAlerts: () => {
     const layout = get().machineLayout;
@@ -650,139 +633,180 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
 
     const preDrag = get().preDragLayout;
 
-    const withMovedMachines = get().machineLayout.map(m => {
+    // ── STEP 1: move the dragged machine(s) ──────────────────────────────────
+    // Lock Z for ALL machines during drag: movement is only along X.
+    // This prevents lane-jumping (AB vs CD group is Z-based).
+    const updatedLayout: MachinePosition[] = get().machineLayout.map(m => {
       if (ids.includes(m.id)) {
-        const newX = m.position.x + deltaX;
-        const newZ = m.position.z + deltaZ;
-        const info = getSpatialInfo(newX, newZ, m.section);
-        return { ...m, section: info.section, lane: info.lane, position: { ...m.position, x: newX, z: newZ }, hasManualPosition: true };
+        return {
+          ...m,
+          position: { ...m.position, x: m.position.x + deltaX },
+          hasManualPosition: true
+        };
       }
       return m;
     });
 
-    if (!preDrag) {
-      set({ machineLayout: withMovedMachines });
-      return;
-    }
+    // ── STEP 2: live "make-space" preview (ALL sections including Assembly) ──
+    // For every dragged machine, slide stationary peers in the same section
+    // away from the drag position so the user can see exactly where it will land.
+    // Threshold: shift when the dragged machine's HALF-WIDTH reaches the
+    // stationary machine's centre — this starts sliding before physical overlap.
+    if (preDrag) {
+      const draggedMachines = updatedLayout.filter(m => ids.includes(m.id));
 
-    const draggedMachines = withMovedMachines.filter(m => ids.includes(m.id));
-    const sectionsWithDrag = new Set<string>();
-    draggedMachines.forEach(m => { if (m.section) sectionsWithDrag.add(m.section.toLowerCase()); });
+      draggedMachines.forEach(dragged => {
+        const secLower = (dragged.section || '').toLowerCase();
+        if (!secLower || secLower.includes('supermarket')) return;
 
-    let finalLayout = withMovedMachines;
+        const draggedDims = getMachineZoneDims(dragged.operation.machine_type);
+        const dragX = dragged.position.x;
+        const dragHalfW = draggedDims.length / 2;
 
-    sectionsWithDrag.forEach(secLower => {
-      const isAssembly = secLower.includes('assembly') || secLower.includes('lane') || secLower.includes('line');
-
-      if (isAssembly) {
-        const dragged = draggedMachines.find(m => (m.section || '').toLowerCase() === secLower);
-        if (!dragged) return;
-        const draggedLane = (dragged.lane || 'A').toUpperCase();
-        const draggedX = dragged.position.x;
-        const draggedWidth = getMachineZoneDims(dragged.operation.machine_type).length;
-
-        const peers = finalLayout
+        // Stationary regular machines in this section, sorted by original X
+        const stationary = updatedLayout
           .filter(m =>
             !ids.includes(m.id) &&
             (m.section || '').toLowerCase() === secLower &&
-            (m.lane || 'A').toUpperCase() === draggedLane &&
             !m.isInspection &&
             !m.operation.machine_type.toLowerCase().includes('inspection') &&
             !m.operation.machine_type.toLowerCase().includes('supermarket') &&
-            !m.id.startsWith('board') &&
-            !m.operation.machine_type.toLowerCase().includes('board')
+            !m.id.startsWith('board')
           )
-          .map(m => ({ ...m, preDragX: preDrag[m.id]?.x ?? m.position.x }))
-          .sort((a, b) => a.preDragX - b.preDragX);
+          .map(m => ({ id: m.id, origX: preDrag[m.id]?.x ?? m.position.x }))
+          .sort((a, b) => a.origX - b.origX);
 
-        const insertIdx = peers.findIndex(o => o.preDragX >= draggedX);
-        const peerIds = new Set(peers.map(o => o.id));
-        const specs = getLayoutSpecs(get().currentLine?.lineNo);
-        const secEndX = (specs.sections as any)[secLower]?.end ?? (114.0719 * FT);
-
-        finalLayout = finalLayout.map(m => {
-          if (ids.includes(m.id)) return m;
-          if ((m.section || '').toLowerCase() !== secLower) return m;
-          if (!peerIds.has(m.id)) return m;
-
-          const anchor = peers.find(o => o.id === m.id)!;
-          const idx = peers.indexOf(anchor);
-          if (insertIdx === -1 || idx < insertIdx) {
-            return { ...m, position: { ...m.position, x: anchor.preDragX } };
-          } else {
-            const peerWidth = getMachineZoneDims(m.operation.machine_type).length;
-            const pushedX = anchor.preDragX + draggedWidth;
-            return { ...m, position: { ...m.position, x: pushedX } };
+        // Insertion point: find the FIRST machine (sorted ascending X) whose
+        // original centre is to the RIGHT of the dragged machine's current centre.
+        // Only machines at this index and beyond shift right to create space.
+        // Machines to the LEFT of the dragged machine are never touched.
+        let insertIdx = stationary.length;
+        for (let i = 0; i < stationary.length; i++) {
+          if (stationary[i].origX > dragX) {
+            insertIdx = i;
+            break;
           }
+        }
+
+        const shiftAmount = draggedDims.length + 0.05;
+        stationary.forEach(({ id, origX }, idx) => {
+          const li = updatedLayout.findIndex(m => m.id === id);
+          if (li === -1) return;
+          const newX = idx >= insertIdx ? origX + shiftAmount : origX;
+          updatedLayout[li] = { ...updatedLayout[li], position: { ...updatedLayout[li].position, x: newX } };
         });
-        return;
-      }
-
-      const dragged = draggedMachines.find(m => (m.section || '').toLowerCase() === secLower);
-      if (!dragged) return;
-
-      const draggedX = dragged.position.x;
-      const draggedWidth = getMachineZoneDims(dragged.operation.machine_type).length;
-      const draggedOpSec = (dragged.operation.section || secLower).toLowerCase();
-
-      const peers = finalLayout
-        .filter(m =>
-          !ids.includes(m.id) &&
-          (m.section || '').toLowerCase() === secLower &&
-          (m.operation.section || secLower).toLowerCase() === draggedOpSec &&
-          !m.isInspection &&
-          !m.operation.machine_type.toLowerCase().includes('inspection') &&
-          !m.operation.machine_type.toLowerCase().includes('supermarket') &&
-          !m.id.startsWith('board') &&
-          !m.operation.machine_type.toLowerCase().includes('board')
-        )
-        .map(m => ({ ...m, preDragX: preDrag[m.id]?.x ?? m.position.x }))
-        .sort((a, b) => a.preDragX - b.preDragX);
-
-      const insertIdx = peers.findIndex(o => o.preDragX >= draggedX);
-      const peerIds = new Set(peers.map(o => o.id));
-
-      const specialIds = new Set(
-        finalLayout.filter(m =>
-          !ids.includes(m.id) &&
-          (m.section || '').toLowerCase() === secLower &&
-          (m.isInspection || m.operation.machine_type.toLowerCase().includes('inspection') ||
-            m.operation.machine_type.toLowerCase().includes('supermarket') ||
-            m.id.startsWith('board') || m.operation.machine_type.toLowerCase().includes('board'))
-        ).map(m => m.id)
-      );
-
-      finalLayout = finalLayout.map(m => {
-        if (ids.includes(m.id)) return m;
-        if ((m.section || '').toLowerCase() !== secLower) return m;
-
-        if (specialIds.has(m.id)) {
-          const savedX = preDrag[m.id]?.x;
-          return savedX !== undefined ? { ...m, position: { ...m.position, x: savedX } } : m;
-        }
-
-        if (!peerIds.has(m.id)) {
-          const savedX = preDrag[m.id]?.x;
-          return savedX !== undefined ? { ...m, position: { ...m.position, x: savedX } } : m;
-        }
-
-        const anchor = peers.find(o => o.id === m.id)!;
-        const idx = peers.indexOf(anchor);
-
-        if (insertIdx === -1 || idx < insertIdx) {
-          return { ...m, position: { ...m.position, x: anchor.preDragX } };
-        } else {
-          const peerWidth = getMachineZoneDims(m.operation.machine_type).length;
-          const layoutSpecs = getLayoutSpecs(get().currentLine?.lineNo);
-          const targetSpecs = (layoutSpecs.sections as any)[secLower];
-          const secEndX = targetSpecs?.end || (114.0719 * FT);
-          const pushedX = anchor.preDragX + draggedWidth; // Unrestricted drag push out of zone
-          return { ...m, position: { ...m.position, x: pushedX } };
-        }
       });
+    }
+
+    set({ machineLayout: updatedLayout });
+  },
+
+
+  updateMachinesPositions: (machineIds) => {
+    // NOTE: snapshot is taken at setDraggingActive(true) — drag START.
+    // Taking it here (drag end) would snapshot live-preview positions,
+    // causing undo to restore an intermediate dragged state instead of
+    // the clean pre-drag layout.
+    const state = get();
+
+    if (machineIds.length === 0) {
+      set({ isDraggingActive: false });
+      return;
+    }
+
+    // ── STEP 1: Identify affected sections ─────────────────────────────────
+    const affectedSections = new Set<string>();
+    let finalLayout = [...state.machineLayout];
+
+    finalLayout = finalLayout.map(m => {
+      if (machineIds.includes(m.id)) {
+        const secLow = (m.section || '').toLowerCase();
+        // Always preserve section and lane — never call getSpatialInfo.
+        // Reason: getSpatialInfo uses Z thresholds that don't match actual
+        // machine Z positions (which are offset by bounds.minWorldZ), so it
+        // would misclassify the lane and cause the machine to jump sections.
+        // Machines can only be reordered within their current section via drag.
+        if (m.section) affectedSections.add(secLow);
+        return { ...m, hasManualPosition: false };
+      }
+      return m;
     });
 
-    set({ machineLayout: finalLayout });
+    // ── STEP 2: Insert-and-Shift for every affected section ────────────────
+    // This runs for ALL section types including Assembly.
+    // For Assembly, _reLayoutSection snaps Z and rotation to the lane-fixed
+    // values and packs machines from the real assembly start position.
+    affectedSections.forEach(secLower => {
+      if (secLower.includes('supermarket')) return;
+
+      const sectionMachines = finalLayout.filter(m =>
+        (m.section || '').toLowerCase() === secLower &&
+        !m.isInspection &&
+        !m.operation.machine_type.toLowerCase().includes('inspection') &&
+        !m.operation.machine_type.toLowerCase().includes('supermarket') &&
+        !m.id.startsWith('board') &&
+        !m.operation.machine_type.toLowerCase().includes('board')
+      );
+
+      // Separate the dragged machine(s) from the rest
+      const dragged = sectionMachines.filter(m => machineIds.includes(m.id));
+      const stationary = sectionMachines.filter(m => !machineIds.includes(m.id));
+
+      // Sort stationary machines by their current (pre-drag) X position
+      stationary.sort((a, b) => a.position.x - b.position.x);
+
+      // For each dragged machine, find the correct insertion index into the
+      // stationary list by comparing drop X to each stationary machine's midX.
+      dragged.forEach(draggedMachine => {
+        const dropX = draggedMachine.position.x;
+
+        // Find insertion index: insert before the first stationary machine whose
+        // center X is greater than the dropped X.
+        let insertIdx = stationary.length; // default: append at end
+        for (let i = 0; i < stationary.length; i++) {
+          if (dropX < stationary[i].position.x) {
+            insertIdx = i;
+            break;
+          }
+        }
+
+        // Insert the dragged machine at the computed index
+        stationary.splice(insertIdx, 0, draggedMachine);
+      });
+
+      // `stationary` is now the full reordered list for this section.
+      // Stamp a temporary sequential X on each machine so _reLayoutSection
+      // sorts them in the exact order we just computed.
+      // IMPORTANT: spacing must exceed the 0.01 tiebreaker threshold in
+      // _reLayoutSection's sort, so we use 1.0m gaps.
+      const EPSILON = 1.0;
+      const specs = getLayoutSpecs(get().currentLine?.lineNo);
+      // Map section name to the correct specs key.
+      // Assembly 1 & 2 → assemblyAB (Lane B, Lane A)
+      // Assembly 3 & 4 → assemblyCD (Lane D, Lane C)
+      let sectionStartX: number;
+      if (secLower.includes('assembly')) {
+        const isCD = secLower.includes('3') || secLower.includes('4');
+        const specsKey = isCD ? 'assemblyCD' : 'assemblyAB';
+        sectionStartX = (specs.sections as any)[specsKey]?.start ?? (specs as any)[specsKey]?.start ?? 0;
+      } else {
+        sectionStartX = (specs.sections as any)[secLower]?.start ?? 0;
+      }
+
+      stationary.forEach((m, idx) => {
+        m = { ...m, position: { ...m.position, x: sectionStartX + idx * EPSILON } };
+        // Update the machine in finalLayout so _reLayoutSection sees the new order
+        const li = finalLayout.findIndex(fm => fm.id === m.id);
+        if (li !== -1) finalLayout[li] = m;
+      });
+
+      // Now run _reLayoutSection with isFinalCommit = true; it will sort by X
+      // (which is now our pre-computed sequential order) and pack perfectly.
+      finalLayout = (get() as any)._reLayoutSection(finalLayout, secLower, true);
+    });
+
+    set({ machineLayout: finalLayout, isDraggingActive: false });
+    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
   },
 
   _reLayoutSection: (currentLayout: MachinePosition[], secLower: string, isFinalCommit = true) => {
@@ -863,12 +887,15 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const SECTION_STARTS: Record<string, number> = Object.fromEntries(
       Object.entries(PART_BOUNDS).map(([k, v]) => [k, v.start])
     );
-    SECTION_STARTS['assembly 1'] = FIXED_ASSEMBLY_START;
-    SECTION_STARTS['assembly 2'] = FIXED_ASSEMBLY_START;
-    SECTION_STARTS['assembly 3'] = FIXED_ASSEMBLY_START;
-    SECTION_STARTS['assembly 4'] = FIXED_ASSEMBLY_START;
+    // Use the real assembly start from layout specs, not FIXED_ASSEMBLY_START (which is 0).
+    // Lanes 1 & 2 are on the AB group; Lanes 3 & 4 on the CD group.
+    const realAssemblyStartAB = (specs as any).assemblyAB?.start ?? (specs as any).sections?.assemblyAB?.start ?? FIXED_ASSEMBLY_START;
+    const realAssemblyStartCD = (specs as any).assemblyCD?.start ?? (specs as any).sections?.assemblyCD?.start ?? FIXED_ASSEMBLY_START;
+    SECTION_STARTS['assembly 1'] = realAssemblyStartAB;
+    SECTION_STARTS['assembly 2'] = realAssemblyStartAB;
+    SECTION_STARTS['assembly 3'] = realAssemblyStartCD;
+    SECTION_STARTS['assembly 4'] = realAssemblyStartCD;
 
-    const ASSEMBLY_START_X = FIXED_ASSEMBLY_START;
     const isAssembly = secLower.includes('assembly') || secLower.includes('lane') || secLower.includes('line');
     const startX = SECTION_STARTS[secLower] ?? 0;
     const GAP_X = 0.0;
@@ -941,16 +968,22 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         if (isFinalCommit) {
           finalX = packedX;
         } else {
-          let targetX = m.position.x;
+          const targetX = m.position.x;
           finalX = (m.position.x === 0 && m.position.z === 0)
             ? packedX
             : Math.max(getNextValidX(targetX, currentWidth, zones), packedX);
         }
       } else {
-        finalX = (m.position.x === 0 && m.position.z === 0) ? packedX : Math.max(m.position.x, packedX);
-        if (m.hasManualPosition || (isBeingDragged && !isFinalCommit)) {
-          let targetX = m.position.x;
+        // Assembly section
+        if (isFinalCommit) {
+          // Tight-pack: same as non-assembly on commit so insert-and-shift works
+          // (without this, machines can't move to an earlier X position)
+          finalX = packedX;
+        } else if (m.hasManualPosition || isBeingDragged) {
+          const targetX = m.position.x;
           finalX = Math.max(getNextValidX(targetX, currentWidth, zones), packedX);
+        } else {
+          finalX = (m.position.x === 0 && m.position.z === 0) ? packedX : Math.max(m.position.x, packedX);
         }
       }
 
@@ -1001,38 +1034,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       return { ...mRaw, position: { x: finalX, y: 0, z: autoZ }, rotation: { x: 0, y: ry, z: 0 }, lane, section: spatialInfo.section };
     });
     const finalSupers = supermarketList.map(mRaw => {
-      const isBeingDragged = movingIds.includes(mRaw.id);
-      const superDims = getMachineZoneDims('supermarket');
-      const spatialAtStart = getSpatialInfo(mRaw.position.x, mRaw.position.z, mRaw.section);
-      const laneAtStart = spatialAtStart.lane;
-      let ry = -Math.PI / 2;
-      if (isAssembly) {
-        if (laneAtStart === 'B') ry = -Math.PI / 2;
-        else if (laneAtStart === 'A') ry = Math.PI / 2;
-        else if (laneAtStart === 'D') ry = Math.PI / 2;
-        else if (laneAtStart === 'C') ry = 0;
-      } else {
-        ry = (laneAtStart === 'A' || laneAtStart === 'C') ? 0 : Math.PI;
-      }
-      const bounds = computeFootprint('supermarket', superDims, ry);
-      const superXStart = getNextValidX(currentSeqX + 0.5, superDims.width, activeZones);
-      const autoX = superXStart - bounds.minWorldX;
-      const autoZ = midZ + 0.8;
-      const isFresh = mRaw.position.x === 0 && mRaw.position.z === 0;
-      let targetX = isFresh ? autoX : Math.max(mRaw.position.x, autoX);
-      if (!isAssembly) targetX = Math.min(targetX, ASSEMBLY_START_X - bounds.totalWidth - 0.5);
-      const finalX = getNextValidX(targetX, bounds.totalWidth, activeZones);
-      currentSeqX = (isFresh || isFinalCommit || isBeingDragged)
-        ? (Math.max(currentSeqX, finalX + bounds.maxWorldX) + 0.5)
-        : (currentSeqX + superDims.width);
-      const spatialFinal = getSpatialInfo(finalX, isFresh ? autoZ : mRaw.position.z, mRaw.section);
-      return {
-        ...mRaw,
-        position: { x: finalX, y: 0, z: isFresh ? autoZ : mRaw.position.z },
-        rotation: { x: 0, y: ry, z: 0 },
-        lane: spatialFinal.lane,
-        section: spatialFinal.section
-      };
+      return { ...mRaw };
     });
 
     const allFinalX = [...reLayouted, ...finalInspections, ...finalSupers].map(m => m.position.x);
@@ -1099,10 +1101,10 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       const allOps: Operation[] = data.operations || [];
       // Split into layout ops and preparatory ops (same filter as obParser)
       const PREP_NAMES = [
-        'washing allowance','washing_allowance','right placket tape iron','gusset iron',
-        'press sleeve placket','press pocket','right placket self fold iron',
-        'left placket self fold iron','stitch tape to pocket','triangle patch ironing',
-        'pocket overlock','pocket iron with fusing','pocket hem stitch',
+        'washing allowance', 'washing_allowance', 'right placket tape iron', 'gusset iron',
+        'press sleeve placket', 'press pocket', 'right placket self fold iron',
+        'left placket self fold iron', 'stitch tape to pocket', 'triangle patch ironing',
+        'pocket overlock', 'pocket iron with fusing', 'pocket hem stitch',
       ];
       const layoutOps = allOps.filter(op => !PREP_NAMES.some(p => op.op_name?.toLowerCase().includes(p)) && !op.op_name?.toLowerCase().includes('allowance'));
       const prepOps = allOps.filter(op => PREP_NAMES.some(p => op.op_name?.toLowerCase().includes(p)) || op.op_name?.toLowerCase().includes('allowance'));

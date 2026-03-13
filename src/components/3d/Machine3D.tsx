@@ -123,7 +123,7 @@ const getTargetDimensionsMeters = (type: string) => {
   } else if (t.includes('blocking')) {
     l = 4 * FT; w = 2.5 * FT; h = 4.0 * FT;
   } else if (t.includes('supermarket')) {
-    l = 7 * FT; w = 3.5 * FT; h = 7.0 * FT;
+    l = 6.5 * FT; w = 2.5 * FT; h = 7.0 * FT;
   } else if (t.includes('wrapping') || t.includes('wrap')) {
     l = 4 * FT; w = 2.5 * FT; h = 3.0 * FT;
   }
@@ -190,7 +190,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
   const { selectedMachines, toggleMachineSelection, visibleSection, updateMachinePosition, isMoveMode } = useLineStore();
   const isSelected = selectedMachines.includes(machineData.id);
 
-  const isVisible = !visibleSection || (machineData.section && machineData.section.toLowerCase() === visibleSection.toLowerCase());
+  const isVisible = isOverview || !visibleSection || (machineData.section && machineData.section.toLowerCase() === visibleSection.toLowerCase());
 
   // Unused Position Logic (Mapping state)
   const isUnused = machineData.operation.op_no === '---';

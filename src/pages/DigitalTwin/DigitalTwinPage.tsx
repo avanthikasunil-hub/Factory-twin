@@ -506,9 +506,17 @@ export default function DigitalTwinPage() {
         const zOffset = i * zStep;
         let lineVal = activeFloor === "Floor 1" ? `Line ${i+1}` : `Line ${i+7}`;
         if (activeLine !== "All Lines" && lineVal !== activeLine) continue;
-        const color = LINE_COLORS[(activeFloor === "Floor 1" ? i : i+6) % LINE_COLORS.length];
+        const color = LINE_COLORS[(activeFloor === "Floor 1" ? i : i + 6) % LINE_COLORS.length];
         allSec.push(
-            { id:`${lineVal}-cuff`, name:`${lineVal} Cuff`, length:sections.cuff.end-sections.cuff.start, width:specs.widthAB, position:{x:sections.cuff.start, y:0, z:LANE_Z_CENTER_AB+zOffset}, color },
+            {
+                id: `${lineVal}-marker`,
+                name: lineVal,
+                length: 2,
+                width: specs.widthAB + specs.widthCD + 3.7,
+                position: { x: sections.cuff.start - 3, y: -0.01, z: (LANE_Z_CENTER_AB + LANE_Z_CENTER_CD) / 2 + zOffset },
+                color: 'transparent'
+            },
+            { id: `${lineVal}-cuff`, name: `${lineVal} Cuff`, length: sections.cuff.end - sections.cuff.start, width: specs.widthAB, position: { x: sections.cuff.start, y: 0, z: LANE_Z_CENTER_AB + zOffset }, color },
             { id:`${lineVal}-sleeve`, name:`${lineVal} Sleeve`, length:sections.sleeve.end-sections.sleeve.start, width:specs.widthAB, position:{x:sections.sleeve.start, y:0, z:LANE_Z_CENTER_AB+zOffset}, color },
             { id:`${lineVal}-back`, name:`${lineVal} Back`, length:sections.back.end-sections.back.start, width:specs.widthAB, position:{x:sections.back.start, y:0, z:LANE_Z_CENTER_AB+zOffset}, color },
             { id:`${lineVal}-collar`, name:`${lineVal} Collar`, length:sections.collar.end-sections.collar.start, width:specs.widthCD, position:{x:sections.collar.start, y:0, z:LANE_Z_CENTER_CD+zOffset}, color },

@@ -33,6 +33,7 @@ import {
     LINE_PRESETS,
     LayoutResult
 } from './layoutGenerator';
+import { calculateMachineRequirements } from './lineBalancing';
 
 interface LaneCursors {
     A: number;
@@ -46,6 +47,8 @@ const PARTS_ORDER = ['cuff', 'sleeve', 'back', 'collar', 'front'];
 function createDummyOp(name: string, section: string, opNo: string = ' '): Operation {
     return { op_no: opNo, op_name: name, machine_type: name, smv: 1.0, section };
 }
+
+const assemblyKeywords = ['assembly', 'joining', 'stitching', 'sewing', 'lane', 'line'];
 
 /**
  * generateCotLayout
@@ -62,13 +65,21 @@ export const generateCotLayout = (
     const warnings: string[] = [];
 
     // ─── ⚠️ COT SPECIFIC DATA MAPPING ⚠️ ───
-    // Instead of calculateMachineRequirements (Balancing), we use no_of_machines from OB.
-    const balancedOps = rawOperations.map(op => ({
-        operation: op,
-        count: Math.max(1, Math.ceil(op.no_of_machines || 1))
-    })).filter(item => {
+    // We calculate machine requirements based on Target 1200 and Eff 90 for the Floor View.
+    const isAssemblyOp = (op: Operation) => {
+        const sec = (op.section || '').toLowerCase();
+        return assemblyKeywords.some(kw => sec.includes(kw));
+    };
+
+    const assemblyOps = rawOperations.filter(isAssemblyOp);
+    const prepOps = rawOperations.filter(op => !isAssemblyOp(op));
+
+    const balancedPrep = calculateMachineRequirements(prepOps, 1200, 9, 90);
+    const balancedAssembly = calculateMachineRequirements(assemblyOps, Math.ceil(1200 / 3), 9, 90);
+
+    const balancedOps = [...balancedPrep, ...balancedAssembly].filter(item => {
         const opName = item.operation.op_name.toLowerCase();
-        
+
         const IGNORED_OPERATIONS = [
             'washing allowance',
             'washing_allowance',
@@ -92,8 +103,6 @@ export const generateCotLayout = (
 
     const sectionsMap = new Map<string, typeof balancedOps>();
     const sectionOrder: string[] = [];
-
-    const assemblyKeywords = ['assembly', 'joining', 'stitching', 'sewing', 'lane', 'line'];
 
     balancedOps.forEach(item => {
         if (!item.operation.machine_type || item.operation.machine_type.toLowerCase() === 'unknown') {
@@ -346,7 +355,6 @@ export const generateCotLayout = (
             cursors.A = currentX_AB; cursors.B = currentX_AB;
             cursors.D = currentX_CD; cursors.C = hX;
 
-            // Standardize colors based on Line Number for Assembly as well
             const LINE_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16'];
             const lineNumAtAssembly = parseInt(String(lineNo || "").replace(/\D/g, '')) || 1;
             const lineSectionColor = LINE_COLORS[(lineNumAtAssembly - 1) % LINE_COLORS.length];
@@ -368,10 +376,10 @@ export const generateCotLayout = (
         const sectionLimit = targetSpecs?.end || Infinity;
         const hasSupermarket = (matchedTag === 'front' || matchedTag === 'back');
         const supermarketStart = sectionLimit - (hasSupermarket ? sDims.width : 0);
-        
+
         const hasCollarSupermarkets = matchedTag === 'collar';
         const collarSupermarketReserve = hasCollarSupermarkets ? (sDims.width + sDims.length + 0.3) : 0;
-        
+
         const reservation = (iDims.length + 0.2 + 0.1);
         const machineZoneEnd = supermarketStart - reservation - collarSupermarketReserve;
 
@@ -418,8 +426,6 @@ export const generateCotLayout = (
             alternatingX = Math.max(alternatingX, Math.max(lCX_O, rCX_O));
         }
 
-        lCX = alternatingX; rCX = alternatingX;
-        // Standardize colors based on Line Number instead of section types
         const LINE_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16'];
         const lineNum = parseInt(String(lineNo || "").replace(/\D/g, '')) || 1;
         const lineSectionColor = LINE_COLORS[(lineNum - 1) % LINE_COLORS.length];
@@ -520,26 +526,33 @@ export const generateCotLayout = (
 
         if (secLower.includes('front') || secLower.includes('back')) {
             addMachine(createDummyOp('Supermarket', secName), (isAB ? 'A' : 'C'), targetSpecs!.end - sDims.width / 2 - 0.2, undefined, undefined, secName, true);
-            const sm = layout[layout.length - 1]; if (sm) { sm.rotation.y = ROT_FACE_FRONT + Math.PI; sm.id = `super-${secName}`; }
+            const sm = layout[layout.length - 1]; if (sm) { sm.rotation.y = ROT_FACE_FRONT + Math.PI; sm.id = `super-${lineNo}-${secName}-${uuidv4()}`; }
             const eX = targetSpecs!.end;
             if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
             else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
         }
 
         if (secLower.includes('collar')) {
-            const armsX = targetSpecs!.end + sDims.length / 2;
-            const sm2X = targetSpecs!.end + sDims.length + sDims.width / 2;
+            const targetSpecs = specs.collar;
+            const sDims = getMachineZoneDims('supermarket');
 
-            addMachine(createDummyOp('Supermarket', secName), 'D', armsX, undefined, ROT_FACE_FRONT, secName, true);
-            const sm1 = layout[layout.length - 1]; if (sm1) { sm1.position.z = LANE_Z_D; sm1.id = `super1-${secName}`; }
+            // Anchor to the far end of the Collar section
+            const anchorX = targetSpecs.end - (3.5 * FT);
+            const collarCenterZ = isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD;
 
-            addMachine(createDummyOp('Supermarket', secName), 'C', armsX, undefined, ROT_FACE_FRONT, secName, true);
-            const sm3 = layout[layout.length - 1]; if (sm3) { sm3.position.z = LANE_Z_C; sm3.id = `super3-${secName}`; }
+            // S2: Base of the U (Vertical pillar on the right edge)
+            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX + 2.3 * FT, undefined, - Math.PI / 2, secName, true);
+            const sm2 = layout[layout.length - 1]; if (sm2) { sm2.position.z = collarCenterZ - 1.5 * FT; sm2.id = `super2-${lineNo}-${secName}-${uuidv4()}`; }
 
-            addMachine(createDummyOp('Supermarket', secName), 'C', sm2X, undefined, 0, secName, true);
-            const sm2 = layout[layout.length - 1]; if (sm2) { sm2.position.z = LANE_Z_CENTER_CD; sm2.id = `super2-${secName}`; }
+            // S1: Top Arm (Horizontal bar extending left)
+            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 2.4 * FT, undefined, Math.PI, secName, true);
+            const sm1 = layout[layout.length - 1]; if (sm1) { sm1.position.z = collarCenterZ + 3.5 * FT; sm1.id = `super1-${lineNo}-${secName}-${uuidv4()}`; }
 
-            const eX = targetSpecs!.end + sDims.length + sDims.width + 0.5;
+            // S3: Bottom Arm (Horizontal bar extending left)
+            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 7 * FT, undefined, Math.PI / 2, secName, true);
+            const sm3 = layout[layout.length - 1]; if (sm3) { sm3.position.z = collarCenterZ - 1.5 * FT; sm3.id = `super3-${lineNo}-${secName}-${uuidv4()}`; }
+
+            const eX = targetSpecs.end;
             if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
             else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
         }

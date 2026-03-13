@@ -53,7 +53,8 @@ export const LINE_PRESETS: Record<'A' | 'B', Record<string, SectionPreset>> = {
 
 export function getLayoutSpecs(lineNo: string = "Line 1") {
     const num = parseInt(lineNo.replace(/\D/g, '')) || 1;
-    const presetKey = num >= 6 ? 'B' : 'A';
+    // Lines 7-9 should have Line 1 dimension (Preset A). Line 6 remains 'B' for now.
+    const presetKey = (num >= 7 && num <= 9) || num < 6 ? 'A' : 'B';
     const p = LINE_PRESETS[presetKey];
 
     const S = FT;
@@ -190,6 +191,7 @@ export const getMachineZoneDims = (type: string) => {
     else if (t.includes('fusing') || t.includes('rotary')) { l = 4.5 * FT; w = 3.0 * FT; }
     else if (t.includes('blocking')) { l = 4.0 * FT; w = 2.5 * FT; }
     else if (t.includes('supermarket')) { l = 7.0 * FT; w = 3.5 * FT; }
+    else if (t.includes('button')) { l = 3.5 * FT; w = 2.5 * FT; }
 
     return { length: l, width: w };
 };
@@ -248,7 +250,12 @@ export const generateLayout = (
         if (IGNORED_OPERATIONS.some(ignored => opName.includes(ignored))) return;
 
         if (!item.operation.machine_type || item.operation.machine_type.toLowerCase() === 'unknown') {
-            item.operation.machine_type = 'Helper Table';
+            // Priority check for Button m/c if machine_type is unknown or missing
+            if (opName.includes('button')) {
+                item.operation.machine_type = 'Button m/c';
+            } else {
+                item.operation.machine_type = 'Helper Table';
+            }
         }
 
         const sec = item.operation.section || 'Unknown';
@@ -761,44 +768,34 @@ export const generateLayout = (
         }
 
         if (secLower.includes('front') || secLower.includes('back')) {
-            const sDims = getMachineZoneDims('supermarket');
             const targetSpecs = secLower.includes('front') ? specs.front : specs.back;
             const absEnd = targetSpecs.end;
-            addMachine(
-                createDummyOp('Supermarket', secName),
-                (isAB ? 'A' : 'C'),
-                absEnd - sDims.width / 2 - 0.2,
-                undefined,
-                undefined,
-                secName,
-                true
-            );
-            const superM = layout[layout.length - 1];
-            if (superM) {
-                superM.rotation.y = ROT_FACE_FRONT + Math.PI;
-                superM.id = `super-${secName}`;
-            }
             const eX = absEnd;
             if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
             else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
         }
 
         if (secLower.includes('collar')) {
-            const sDims = getMachineZoneDims('supermarket');
             const targetSpecs = specs.collar;
-            const armsX = targetSpecs.end + sDims.width + sDims.length / 2;
-            const sm2X = targetSpecs.end + sDims.width / 2;
+            const sDims = getMachineZoneDims('supermarket');
 
-            addMachine(createDummyOp('Supermarket', secName), 'D', armsX, undefined, ROT_FACE_FRONT, secName, true);
-            const sm1 = layout[layout.length - 1]; if (sm1) { sm1.position.z = LANE_Z_D; sm1.id = `super1-${secName}`; }
+            // Anchor to the far end of the Collar section
+            const anchorX = targetSpecs.end - (3.5 * FT);
+            const collarCenterZ = isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD;
 
-            addMachine(createDummyOp('Supermarket', secName), 'C', armsX, undefined, ROT_FACE_FRONT, secName, true);
-            const sm3 = layout[layout.length - 1]; if (sm3) { sm3.position.z = LANE_Z_C; sm3.id = `super3-${secName}`; }
+            // S2: Base of the U (Vertical pillar on the right edge)
+            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX + 2.3 * FT, undefined, - Math.PI / 2, secName, true);
+            const sm2 = layout[layout.length - 1]; if (sm2) { sm2.position.z = collarCenterZ - 1.5 * FT; sm2.id = `super2-${secName}`; }
 
-            addMachine(createDummyOp('Supermarket', secName), 'C', sm2X, undefined, 0, secName, true);
-            const sm2 = layout[layout.length - 1]; if (sm2) { sm2.position.z = LANE_Z_CENTER_CD; sm2.id = `super2-${secName}`; }
+            // S1: Top Arm (Horizontal bar extending left)
+            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 2.4 * FT, undefined, Math.PI, secName, true);
+            const sm1 = layout[layout.length - 1]; if (sm1) { sm1.position.z = collarCenterZ + 3.5 * FT; sm1.id = `super1-${secName}`; }
 
-            const eX = targetSpecs.end + sDims.length + sDims.width + 0.5;
+            // S3: Bottom Arm (Horizontal bar extending left)
+            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 7 * FT, undefined, Math.PI / 2, secName, true);
+            const sm3 = layout[layout.length - 1]; if (sm3) { sm3.position.z = collarCenterZ - 1.5 * FT; sm3.id = `super3-${secName}`; }
+
+            const eX = targetSpecs.end;
             if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
             else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
         }
@@ -826,6 +823,69 @@ export const generateLayout = (
             });
         }
     }
+
+    // --- PHASE 2.5: ADD PERMANENT SUPERMARKETS FOR FRONT & BACK ---
+    ['front', 'back'].forEach(tag => {
+        const targetSpecs = specs.sections[tag as keyof typeof specs.sections];
+        if (!targetSpecs) return;
+
+        const isAB = ['cuff', 'sleeve', 'back'].includes(tag);
+        const sDims = getMachineZoneDims('supermarket');
+        const absEnd = targetSpecs.end;
+        const smSecName = tag === 'front' ? "Front Supermarket" : "Back Supermarket";
+
+        sectionLayouts.push({
+            id: uuidv4(),
+            name: smSecName,
+            position: { x: absEnd - sDims.width, y: 0, z: isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD },
+            length: sDims.width,
+            width: isAB ? specs.widthAB : specs.widthCD,
+            color: '#6366f1'
+        });
+
+        const smX = absEnd - sDims.width / 2;
+        addMachine(createDummyOp('Supermarket', smSecName), isAB ? 'A' : 'C', smX, undefined, Math.PI / 2, smSecName, true);
+        const sm = layout[layout.length - 1];
+        if (sm) {
+            sm.id = `super-${tag}-${uuidv4()}`;
+            sm.position.z = isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD;
+        }
+
+        if (isAB) { cursors.A = Math.max(cursors.A, absEnd); cursors.B = Math.max(cursors.B, absEnd); }
+        else { cursors.C = Math.max(cursors.C, absEnd); cursors.D = Math.max(cursors.D, absEnd); }
+    });
+
+    // --- PHASE 3: SLOT ASSIGNMENT (FIXED GRID LOGIC) ---
+    sectionLayouts.forEach(section => {
+        const sectionLower = section.name.toLowerCase();
+        // Collect all machines in this section that are NOT special helpers
+        const sectionMachines = layout.filter(m =>
+            (m.section || '').toLowerCase() === sectionLower &&
+            !m.isInspection &&
+            !m.operation.machine_type.toLowerCase().includes('inspection') &&
+            !m.operation.machine_type.toLowerCase().includes('supermarket') &&
+            !m.operation.machine_type.toLowerCase().startsWith('board')
+        );
+
+        // Sort them deterministically: first by X, then by Lane (Z) to establish rigid slots
+        sectionMachines.sort((a, b) => {
+            // Give X a tight threshold for floating point matching
+            if (Math.abs(a.position.x - b.position.x) > 0.05) {
+                return a.position.x - b.position.x;
+            }
+            return a.position.z - b.position.z;
+        });
+
+        // Generate the exact slot coordinate array
+        section.slots = sectionMachines.map(m => ({
+            position: { x: m.position.x, y: m.position.y, z: m.position.z }
+        }));
+
+        // Assign slot indices strictly
+        sectionMachines.forEach((m, idx) => {
+            m.slotIndex = idx;
+        });
+    });
 
     return { machines: layout, sections: sectionLayouts, warnings };
 };

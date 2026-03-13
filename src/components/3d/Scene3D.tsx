@@ -109,7 +109,7 @@ export const Scene3D = ({
                 <mesh rotation={[-Math.PI / 2, 0, 0]}>
                   <planeGeometry args={[section.length, section.width]} />
                   <meshBasicMaterial
-                    color={section.color || color}
+                    color={section.color || "#1e293b"} 
                     opacity={0.3}
                     transparent
                     polygonOffset

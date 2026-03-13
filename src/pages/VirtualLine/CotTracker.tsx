@@ -35,6 +35,10 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 import { API_BASE_URL } from "../../config";
+import { db } from "@/firebase";
+import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore";
+import { parseOBExcel } from "@/utils/obParser";
+import { toast } from "sonner";
 
 const LINE_COLORS = [
     '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16'
@@ -143,7 +147,42 @@ export default function CotTracker() {
                 const con_no = activeStyleData.conNo || '';
                 const style_no = activeStyleData.toStyle;
 
-                // Encode and build complete URL
+                console.log(`[COT Tracker] Searching OB in Firebase for Style: ${style_no}, Con: ${con_no}`);
+
+                // 1. Try to find the OB in Firebase first (User's latest uploads)
+                const obMetaRef = collection(db, "styleOBmetadata");
+                const q = query(
+                    obMetaRef,
+                    where("style", "==", style_no),
+                    where("conNo", "==", con_no),
+                    limit(1)
+                );
+
+                const querySnapshot = await getDocs(q);
+                if (!querySnapshot.empty) {
+                    const metaData = querySnapshot.docs[0].data();
+                    if (metaData.fileUrl) {
+                        console.log(`[COT Tracker] Found Firebase OB: ${metaData.originalFileName}. Fetching and parsing...`);
+                        try {
+                            const fileRes = await fetch(metaData.fileUrl);
+                            const blob = await fileRes.blob();
+                            const file = new File([blob], metaData.originalFileName || "ob_file.xlsx");
+                            const parsed = await parseOBExcel(file);
+
+                            if (parsed.operations && parsed.operations.length > 0) {
+                                console.log(`[COT Tracker] Firebase OB Parsed! ${parsed.operations.length} ops. Generating layout...`);
+                                const result = generateCotLayout(parsed.operations, activeLine);
+                                setCotLayout(result);
+                                toast.success(`Layout generated from uploaded OB: ${metaData.originalFileName}`);
+                                return; // Success!
+                            }
+                        } catch (parseErr) {
+                            console.error("[COT Tracker] Error parsing Firebase OB:", parseErr);
+                        }
+                    }
+                }
+
+                // 2. Fallback to local backend /get-ob
                 const baseUrl = `${API_BASE_URL}/get-ob`;
                 const params = new URLSearchParams({
                     line_no: activeLine,
@@ -151,22 +190,21 @@ export default function CotTracker() {
                     con_no: con_no
                 });
 
-                console.log(`[COT Tracker] Fetching OB for ${activeLine}:`, { style_no, con_no });
+                console.log(`[COT Tracker] Falling back to backend OB for ${activeLine}...`);
                 const res = await fetch(`${baseUrl}?${params.toString()}`);
 
                 if (res.ok) {
                     const data = await res.json();
                     if (data.operations && Array.isArray(data.operations)) {
-                        console.log(`[COT Tracker] OB Fetched! ${data.operations.length} ops. Generating layout...`);
+                        console.log(`[COT Tracker] Backend OB Fetched! ${data.operations.length} ops. Generating layout...`);
                         const result = generateCotLayout(data.operations, activeLine);
-                        console.log(`[COT Tracker] Layout generated with ${result.machines.length} machines.`);
                         setCotLayout(result);
                     } else {
-                        console.warn("[COT Tracker] Received data but no operations found.");
+                        console.warn("[COT Tracker] Received backend data but no operations found.");
                         setCotLayout(null);
                     }
                 } else {
-                    console.warn(`[COT Tracker] Failed to fetch OB. Status: ${res.status}`);
+                    console.warn(`[COT Tracker] Failed to fetch backend OB. Status: ${res.status}`);
                     setCotLayout(null);
                 }
             } catch (err) {

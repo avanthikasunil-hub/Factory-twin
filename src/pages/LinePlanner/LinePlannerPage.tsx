@@ -231,9 +231,7 @@ const LinePlannerPage = () => {
       : (minPrepOutput === Infinity ? 0 : minPrepOutput);
 
     const totalOperatorsCount = prodMachines.filter(m => !m.isInspection).length;
-    const lineCapacity = totalStyleSMV > 0
-      ? Math.floor((totalOperatorsCount * workingHours * 60 * (efficiency / 100)) / totalStyleSMV / 100) * 100
-      : 0;
+    const lineCapacity = 1800;
 
     return {
       sectionMetrics,
@@ -244,7 +242,7 @@ const LinePlannerPage = () => {
       totalStyleSMV,
       lineCapacity
     };
-  }, [operations, machineLayout, workingHours, efficiency, targetOutput]);
+  }, [operations, machineLayout, workingHours, efficiency, targetOutput, currentLine]);
 
   const sectionOrder = ['cuff', 'sleeve', 'back', 'collar', 'front', 'assembly'];
   const sortedSections = Object.entries(stats.sectionMetrics).sort((a, b) => {
@@ -520,12 +518,12 @@ const LinePlannerPage = () => {
                   </div>
                 </div>
 
-                <div className={`group flex items-center gap-4 p-5 rounded-3xl border-2 transition-all hover:scale-[1.05] ${isBottlenecked ? 'bg-orange-500/10 border-orange-500/30' : 'bg-emerald-500/10 border-emerald-500/30 shadow-lg shadow-emerald-500/10'}`}>
-                  <div className={`p-3 rounded-2xl text-white shadow-lg ${isBottlenecked ? 'bg-orange-500 shadow-orange-500/20' : 'bg-emerald-500 shadow-emerald-500/20'}`}>
+                <div className="group flex items-center gap-4 p-5 rounded-3xl bg-blue-500/10 border-2 border-blue-500/20 shadow-sm transition-all hover:scale-[1.02]">
+                  <div className="p-3 rounded-2xl bg-blue-500 text-white shadow-lg shadow-blue-500/20">
                     <Target className="w-6 h-6" />
                   </div>
                   <div className="flex-1">
-                    <span className={`text-[9px] uppercase font-black block mb-0.5 tracking-widest ${isBottlenecked ? 'text-orange-600' : 'text-emerald-600'}`}>Live Output</span>
+                    <span className="text-[9px] uppercase font-black text-blue-600/80 block mb-0.5 tracking-widest">Live Output</span>
                     <p className="text-[26px] font-black leading-none tracking-tight">{stats.actualOutput}</p>
                   </div>
                 </div>
@@ -555,16 +553,14 @@ const LinePlannerPage = () => {
                     <>
                       {prepSections.map(([name]) => {
                         const m = stats.sectionMetrics[name];
-                        const isBtl = m.actualOutput < targetOutput;
                         return (
-                          <div key={name} className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${isBtl ? 'bg-orange-500/5 border-orange-500/30' : 'bg-card border-border/60 hover:border-primary/40 shadow-sm'}`}>
+                          <div key={name} className="flex items-center justify-between p-4 rounded-2xl border-2 bg-card border-border/60 hover:border-primary/40 shadow-sm transition-all">
                             <div className="flex flex-col flex-1 overflow-hidden mr-2">
                               <span className="font-black text-foreground text-[13px] uppercase tracking-tight truncate">{name}</span>
-                              {isBtl && <span className="text-[8px] text-orange-600 font-black uppercase tracking-widest mt-0.5 truncate">⚠️ {m.bottleneckOpName}</span>}
                             </div>
                             <div className="flex items-center gap-5 text-right flex-shrink-0">
                               <span className="font-black text-muted-foreground/30 text-[10px] uppercase tracking-tighter">{m.count} MC</span>
-                              <span className={`font-black min-w-[50px] text-[18px] tracking-tighter ${m.actualOutput < targetOutput ? 'text-orange-600' : 'text-emerald-600'}`}>
+                              <span className="font-black min-w-[50px] text-[18px] tracking-tighter text-foreground">
                                 {m.actualOutput}
                               </span>
                             </div>
@@ -575,7 +571,7 @@ const LinePlannerPage = () => {
                       <div className="pt-3">
                         <div
                           onClick={() => setIsAssemblyExpanded(!isAssemblyExpanded)}
-                          className={`flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all ${stats.aggregateAssemblyOutput < targetOutput ? 'bg-orange-500/5 border-orange-500/30' : 'bg-primary/5 border-primary/20 shadow-sm'}`}
+                          className="flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all bg-primary/5 border-primary/20 shadow-sm"
                         >
                           <div className="flex items-center gap-3 flex-1 overflow-hidden">
                             <div className="p-1.5 rounded-lg bg-primary/10 flex-shrink-0">
@@ -583,14 +579,11 @@ const LinePlannerPage = () => {
                             </div>
                             <div className="flex flex-col text-left overflow-hidden">
                               <span className="font-black text-foreground text-[13px] uppercase tracking-tight truncate">Assembly Zone</span>
-                              {stats.aggregateAssemblyOutput < targetOutput && (
-                                <span className="text-[8px] text-orange-600 font-black uppercase tracking-widest mt-0.5 truncate">⚠️ Capacity Limited</span>
-                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-5 text-right flex-shrink-0">
                             <span className="font-black text-muted-foreground/30 text-[10px] uppercase tracking-tighter">{stats.totalAssemblyOperatorsCount} MC</span>
-                            <span className={`font-black min-w-[50px] text-[18px] tracking-tighter ${stats.aggregateAssemblyOutput < targetOutput ? 'text-orange-600' : 'text-emerald-600'}`}>
+                            <span className="font-black min-w-[50px] text-[18px] tracking-tighter text-foreground">
                               {stats.aggregateAssemblyOutput}
                             </span>
                           </div>
@@ -612,11 +605,10 @@ const LinePlannerPage = () => {
                                   <div key={name} className="flex items-center justify-between p-3.5 rounded-xl bg-secondary/10 border border-border/50">
                                     <div className="flex flex-col flex-1 overflow-hidden mr-2">
                                       <span className="font-bold text-[13px] uppercase tracking-tight opacity-80 truncate">{name}</span>
-                                      {isLbtl && <span className="text-[8px] text-orange-600 font-black uppercase tracking-widest truncate">⚠️ {sm.bottleneckOpName}</span>}
                                     </div>
                                     <div className="flex items-center gap-5 flex-shrink-0 text-right">
                                       <span className="text-[9px] font-black text-muted-foreground/40">{sm.count} MC</span>
-                                      <span className={`font-black text-[15px] min-w-[40px] ${sm.actualOutput < lineTarget ? 'text-orange-500' : 'text-emerald-500'}`}>
+                                      <span className="font-black text-[15px] min-w-[40px] text-foreground">
                                         {sm.actualOutput}
                                       </span>
                                     </div>

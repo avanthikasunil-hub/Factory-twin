@@ -11,17 +11,31 @@ interface CameraControllerProps {
 }
 
 /**
- * Camera controller with MapControls for RTS-style navigation
+ * Camera controller with MapControls for RTS-style navigation.
+ * The scene centre is applied ONCE on mount only — after that the user
+ * has full free control over pan/orbit without automatic re-centering.
  */
 export const CameraController = ({ machineLayout, selectedMachine, target = [0, 0, 0] }: CameraControllerProps) => {
   const { camera } = useThree();
   const controlsRef = useRef<any>(null);
+  const initialised = useRef(false);
+
+  // Apply the scene centre as the orbit target only the first time the
+  // controls become available and a meaningful target is known.
+  useEffect(() => {
+    if (!controlsRef.current || initialised.current) return;
+    // Only initialise once the target is not the default [0,0,0]
+    if (target[0] !== 0 || target[1] !== 0 || target[2] !== 0) {
+      controlsRef.current.target.set(...target);
+      controlsRef.current.update();
+      initialised.current = true;
+    }
+  }, [target]);
 
   return (
     <MapControls
       ref={controlsRef}
       makeDefault
-      target={new THREE.Vector3(...target)}
       enableDamping
       dampingFactor={0.1}
       zoomSpeed={0.5}
