@@ -47,7 +47,7 @@ export default function LineScheduleDetails() {
         fetch(`${API_BASE_URL}/schedule?line=${encodeURIComponent(lineId)}`)
             .then(res => res.json())
             .then(data => {
-                setSchedule(data);
+                setSchedule(Array.isArray(data) ? data : []);
                 setLoading(false);
             })
             .catch(err => {
@@ -99,7 +99,7 @@ export default function LineScheduleDetails() {
                     // Refresh schedule to show green check
                     const refreshRes = await fetch(`${API_BASE_URL}/schedule?line=${encodeURIComponent(lineId)}`);
                     const refreshData = await refreshRes.json();
-                    setSchedule(refreshData);
+                    setSchedule(Array.isArray(refreshData) ? refreshData : []);
                 } else {
                     const err = await res.json();
                     alert(`Upload failed: ${err.error}`);

@@ -104,6 +104,10 @@ export default function CotTracker() {
                 const res = await fetch(`${API_BASE_URL}/current-styles`);
                 if (res.ok) {
                     const data = await res.json();
+                    if (!Array.isArray(data)) {
+                        setLoading(false);
+                        return;
+                    }
                     // Only track Changeover styles in the COT Tracker
                     const activeStyles = data.filter((s: any) => s.status === 'Changeover');
 

@@ -123,7 +123,7 @@ const getTargetDimensionsMeters = (type: string) => {
   } else if (t.includes('blocking')) {
     l = 4 * FT; w = 2.5 * FT; h = 4.0 * FT;
   } else if (t.includes('supermarket')) {
-    l = 6.5 * FT; w = 2.5 * FT; h = 7.0 * FT;
+    l = 6.0 * FT; w = 2.5 * FT; h = 7.0 * FT;
   } else if (t.includes('wrapping') || t.includes('wrap')) {
     l = 4 * FT; w = 2.5 * FT; h = 3.0 * FT;
   }

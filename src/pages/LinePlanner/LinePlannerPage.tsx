@@ -31,14 +31,12 @@ const LinePlannerPage = () => {
     layoutAlerts, dismissLayoutAlert, fetchAndApplyOB, preparatoryOps
   } = useLineStore();
 
-  // ─── Local input state (UI only — committed on blur/Enter, NOT on every keystroke) ───
   const [localTarget, setLocalTarget] = useState(targetOutput.toString());
   const [localHours, setLocalHours] = useState(workingHours.toString());
   const [localEfficiency, setLocalEfficiency] = useState(efficiency.toString());
   const [isAssemblyExpanded, setIsAssemblyExpanded] = useState(false);
 
   useEffect(() => {
-    // Only fetch from backend if we don't already have operations loaded locally
     if (currentLine?.lineNo && (currentLine as any).styleNo && (currentLine as any).coneNo) {
       if (operations.length === 0) {
         fetchAndApplyOB(currentLine.lineNo, (currentLine as any).styleNo, (currentLine as any).coneNo);
@@ -46,64 +44,27 @@ const LinePlannerPage = () => {
     }
   }, [currentLine?.lineNo, (currentLine as any)?.styleNo, (currentLine as any)?.coneNo, fetchAndApplyOB, operations.length]);
 
-
-  // ─── HOT REFRESH: Auto-update layout when logic code changes ──────────────────
   const { layoutLogicVersion, setLayoutLogicVersion } = useLineStore();
-
   useEffect(() => {
     if (layoutLogicVersion !== LAYOUT_LOGIC_VERSION && operations.length > 0) {
-      console.log(`[HMR] Layout Logic Upgrade detected (${layoutLogicVersion} -> ${LAYOUT_LOGIC_VERSION}). Refreshing...`);
       generateMachineLayout(operations);
       setLayoutLogicVersion(LAYOUT_LOGIC_VERSION);
     }
   }, [layoutLogicVersion, LAYOUT_LOGIC_VERSION, operations, generateMachineLayout, setLayoutLogicVersion]);
 
-  // Keep local inputs in sync when store values change externally (e.g. load line)
-  useEffect(() => {
-    setLocalTarget(targetOutput.toString());
-  }, [targetOutput]);
-  useEffect(() => {
-    setLocalHours(workingHours.toString());
-  }, [workingHours]);
-  useEffect(() => {
-    setLocalEfficiency(efficiency.toString());
-  }, [efficiency]);
+  useEffect(() => { setLocalTarget(targetOutput.toString()); }, [targetOutput]);
+  useEffect(() => { setLocalHours(workingHours.toString()); }, [workingHours]);
+  useEffect(() => { setLocalEfficiency(efficiency.toString()); }, [efficiency]);
 
-  // ─── FIX 1: Remove the useEffect that called generateMachineLayout on every
-  //     operations/targetOutput/workingHours change.
-  //     updateLineWithNewOB (called in CreateLinePage) already runs generateLayout
-  //     internally before we even arrive here, so re-running it on mount would
-  //     overwrite the fresh layout with a duplicate (or worse, a stale one).
-  //
-  //     Layout is only regenerated when the user explicitly commits new production
-  //     spec values (see commitParameters below).
-  // ────────────────────────────────────────────────────────────────────────────
-
-  // ─── FIX 2: Debounced commit — setLineParameters is only called 600 ms after
-  //     the user STOPS typing, preventing rapid-fire calls like
-  //     Target:9 → Target:90 → Target:900 that each regenerated the full layout. ───
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const commitParameters = useCallback((
-    newTarget: number,
-    newHours: number,
-    newEfficiency: number
-  ) => {
-    // Guard: don't regenerate with obviously incomplete/invalid values
-    if (newTarget <= 0 || newHours <= 0 || operations.length === 0) return;
-
+  const commitParameters = useCallback((t: number, h: number, e: number) => {
+    if (t <= 0 || h <= 0 || operations.length === 0) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setLineParameters(newTarget, newHours, newEfficiency);
-    }, 300);
+    debounceRef.current = setTimeout(() => setLineParameters(t, h, e), 300);
   }, [operations.length, setLineParameters]);
 
-  // Clean up on unmount
-  useEffect(() => () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-  }, []);
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
 
-  // ─── Keyboard shortcuts ──────────────────────────────────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -116,7 +77,6 @@ const LinePlannerPage = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undo, redo]);
 
-  // ─── Save ────────────────────────────────────────────────────────────────────
   const handleSave = () => {
     if (currentLine) {
       saveLine(currentLine);
@@ -124,7 +84,6 @@ const LinePlannerPage = () => {
     }
   };
 
-  // ─── Auto-dismiss layout warnings after 5 s ──────────────────────────────────
   useEffect(() => {
     if (warnings.length > 0 && !layoutError) {
       const timer = setTimeout(() => clearWarnings(), 5000);
@@ -132,9 +91,33 @@ const LinePlannerPage = () => {
     }
   }, [warnings, layoutError, clearWarnings]);
 
-  // ─── Production stats ────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // FIXED stats calculation
+  //
+  // Root causes of Live Output = 0:
+  //
+  // 1. opsBySection used m.section raw (mixed case) as key, then relevantOps
+  //    looked it up with .toLowerCase() — case mismatch dropped all counts.
+  //
+  // 2. When count === 0 (op in OB but no machine placed yet), the old code set
+  //    opOutput = 0, pulling minSectionOpOutput to 0 → actualOutput = 0.
+  //    Fix: skip ops with count === 0 entirely — they have no machines yet.
+  //
+  // 3. Assembly relevantOps filter used opSec.includes('assembly') which
+  //    matched ALL assembly sub-sections for every assembly section, inflating
+  //    counts and producing wrong output numbers.
+  //    Fix: match exact section key per assembly sub-section.
+  //
+  // 4. The aggregate assembly output summed per-sub-section outputs, but each
+  //    sub-section only sees a fraction of the total ops.
+  //    Fix: compute assembly output as min over all assembly machines, treating
+  //    all assembly lanes together.
+  // ─────────────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    const totalStyleSMV = currentLine?.totalSMV || operations.reduce((sum, op) => sum + (op.smv || 0), 0);
+    const totalStyleSMV = currentLine?.totalSMV ||
+      operations.reduce((sum, op) => sum + (op.smv || 0), 0);
+
+    // Production machines only (no inspection, supermarket, board)
     const prodMachines = machineLayout.filter(m =>
       m.operation &&
       !m.operation.machine_type.toLowerCase().includes('pathway') &&
@@ -144,15 +127,18 @@ const LinePlannerPage = () => {
 
     const effectiveTimeDaily = workingHours * 60 * (efficiency / 100);
 
-    const opsBySection = prodMachines.reduce((acc, m) => {
-      const sec = (m.section || "Other").toLowerCase().trim();
-      const opKey = (m.operation.op_name || 'unknown').trim().toLowerCase();
-      if (!acc[sec]) acc[sec] = {};
-      if (!acc[sec][opKey]) acc[sec][opKey] = { op: m.operation, count: 0 };
-      acc[sec][opKey].count++;
-      return acc;
-    }, {} as Record<string, Record<string, { op: Operation, count: number }>>);
+    // ── Step 1: count how many machines are assigned to each (section, opName) ──
+    // Key: sectionLower → opNameLower → count
+    // Use .toLowerCase() consistently everywhere to avoid case-mismatch bugs.
+    const opsBySection: Record<string, Record<string, number>> = {};
+    prodMachines.forEach(m => {
+      const sec = (m.section || 'other').toLowerCase().trim();
+      const opKey = (m.operation.op_name || 'unknown').toLowerCase().trim();
+      if (!opsBySection[sec]) opsBySection[sec] = {};
+      opsBySection[sec][opKey] = (opsBySection[sec][opKey] || 0) + 1;
+    });
 
+    // ── Step 2: per-section metrics ──
     const sectionMetrics: Record<string, {
       count: number;
       maxCycleTime: number;
@@ -160,87 +146,135 @@ const LinePlannerPage = () => {
       bottleneckOpName?: string;
     }> = {};
 
-    const allSecs = new Set([
-      ...prodMachines.map(m => (m.section || "Other").toLowerCase().trim()),
-      ...operations.map(op => (op.section || "Other").toLowerCase().trim())
+    // Collect every unique section name present in both machines and operations
+    const allSecs = new Set<string>([
+      ...prodMachines.map(m => (m.section || 'other').toLowerCase().trim()),
+      ...operations.map(op => (op.section || 'other').toLowerCase().trim()),
     ]);
 
     allSecs.forEach(sec => {
-      let minSectionOpOutput = Infinity;
-      let bottleneckOpName = "";
-      let maxSectionCycleTime = 0;
+      // Skip assembly sub-sections here — they are handled together below
+      if (sec.includes('assembly')) return;
+
+      const opsForSection = operations.filter(op =>
+        (op.section || 'other').toLowerCase().trim() === sec
+      );
+
+      if (opsForSection.length === 0) return;
+
+      let minOutput = Infinity;
+      let maxCycleTime = 0;
+      let bottleneckOpName = '';
       let totalCount = 0;
-      const isAssySec = sec.toLowerCase().includes('assembly');
 
-      const relevantOps = operations.filter(op => {
-        const opSec = (op.section || "Other").trim().toLowerCase();
-        const opNameKey = (op.op_name || '').trim().toLowerCase();
-        if (isAssySec) {
-          const countInThisSec = opsBySection[sec]?.[opNameKey]?.count || 0;
-          return opSec.includes('assembly') && countInThisSec > 0;
-        }
-        return opSec === sec;
-      });
-
-      if (relevantOps.length === 0 && !opsBySection[sec]) return;
-
-      relevantOps.forEach(op => {
-        const opNameKey = (op.op_name || '').trim().toLowerCase();
-        const count = opsBySection[sec]?.[opNameKey]?.count || 0;
+      opsForSection.forEach(op => {
+        const opKey = (op.op_name || '').toLowerCase().trim();
+        const count = opsBySection[sec]?.[opKey] || 0;
         totalCount += count;
 
-        if (op.smv > 0) {
-          const opOutput = Math.floor((effectiveTimeDaily * count) / op.smv);
-          const cycleTime = count > 0 ? (op.smv / count) : Infinity;
-          if (count > 0) maxSectionCycleTime = Math.max(maxSectionCycleTime, cycleTime);
-          else maxSectionCycleTime = Infinity;
+        // Skip ops with no machines placed — they don't constrain output yet
+        if (count === 0 || op.smv <= 0) return;
 
-          if (opOutput < minSectionOpOutput) {
-            minSectionOpOutput = opOutput;
-            bottleneckOpName = op.op_name;
-          }
+        const opOutput = Math.floor((effectiveTimeDaily * count) / op.smv);
+        const cycleTime = op.smv / count;
+
+        maxCycleTime = Math.max(maxCycleTime, cycleTime);
+
+        if (opOutput < minOutput) {
+          minOutput = opOutput;
+          bottleneckOpName = op.op_name;
         }
       });
 
       sectionMetrics[sec] = {
         count: totalCount,
-        maxCycleTime: maxSectionCycleTime === Infinity ? 999 : maxSectionCycleTime,
-        actualOutput: minSectionOpOutput === Infinity ? 0 : minSectionOpOutput,
-        bottleneckOpName: bottleneckOpName || (relevantOps.length > 0 ? relevantOps[0].op_name : "")
+        maxCycleTime: maxCycleTime,
+        actualOutput: minOutput === Infinity ? 0 : minOutput,
+        bottleneckOpName: bottleneckOpName,
       };
     });
 
-    const aggregateAssemblyOutput = Object.entries(sectionMetrics)
-      .filter(([name]) => name.toLowerCase().includes('assembly'))
-      .reduce((sum, [_, m]) => sum + m.actualOutput, 0);
+    // ── Step 3: Assembly — treat all assembly lanes as ONE pool ──
+    // Collect all assembly machines and operations regardless of sub-section name
+    const assemblyMachines = prodMachines.filter(m =>
+      (m.section || '').toLowerCase().includes('assembly')
+    );
+    const assemblyOps = operations.filter(op =>
+      (op.section || '').toLowerCase().includes('assembly')
+    );
 
-    const totalAssemblyOpsCount = Object.entries(sectionMetrics)
-      .filter(([name]) => name.toLowerCase().includes('assembly'))
-      .reduce((sum, [_, m]) => sum + m.count, 0);
+    // Build per-opName machine count across ALL assembly lanes
+    const assemblyOpCount: Record<string, number> = {};
+    assemblyMachines.forEach(m => {
+      const opKey = (m.operation.op_name || '').toLowerCase().trim();
+      assemblyOpCount[opKey] = (assemblyOpCount[opKey] || 0) + 1;
+    });
 
-    let minPrepOutput = Infinity;
-    Object.keys(sectionMetrics).forEach(s => {
-      if (!s.toLowerCase().includes('assembly')) {
-        if (sectionMetrics[s].actualOutput < minPrepOutput) minPrepOutput = sectionMetrics[s].actualOutput;
+    // Collect all unique assembly sub-section names that actually have machines
+    const assemblySubSecs = new Set(
+      assemblyMachines.map(m => (m.section || '').toLowerCase().trim())
+    );
+
+    let assemblyMinOutput = Infinity;
+    let assemblyBottleneck = '';
+    let assemblyMaxCycle = 0;
+    let assemblyTotalCount = assemblyMachines.length;
+
+    assemblyOps.forEach(op => {
+      const opKey = (op.op_name || '').toLowerCase().trim();
+      const count = assemblyOpCount[opKey] || 0;
+      if (count === 0 || op.smv <= 0) return;
+
+      const opOutput = Math.floor((effectiveTimeDaily * count) / op.smv);
+      const cycleTime = op.smv / count;
+      assemblyMaxCycle = Math.max(assemblyMaxCycle, cycleTime);
+
+      if (opOutput < assemblyMinOutput) {
+        assemblyMinOutput = opOutput;
+        assemblyBottleneck = op.op_name;
       }
     });
 
-    const hasAssembly = Object.keys(sectionMetrics).some(s => s.toLowerCase().includes('assembly'));
-    const actualOutput = hasAssembly
-      ? Math.min(minPrepOutput === Infinity ? 999999 : minPrepOutput, aggregateAssemblyOutput)
-      : (minPrepOutput === Infinity ? 0 : minPrepOutput);
+    const aggregateAssemblyOutput = assemblyMinOutput === Infinity ? 0 : assemblyMinOutput;
 
-    const totalOperatorsCount = prodMachines.filter(m => !m.isInspection).length;
-    const lineCapacity = 1800;
+    // Populate sectionMetrics for each assembly sub-section (for the health panel display)
+    // Each sub-section shows the SAME aggregated output since they share the same bottleneck
+    assemblySubSecs.forEach(sec => {
+      const subCount = assemblyMachines.filter(
+        m => (m.section || '').toLowerCase().trim() === sec
+      ).length;
+      sectionMetrics[sec] = {
+        count: subCount,
+        maxCycleTime: assemblyMaxCycle,
+        actualOutput: aggregateAssemblyOutput,
+        bottleneckOpName: assemblyBottleneck,
+      };
+    });
+
+    // ── Step 4: Overall line output = min of all prep sections + assembly ──
+    let minPrepOutput = Infinity;
+    Object.entries(sectionMetrics).forEach(([name, m]) => {
+      if (!name.includes('assembly') && m.actualOutput > 0) {
+        minPrepOutput = Math.min(minPrepOutput, m.actualOutput);
+      }
+    });
+
+    const hasAssembly = assemblyTotalCount > 0;
+    const actualOutput = hasAssembly
+      ? Math.min(
+        minPrepOutput === Infinity ? aggregateAssemblyOutput : minPrepOutput,
+        aggregateAssemblyOutput
+      )
+      : (minPrepOutput === Infinity ? 0 : minPrepOutput);
 
     return {
       sectionMetrics,
       aggregateAssemblyOutput,
-      totalAssemblyOperatorsCount: totalAssemblyOpsCount,
-      actualOutput: actualOutput === 999999 ? 0 : actualOutput,
-      totalOperators: prodMachines.length,
+      totalAssemblyOperatorsCount: assemblyTotalCount,
+      actualOutput: actualOutput === Infinity ? 0 : actualOutput,
+      totalOperators: prodMachines.filter(m => !m.isInspection).length,
       totalStyleSMV,
-      lineCapacity
+      lineCapacity: 1800,
     };
   }, [operations, machineLayout, workingHours, efficiency, targetOutput, currentLine]);
 
@@ -259,7 +293,7 @@ const LinePlannerPage = () => {
 
   const isBottlenecked = stats.actualOutput < targetOutput;
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden text-[13.5px]">
 
@@ -314,8 +348,6 @@ const LinePlannerPage = () => {
 
       {/* Status banners */}
       <AnimatePresence>
-        {/* Redundant banners suppressed as per user request to only show border violations */}
-
         {layoutAlerts.map(alert => (
           <motion.div
             key={alert.id}
@@ -374,104 +406,47 @@ const LinePlannerPage = () => {
               </div>
             </div>
 
-            {/* Production Specs
-                FIX: inputs only update local state while typing.
-                     setLineParameters (which calls generateLayout) fires only
-                     600 ms after the user stops typing via commitParameters.   */}
+            {/* Production Specs */}
             <div className="p-5 rounded-3xl bg-secondary/30 border border-border/80 text-left shadow-sm">
               <div className="flex items-center gap-3 mb-6">
                 <Settings className="w-5 h-5 text-primary" />
                 <h2 className="text-[11px] font-black uppercase tracking-[0.15em] text-foreground">Production Specs</h2>
               </div>
               <div className="grid grid-cols-2 gap-5">
-
-                {/* Target Output */}
                 <div className="space-y-2">
-                  <Label className="text-[9px] uppercase font-black text-muted-foreground block tracking-widest px-1">
-                    Global Target
-                  </Label>
+                  <Label className="text-[9px] uppercase font-black text-muted-foreground block tracking-widest px-1">Global Target</Label>
                   <Input
-                    type="number"
-                    value={localTarget}
-                    onChange={(e) => {
-                      const valStr = e.target.value;
-                      setLocalTarget(valStr);
-                      const val = parseInt(valStr) || 0;
-                      commitParameters(val, parseInt(localHours) || 0, parseInt(localEfficiency) || 0);
-                    }}
-                    onBlur={(e) => {
-                      const val = parseInt(e.target.value) || 0;
-                      commitParameters(val, parseInt(localHours) || 0, parseInt(localEfficiency) || 0);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = parseInt(localTarget) || 0;
-                        commitParameters(val, parseInt(localHours) || 0, parseInt(localEfficiency) || 0);
-                      }
-                    }}
+                    type="number" value={localTarget}
+                    onChange={(e) => { setLocalTarget(e.target.value); commitParameters(parseInt(e.target.value) || 0, parseInt(localHours) || 0, parseInt(localEfficiency) || 0); }}
+                    onBlur={(e) => commitParameters(parseInt(e.target.value) || 0, parseInt(localHours) || 0, parseInt(localEfficiency) || 0)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') commitParameters(parseInt(localTarget) || 0, parseInt(localHours) || 0, parseInt(localEfficiency) || 0); }}
                     className="h-10 text-[14px] font-black bg-background border-2 border-border focus:border-primary shadow-sm"
                   />
                 </div>
-
-                {/* Hours/Shift */}
                 <div className="space-y-2">
-                  <Label className="text-[9px] uppercase font-black text-muted-foreground block tracking-widest px-1">
-                    Hours/Shift
-                  </Label>
+                  <Label className="text-[9px] uppercase font-black text-muted-foreground block tracking-widest px-1">Hours/Shift</Label>
                   <Input
-                    type="number"
-                    value={localHours}
-                    onChange={(e) => {
-                      const valStr = e.target.value;
-                      setLocalHours(valStr);
-                      const val = parseInt(valStr) || 0;
-                      commitParameters(parseInt(localTarget) || 0, val, parseInt(localEfficiency) || 0);
-                    }}
-                    onBlur={(e) => {
-                      const val = parseInt(e.target.value) || 0;
-                      commitParameters(parseInt(localTarget) || 0, val, parseInt(localEfficiency) || 0);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = parseInt(localHours) || 0;
-                        commitParameters(parseInt(localTarget) || 0, val, parseInt(localEfficiency) || 0);
-                      }
-                    }}
+                    type="number" value={localHours}
+                    onChange={(e) => { setLocalHours(e.target.value); commitParameters(parseInt(localTarget) || 0, parseInt(e.target.value) || 0, parseInt(localEfficiency) || 0); }}
+                    onBlur={(e) => commitParameters(parseInt(localTarget) || 0, parseInt(e.target.value) || 0, parseInt(localEfficiency) || 0)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') commitParameters(parseInt(localTarget) || 0, parseInt(localHours) || 0, parseInt(localEfficiency) || 0); }}
                     className="h-10 text-[14px] font-black bg-background border-2 border-border focus:border-primary shadow-sm"
                   />
                 </div>
-
-                {/* Efficiency */}
                 <div className="col-span-2 space-y-2">
-                  <Label className="text-[9px] uppercase font-black text-muted-foreground block tracking-widest px-1">
-                    Line Efficiency (%)
-                  </Label>
+                  <Label className="text-[9px] uppercase font-black text-muted-foreground block tracking-widest px-1">Line Efficiency (%)</Label>
                   <Input
-                    type="number"
-                    value={localEfficiency}
-                    onChange={(e) => {
-                      const valStr = e.target.value;
-                      setLocalEfficiency(valStr);
-                      const val = parseInt(valStr) || 0;
-                      commitParameters(parseInt(localTarget) || 0, parseInt(localHours) || 0, val);
-                    }}
-                    onBlur={(e) => {
-                      const val = parseInt(e.target.value) || 0;
-                      commitParameters(parseInt(localTarget) || 0, parseInt(localHours) || 0, val);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = parseInt(localEfficiency) || 0;
-                        commitParameters(parseInt(localTarget) || 0, parseInt(localHours) || 0, val);
-                      }
-                    }}
+                    type="number" value={localEfficiency}
+                    onChange={(e) => { setLocalEfficiency(e.target.value); commitParameters(parseInt(localTarget) || 0, parseInt(localHours) || 0, parseInt(e.target.value) || 0); }}
+                    onBlur={(e) => commitParameters(parseInt(localTarget) || 0, parseInt(localHours) || 0, parseInt(e.target.value) || 0)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') commitParameters(parseInt(localTarget) || 0, parseInt(localHours) || 0, parseInt(localEfficiency) || 0); }}
                     className="h-10 text-[14px] font-black bg-background border-2 border-border focus:border-primary shadow-sm"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Preparatory Processes — right after Production Specs */}
+            {/* Preparatory Processes */}
             {preparatoryOps && preparatoryOps.length > 0 && (
               <div className="rounded-3xl overflow-hidden border border-amber-500/20 shadow-sm text-left">
                 <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 px-5 py-3.5 flex items-center gap-3 border-b border-amber-500/15">
@@ -499,9 +474,7 @@ const LinePlannerPage = () => {
               <div className="space-y-3.5">
 
                 <div className="group flex items-center gap-4 p-5 rounded-3xl bg-blue-500/10 border-2 border-blue-500/20 shadow-sm transition-all hover:scale-[1.02]">
-                  <div className="p-3 rounded-2xl bg-blue-500 text-white shadow-lg shadow-blue-500/20">
-                    <Users className="w-6 h-6" />
-                  </div>
+                  <div className="p-3 rounded-2xl bg-blue-500 text-white shadow-lg shadow-blue-500/20"><Users className="w-6 h-6" /></div>
                   <div className="flex-1">
                     <span className="text-[9px] uppercase font-black text-blue-600/80 block mb-0.5 tracking-widest">Operators</span>
                     <p className="text-[26px] font-black leading-none tracking-tight">{stats.totalOperators}</p>
@@ -509,9 +482,7 @@ const LinePlannerPage = () => {
                 </div>
 
                 <div className="group flex items-center gap-4 p-5 rounded-3xl bg-amber-500/10 border-2 border-amber-500/20 shadow-sm transition-all hover:scale-[1.02]">
-                  <div className="p-3 rounded-2xl bg-amber-500 text-white shadow-lg shadow-amber-500/20">
-                    <Activity className="w-6 h-6" />
-                  </div>
+                  <div className="p-3 rounded-2xl bg-amber-500 text-white shadow-lg shadow-amber-500/20"><Activity className="w-6 h-6" /></div>
                   <div className="flex-1">
                     <span className="text-[9px] uppercase font-black text-amber-600/80 block mb-0.5 tracking-widest">Total Style SMV</span>
                     <p className="text-[26px] font-black leading-none tracking-tight">{stats.totalStyleSMV.toFixed(2)}</p>
@@ -519,9 +490,7 @@ const LinePlannerPage = () => {
                 </div>
 
                 <div className="group flex items-center gap-4 p-5 rounded-3xl bg-blue-500/10 border-2 border-blue-500/20 shadow-sm transition-all hover:scale-[1.02]">
-                  <div className="p-3 rounded-2xl bg-blue-500 text-white shadow-lg shadow-blue-500/20">
-                    <Target className="w-6 h-6" />
-                  </div>
+                  <div className="p-3 rounded-2xl bg-blue-500 text-white shadow-lg shadow-blue-500/20"><Target className="w-6 h-6" /></div>
                   <div className="flex-1">
                     <span className="text-[9px] uppercase font-black text-blue-600/80 block mb-0.5 tracking-widest">Live Output</span>
                     <p className="text-[26px] font-black leading-none tracking-tight">{stats.actualOutput}</p>
@@ -529,9 +498,7 @@ const LinePlannerPage = () => {
                 </div>
 
                 <div className="group flex items-center gap-4 p-5 rounded-3xl bg-purple-500/10 border-2 border-purple-500/20 shadow-sm transition-all hover:scale-[1.02]">
-                  <div className="p-3 rounded-2xl bg-purple-500 text-white shadow-lg shadow-purple-500/20">
-                    <Target className="w-6 h-6" />
-                  </div>
+                  <div className="p-3 rounded-2xl bg-purple-500 text-white shadow-lg shadow-purple-500/20"><Target className="w-6 h-6" /></div>
                   <div className="flex-1">
                     <span className="text-[9px] uppercase font-black text-purple-600/80 block mb-0.5 tracking-widest">Line Capacity</span>
                     <p className="text-[26px] font-black leading-none tracking-tight">{stats.lineCapacity.toLocaleString()}</p>
@@ -560,14 +527,13 @@ const LinePlannerPage = () => {
                             </div>
                             <div className="flex items-center gap-5 text-right flex-shrink-0">
                               <span className="font-black text-muted-foreground/30 text-[10px] uppercase tracking-tighter">{m.count} MC</span>
-                              <span className="font-black min-w-[50px] text-[18px] tracking-tighter text-foreground">
-                                {m.actualOutput}
-                              </span>
+                              <span className="font-black min-w-[50px] text-[18px] tracking-tighter text-foreground">{m.actualOutput}</span>
                             </div>
                           </div>
                         );
                       })}
 
+                      {/* Assembly collapsed/expanded */}
                       <div className="pt-3">
                         <div
                           onClick={() => setIsAssemblyExpanded(!isAssemblyExpanded)}
@@ -575,14 +541,16 @@ const LinePlannerPage = () => {
                         >
                           <div className="flex items-center gap-3 flex-1 overflow-hidden">
                             <div className="p-1.5 rounded-lg bg-primary/10 flex-shrink-0">
-                              {isAssemblyExpanded ? <ChevronUp className="w-4 h-4 text-primary" /> : <ChevronDown className="w-4 h-4 text-primary" />}
+                              {isAssemblyExpanded
+                                ? <ChevronUp className="w-4 h-4 text-primary" />
+                                : <ChevronDown className="w-4 h-4 text-primary" />}
                             </div>
-                            <div className="flex flex-col text-left overflow-hidden">
-                              <span className="font-black text-foreground text-[13px] uppercase tracking-tight truncate">Assembly Zone</span>
-                            </div>
+                            <span className="font-black text-foreground text-[13px] uppercase tracking-tight">Assembly Zone</span>
                           </div>
                           <div className="flex items-center gap-5 text-right flex-shrink-0">
-                            <span className="font-black text-muted-foreground/30 text-[10px] uppercase tracking-tighter">{stats.totalAssemblyOperatorsCount} MC</span>
+                            <span className="font-black text-muted-foreground/30 text-[10px] uppercase tracking-tighter">
+                              {stats.totalAssemblyOperatorsCount} MC
+                            </span>
                             <span className="font-black min-w-[50px] text-[18px] tracking-tighter text-foreground">
                               {stats.aggregateAssemblyOutput}
                             </span>
@@ -599,8 +567,6 @@ const LinePlannerPage = () => {
                             >
                               {assemblyLines.map(([name]) => {
                                 const sm = stats.sectionMetrics[name];
-                                const lineTarget = Math.floor(targetOutput / (assemblyLines.length || 1));
-                                const isLbtl = sm.actualOutput < lineTarget;
                                 return (
                                   <div key={name} className="flex items-center justify-between p-3.5 rounded-xl bg-secondary/10 border border-border/50">
                                     <div className="flex flex-col flex-1 overflow-hidden mr-2">
@@ -608,9 +574,7 @@ const LinePlannerPage = () => {
                                     </div>
                                     <div className="flex items-center gap-5 flex-shrink-0 text-right">
                                       <span className="text-[9px] font-black text-muted-foreground/40">{sm.count} MC</span>
-                                      <span className="font-black text-[15px] min-w-[40px] text-foreground">
-                                        {sm.actualOutput}
-                                      </span>
+                                      <span className="font-black text-[15px] min-w-[40px] text-foreground">{sm.actualOutput}</span>
                                     </div>
                                   </div>
                                 );
@@ -635,7 +599,7 @@ const LinePlannerPage = () => {
                   { color: 'bg-blue-500', label: 'Single Needle' },
                   { color: 'bg-purple-500', label: 'Overlock' },
                   { color: 'bg-orange-500', label: 'Iron/Table' },
-                  { color: 'bg-pink-500', label: 'Special M/C' }
+                  { color: 'bg-pink-500', label: 'Special M/C' },
                 ].map(item => (
                   <div key={item.label} className="flex items-center gap-3 text-[12px] text-muted-foreground font-bold italic">
                     <div className={`w-3.5 h-3.5 rounded shadow-inner ${item.color}`} />

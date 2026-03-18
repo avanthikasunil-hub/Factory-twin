@@ -40,7 +40,9 @@ export default function VirtualLineOverview() {
                 const res = await fetch(`${API_BASE_URL}/current-styles`);
                 if (res.ok) {
                     const data = await res.json();
-                    setLineStatuses(data);
+                    if (Array.isArray(data)) {
+                        setLineStatuses(data);
+                    }
                 }
             } catch (err) {
                 console.error("Error fetching all status:", err);
@@ -53,7 +55,7 @@ export default function VirtualLineOverview() {
 
     const mergedLineData = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(id => {
         const lineName = `Line ${id}`;
-        const statusData = lineStatuses.find(s => s.line_no === lineName);
+        const statusData = Array.isArray(lineStatuses) ? lineStatuses.find(s => s.line_no === lineName) : null;
         const floor = id <= 6 ? "Floor 1" : "Floor 2";
 
         return {

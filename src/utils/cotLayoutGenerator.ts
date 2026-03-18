@@ -524,20 +524,22 @@ export const generateCotLayout = (
             else { cursors.C = Math.max(cursors.C, lCX); cursors.D = Math.max(cursors.D, rCX); }
         }
 
+
         if (secLower.includes('front') || secLower.includes('back')) {
-            addMachine(createDummyOp('Supermarket', secName), (isAB ? 'A' : 'C'), targetSpecs!.end - sDims.width / 2 - 0.2, undefined, undefined, secName, true);
+            const tempTargetSpecs = secLower.includes('front') ? specs.sections.front : specs.sections.back;
+            addMachine(createDummyOp('Supermarket', secName), (isAB ? 'A' : 'C'), tempTargetSpecs!.end - sDims.width / 2 - 0.2, undefined, undefined, secName, true);
             const sm = layout[layout.length - 1]; if (sm) { sm.rotation.y = ROT_FACE_FRONT + Math.PI; sm.id = `super-${lineNo}-${secName}-${uuidv4()}`; }
-            const eX = targetSpecs!.end;
+            const eX = tempTargetSpecs!.end;
             if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
             else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
         }
 
         if (secLower.includes('collar')) {
-            const targetSpecs = specs.collar;
-            const sDims = getMachineZoneDims('supermarket');
+            const targetSpecsCollar = specs.sections.collar;
+            const sDimsCollar = getMachineZoneDims('supermarket');
 
             // Anchor to the far end of the Collar section
-            const anchorX = targetSpecs.end - (3.5 * FT);
+            const anchorX = targetSpecsCollar.end - (3.5 * FT);
             const collarCenterZ = isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD;
 
             // S2: Base of the U (Vertical pillar on the right edge)
@@ -552,11 +554,36 @@ export const generateCotLayout = (
             addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 7 * FT, undefined, Math.PI / 2, secName, true);
             const sm3 = layout[layout.length - 1]; if (sm3) { sm3.position.z = collarCenterZ - 1.5 * FT; sm3.id = `super3-${lineNo}-${secName}-${uuidv4()}`; }
 
-            const eX = targetSpecs.end;
+            const eX = targetSpecsCollar.end;
             if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
             else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
+        }
+
+        // --- SPACE MONITORING ---
+        const AB_LIMIT = PART_BOUNDS.back.end;
+        const CD_LIMIT = PART_BOUNDS.front.end;
+        const monitoringLimitX = isAB ? AB_LIMIT : CD_LIMIT;
+        const currentPos = isAB ? Math.max(cursors.A, cursors.B) : Math.max(cursors.C, cursors.D);
+
+        const monitoringTag = Object.keys(specs.sections).find(tag => secLower.includes(tag));
+
+        if (monitoringTag) {
+            const tagSpecs = (specs.sections as any)[monitoringTag];
+            const standardLen = tagSpecs.end - tagSpecs.start;
+            const consumed = currentPos - alternatingX;
+            if (consumed > standardLen + 0.1) {
+                sectionSpaceViolators.push(secName);
+            }
+        }
+
+        if (currentPos > monitoringLimitX + 0.05) {
+            sectionSpaceViolators.forEach(culprit => {
+                const msg = `${culprit} section overflow.`;
+                if (!warnings.includes(msg)) warnings.push(msg);
+            });
         }
     }
 
     return { machines: layout, sections: sectionLayouts, warnings };
 };
+

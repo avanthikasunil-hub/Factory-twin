@@ -46,7 +46,9 @@ export default function VirtualFloor() {
                 const res = await fetch(`${API_BASE_URL}/current-styles`);
                 if (res.ok) {
                     const data = await res.json();
-                    setLineStatuses(data);
+                    if (Array.isArray(data)) {
+                        setLineStatuses(data);
+                    }
                 }
             } catch (err) {
                 console.error("Error fetching statuses:", err);
@@ -193,6 +195,7 @@ export default function VirtualFloor() {
                 const res = await fetch(`${API_BASE_URL}/active-layouts`);
                 if (!res.ok) return;
                 const activeData = await res.json();
+                if (!Array.isArray(activeData)) return;
 
                 const getLineNum = (lineStr: string) => {
                     if (!lineStr) return null;
@@ -219,67 +222,60 @@ export default function VirtualFloor() {
                 const maxZ = LANE_Z_CENTER_CD + (specs.widthCD / 2);
                 const zStep = (maxZ - minZ) + 3.7;
 
-                console.log(`[VirtualFloor] Fetched ${activeData.length} active layouts. Filtering for ${activeFloor}...`);
+                // Track if we actually need to update the global machine list
+                let hasChanges = false;
+                const newStyles: Record<string, string> = {};
 
-                // 1. Initial load from Backend (Fast)
-                const backendMachines = floorData.flatMap((item: any) => {
-                    try {
-                        const ops = item.operations;
-                        if (!ops || ops.length === 0) return [];
-                        const result = generateCotLayout(ops, item.line_no);
-                        const lineNum = getLineNum(item.line_no)!;
+                // 1. Process data from Backend
+                const updatedMachines: MachinePosition[] = [];
+                floorData.forEach((item: any) => {
+                    const lineNum = getLineNum(item.line_no)!;
+                    const styleId = `${item.style_no}_${item.con_no}`;
+                    newStyles[item.line_no] = styleId;
+
+                    // If we have it in cache, use it
+                    if (styleCache.has(styleId)) {
+                        const cached = styleCache.get(styleId)!;
                         const relativeIdx = (lineNum <= 6) ? (lineNum - 1) : (lineNum - 7);
                         const zOffset = relativeIdx * zStep;
-                        return result.machines.map(m => ({
-                            ...m,
-                            position: { ...m.position, z: m.position.z + zOffset }
-                        }));
-                    } catch (e) {
-                        console.error(`[VirtualFloor] Layout generation failed for ${item.line_no}:`, e);
-                        return [];
+                        updatedMachines.push(...cached.map(m => ({ ...m, position: { ...m.position, z: m.position.z + zOffset } })));
+                    } else {
+                        // Otherwise generate it and cache it (if ops exist)
+                        try {
+                            const ops = item.operations;
+                            if (!ops || ops.length === 0) return;
+                            const result = generateCotLayout(ops, item.line_no);
+                            styleCache.set(styleId, result.machines);
+
+                            const relativeIdx = (lineNum <= 6) ? (lineNum - 1) : (lineNum - 7);
+                            const zOffset = relativeIdx * zStep;
+                            updatedMachines.push(...result.machines.map(m => ({
+                                ...m,
+                                position: { ...m.position, z: m.position.z + zOffset }
+                            })));
+                        } catch (e) {
+                            console.error(`[VirtualFloor] Layout generation failed for ${item.line_no}:`, e);
+                        }
                     }
                 });
-                setActiveMachines(backendMachines);
 
-                // 2. Background Enrichment from Firebase (Async, Non-blocking)
+                // 2. Background Enrichment for empty lines (Firestore Fallback)
                 let linesToCheck = [...floorData];
-
-                // If backend is empty, we query Firestore for the most recent OB files on this floor
                 if (linesToCheck.length === 0) {
-                    try {
-                        console.log("[VirtualFloor] Backend empty. Trying to find recent OB files in Firestore...");
-                        const obMetaRef = collection(db, "styleOBmetadata");
-                        // We can't easily filter by date without an index, so we'll just get a bunch 
-                        // and filter by floor on client side.
-                        const q = query(obMetaRef, limit(50));
-                        const querySnapshot = await getDocs(q);
-
-                        const floorLines = activeFloor === "Floor 1" ? [1, 2, 3, 4, 5, 6] : [7, 8, 9];
-                        const foundStyles: any[] = [];
-
-                        querySnapshot.forEach(doc => {
-                            const data = doc.data();
-                            const lNum = getLineNum(data.uploadLine);
-                            if (lNum && floorLines.includes(lNum)) {
-                                // Only take the most recent one for each line if we find multiples
-                                if (!foundStyles.find(s => getLineNum(s.line_no) === lNum)) {
-                                    foundStyles.push({
-                                        line_no: data.uploadLine || `Line ${lNum}`,
-                                        style_no: data.style,
-                                        con_no: data.conNo,
-                                        isFallback: true
-                                    });
-                                }
+                    const obMetaRef = collection(db, "styleOBmetadata");
+                    const q = query(obMetaRef, limit(20)); // Lower limit for speed
+                    const querySnapshot = await getDocs(q);
+                    const floorLines = activeFloor === "Floor 1" ? [1, 2, 3, 4, 5, 6] : [7, 8, 9];
+                    
+                    querySnapshot.forEach(doc => {
+                        const data = doc.data();
+                        const lNum = getLineNum(data.uploadLine);
+                        if (lNum && floorLines.includes(lNum)) {
+                            if (!linesToCheck.find(s => getLineNum(s.line_no) === lNum)) {
+                                linesToCheck.push({ line_no: data.uploadLine, style_no: data.style, con_no: data.conNo, operations: [] });
                             }
-                        });
-
-                        if (foundStyles.length > 0) {
-                            console.log(`[VirtualFloor] Found ${foundStyles.length} styles in Firestore for floor fallback.`);
-                            linesToCheck = foundStyles;
                         }
-                    } catch (e) {
-                        console.error("[VirtualFloor] Firestore fallback style search failed:", e);
-                    }
+                    });
                 }
 
                 // If a specific line is requested but not in our list, add it as a shell
@@ -287,63 +283,60 @@ export default function VirtualFloor() {
                     linesToCheck.push({ line_no: activeLine, style_no: '', con_no: '' });
                 }
 
-                linesToCheck.forEach(async (item: any) => {
-                    const line_no = item.line_no;
-                    const style_no = item.style_no;
-                    if (!style_no) return; // Skip if no style info
-                    const con_no = item.con_no || '';
+                // Collect all tasks to run in parallel
+                const tasks = linesToCheck.map(async (item: any) => {
+                    const styleId = `${item.style_no}_${item.con_no}`;
+                    if (!item.style_no || styleCache.has(styleId)) return null;
 
-                    // Use a query without orderBy to avoid needing a composite index
                     const obMetaRef = collection(db, "styleOBmetadata");
-                    const q = query(
-                        obMetaRef,
-                        where("style", "==", style_no),
-                        where("conNo", "==", con_no),
-                        limit(1)
-                    );
+                    const q = query(obMetaRef, where("style", "==", item.style_no), where("conNo", "==", item.con_no || ""), limit(1));
 
                     try {
-                        const querySnapshot = await getDocs(q);
-                        if (!querySnapshot.empty) {
-                            const metaData = querySnapshot.docs[0].data();
-                            if (metaData.fileUrl) {
-                                console.log(`[VirtualFloor] Found Firebase OB for ${line_no}. Updating in background...`);
-                                const fileRes = await fetch(metaData.fileUrl);
+                        const qSnap = await getDocs(q);
+                        if (!qSnap.empty) {
+                            const meta = qSnap.docs[0].data();
+                            if (meta.fileUrl) {
+                                const fileRes = await fetch(meta.fileUrl);
                                 const blob = await fileRes.blob();
-                                const file = new File([blob], metaData.originalFileName || "ob_file.xlsx");
+                                const file = new File([blob], "ob.xlsx");
                                 const parsed = await parseOBExcel(file);
-
-                                if (parsed.operations && parsed.operations.length > 0) {
+                                if (parsed.operations?.length > 0) {
                                     const result = generateCotLayout(parsed.operations, item.line_no);
-                                    const lineNum = getLineNum(item.line_no)!;
-                                    const relativeIdx = (lineNum <= 6) ? (lineNum - 1) : (lineNum - 7);
-                                    const zOffset = relativeIdx * zStep;
-                                    const updatedLineMachines = result.machines.map(m => ({
-                                        ...m,
-                                        position: { ...m.position, z: m.position.z + zOffset }
-                                    }));
-
-                                    setActiveMachines(prev => {
-                                        // Replace only the machines for THIS line
-                                        const others = prev.filter(m => getLineNum(m.section?.split(' ')[0] || m.id) !== lineNum);
-                                        return [...others, ...updatedLineMachines];
-                                    });
+                                    styleCache.set(styleId, result.machines);
+                                    return { line_no: item.line_no, machines: result.machines };
                                 }
                             }
                         }
-                    } catch (fbErr) {
-                        console.error(`[VirtualFloor] Firebase background enrichment failed for ${line_no}:`, fbErr);
+                    } catch (e) { console.error(`[VirtualFloor] Firebase background enrichment failed for ${item.line_no}:`, e); }
+                    return null;
+                });
+
+                const results = await Promise.all(tasks);
+                results.forEach(res => {
+                    if (res) {
+                        const lineNum = getLineNum(res.line_no)!;
+                        const relativeIdx = (lineNum <= 6) ? (lineNum - 1) : (lineNum - 7);
+                        const zOffset = relativeIdx * zStep;
+                        const offsetMachines = res.machines.map(m => ({ ...m, position: { ...m.position, z: m.position.z + zOffset } }));
+                        updatedMachines.push(...offsetMachines);
                     }
                 });
+
+                // Only update state if the layout actually changed or it's a new style set
+                const styleSignature = JSON.stringify(newStyles);
+                if (styleSignature !== JSON.stringify(lineStyles)) {
+                    setLineStyles(newStyles);
+                    setActiveMachines(updatedMachines);
+                }
             } catch (err) {
                 console.error("[VirtualFloor] Error:", err);
             }
         };
 
         fetchActiveLayouts();
-        const interval = setInterval(fetchActiveLayouts, 10000);
+        const interval = setInterval(fetchActiveLayouts, 20000); // Relaxed interval (20s)
         return () => clearInterval(interval);
-    }, [activeFloor, activeLine]);
+    }, [activeFloor, activeLine, lineStyles, styleCache]);
 
     return (
         <div className="absolute inset-0 flex flex-row bg-slate-950 overflow-hidden">

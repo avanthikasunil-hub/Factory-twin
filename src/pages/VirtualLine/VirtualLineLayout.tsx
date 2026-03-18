@@ -58,7 +58,12 @@ export default function VirtualLineLayout() {
                 const res = await fetch(`${API_BASE_URL}/current-styles`);
                 if (res.ok) {
                     const data = await res.json();
-                    setLiveCotData(data);
+                    console.log("[VirtualLineLayout] liveCotData received:", data);
+                    if (Array.isArray(data)) {
+                        setLiveCotData(data);
+                    } else {
+                        console.error("[VirtualLineLayout] Expected array for live status but got:", data);
+                    }
                 }
             } catch (err) {
                 console.error("Error fetching live status:", err);
@@ -69,7 +74,7 @@ export default function VirtualLineLayout() {
         return () => clearInterval(interval);
     }, []);
 
-    const activeLineData = liveCotData.find(i => i.line_no === activeLine);
+    const activeLineData = Array.isArray(liveCotData) ? liveCotData.find(i => i.line_no === activeLine) : null;
     const isChangeover = activeLineData?.status === 'Changeover';
     const isRunning = activeLineData?.status === 'Running';
 
@@ -277,7 +282,7 @@ export default function VirtualLineLayout() {
                                         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => {
                                             const lineName = `Line ${num}`;
                                             const isActive = searchParams.get("line") === lineName;
-                                            const isCOT = liveCotData.find(d => d.line_no === lineName)?.status === 'Changeover';
+                                            const isCOT = Array.isArray(liveCotData) ? liveCotData.find(d => d.line_no === lineName)?.status === 'Changeover' : false;
                                             const floor = num <= 6 ? "Floor 1" : "Floor 2";
 
                                             return (

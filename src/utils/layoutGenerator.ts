@@ -53,8 +53,7 @@ export const LINE_PRESETS: Record<'A' | 'B', Record<string, SectionPreset>> = {
 
 export function getLayoutSpecs(lineNo: string = "Line 1") {
     const num = parseInt(lineNo.replace(/\D/g, '')) || 1;
-    // Lines 7-9 should have Line 1 dimension (Preset A). Line 6 remains 'B' for now.
-    const presetKey = (num >= 7 && num <= 9) || num < 6 ? 'A' : 'B';
+    const presetKey = num >= 6 ? 'B' : 'A';
     const p = LINE_PRESETS[presetKey];
 
     const S = FT;
@@ -184,14 +183,13 @@ export const getMachineZoneDims = (type: string) => {
     else if (t.includes('turning')) { l = 4.0 * FT; w = 2.5 * FT; }
     else if (t.includes('pointing')) { l = 3.5 * FT; w = 2.5 * FT; }
     else if (t.includes('contour')) { l = 4.5 * FT; w = 3 * FT; }
-    else if (t.includes('pressing') || (t.includes('press') && !t.includes('iron'))) { l = 4.72 * FT; w = 3.5 * FT; }
+    else if (t.includes('pressing') || (t.includes('press') && !t.includes('iron'))) { l = 4.72 * FT; w = 4.0 * FT; }
     else if (t.includes('iron') || t.includes('press')) { l = 4.0 * FT; w = 3.0 * FT; }
     else if (t.includes('helper') || t.includes('work table') || t.includes('table') || t.includes('trolley')) { l = 4.5 * FT; w = 2.5 * FT; }
     else if (t.includes('inspection')) { l = 5.0 * FT; w = 4.0 * FT; }
     else if (t.includes('fusing') || t.includes('rotary')) { l = 4.5 * FT; w = 3.0 * FT; }
     else if (t.includes('blocking')) { l = 4.0 * FT; w = 2.5 * FT; }
-    else if (t.includes('supermarket')) { l = 7.0 * FT; w = 3.5 * FT; }
-    else if (t.includes('button')) { l = 3.5 * FT; w = 2.5 * FT; }
+    else if (t.includes('supermarket')) { l = 6.0 * FT; w = 2.5 * FT; }
 
     return { length: l, width: w };
 };
@@ -250,12 +248,7 @@ export const generateLayout = (
         if (IGNORED_OPERATIONS.some(ignored => opName.includes(ignored))) return;
 
         if (!item.operation.machine_type || item.operation.machine_type.toLowerCase() === 'unknown') {
-            // Priority check for Button m/c if machine_type is unknown or missing
-            if (opName.includes('button')) {
-                item.operation.machine_type = 'Button m/c';
-            } else {
-                item.operation.machine_type = 'Helper Table';
-            }
+            item.operation.machine_type = 'Helper Table';
         }
 
         const sec = item.operation.section || 'Unknown';
@@ -372,33 +365,24 @@ export const generateLayout = (
     const isSpilledForward: Record<string, boolean> = {};
 
     // --- PHASE 1: PRE-CALCULATE SPILLS ---
-    // availableLen = the X-extent of the zone minus space reserved for inspection (+supermarket for front/back)
-    // usedLen = sum of machine widths (alternating lanes share same X cursor, so each machine contributes 1× its width to X)
     const sectionSpace: Record<string, { availableLen: number, usedLen: number }> = {};
     for (const tag of PARTS_ORDER) {
-        // Use line-specific specs (not global PART_BOUNDS) so shorter lines calculate correctly
         const tagSpec = specs.sections[tag as keyof typeof specs.sections];
         const zoneLen = tagSpec ? (tagSpec.end - tagSpec.start) : 0;
         const iDims = getMachineZoneDims('inspection');
         const sDims = getMachineZoneDims('supermarket');
-        // IMPORTANT: Use the SAME reservation formula as Phase 2 (machineZoneEnd calculation)
         let reservedX = iDims.length + 3 * INSPECTION_GAP + 0.01;
         if (tag === 'front' || tag === 'back') reservedX += sDims.width + 0.1;
+        // Reserve space for 3 collar supermarkets
+        if (tag === 'collar') reservedX += sDims.width * 3 + 0.3;
         sectionSpace[tag] = { availableLen: Math.max(0, zoneLen - reservedX), usedLen: 0 };
     }
 
-    // Calculate X-consumption per section:
-    // Alternating placement means both Lane-A and Lane-B machines share the X cursor.
-    // Each machine in an alternating pair advances X by 1× its width (not 0.5×).
-    // We model it as: max machines in either lane × machine width.
-    // For N machines alternating: ceil(N/2) per lane → X consumed = ceil(N/2) × width (use max lane).
     for (const secName of processingOrder) {
         const secLower = secName.toLowerCase();
         const ops = sectionsMap.get(secName)!;
         const matchedTag = PARTS_ORDER.find(tag => secLower.includes(tag));
         if (matchedTag && !secLower.includes('assembly')) {
-            // Each pair of machines shares the same X slot. X consumed = ceil(totalCount/2) × avg_width
-            // But since types may differ we sum per-machine and divide by 2 lanes.
             let lane1X = 0, lane2X = 0;
             let alt = 0;
             for (const item of ops) {
@@ -409,13 +393,9 @@ export const generateLayout = (
                     alt++;
                 }
             }
-            // X consumed in this section = max of the two lanes (the longer lane determines how far the cursor goes)
             sectionSpace[matchedTag].usedLen += Math.max(lane1X, lane2X);
         }
     }
-
-    // Phase 1 ops-movement removed: overflow is now handled greedily in Phase 2.
-    // Machines fill each section to machineZoneEnd, then remaining ops carry forward.
 
     const sectionCounters: Record<string, number> = {};
     Array.from(sectionsMap.keys()).forEach(k => sectionCounters[k] = 1);
@@ -430,7 +410,6 @@ export const generateLayout = (
         const targetSpecsEarly = matchedTag ? specs.sections[matchedTag as keyof typeof specs.sections] : null;
         const zoneBounds = targetSpecsEarly || (matchedTag ? PART_BOUNDS[matchedTag] : { start: 0, end: 500 });
 
-        // Every section ALWAYS starts from its own section border (line-specific, not global).
         let alternatingX = zoneBounds.start;
 
         const isAssemblySec = secLower.includes('assembly');
@@ -441,7 +420,6 @@ export const generateLayout = (
             let currentX_AB = startX_AssemblyAB;
             let currentX_CD = startX_AssemblyCD;
 
-            // Parallel Sewing Lines (Lanes B, A, D)
             ops.forEach((item) => {
                 const { operation, count } = item;
                 const dims = getMachineZoneDims(operation.machine_type);
@@ -461,7 +439,6 @@ export const generateLayout = (
                 }
             });
 
-            // Permanent Assembly 4 (Lane C) - Restored Helper Tables
             const hOp = createDummyOp("Helper Table", "Assembly 4", "H-C");
             hOp.machine_type = "Helper Table";
             const hDims = getMachineZoneDims("Helper Table");
@@ -497,16 +474,14 @@ export const generateLayout = (
         const hasSupermarket = (matchedTag === 'front' || matchedTag === 'back');
         const supermarketStart = sectionLimit - (hasSupermarket ? sDims.width : 0);
 
+        // For collar: reserve space for 3 supermarkets (U-shape) at end
         const hasCollarSupermarkets = matchedTag === 'collar';
-        const collarSupermarketReserve = hasCollarSupermarkets ? (sDims.width + sDims.length + 0.3) : 0;
+        const collarSupermarketReserve = hasCollarSupermarkets ? (sDims.width * 3 + 0.3) : 0;
 
         const reservation = (iDims.length + 3 * INSPECTION_GAP + 0.01);
         const machineZoneEnd = supermarketStart - reservation - collarSupermarketReserve;
 
         const rawZones = isAB ? zonesAB : zonesCD;
-        // Restrict placement zones to ONLY this section's physical bounds.
-        // Without this, getNextValidX would silently jump machines into the
-        // next section's zone when the current zone is full.
         const thisSectionBounds = targetSpecs
             ? { start: targetSpecs.start, end: Math.min(targetSpecs.end, machineZoneEnd) }
             : { start: alternatingX, end: machineZoneEnd };
@@ -521,7 +496,6 @@ export const generateLayout = (
         let alt = 0;
         const lLane = isAB ? 'A' : 'C', rLane = isAB ? 'B' : 'D';
 
-        // Special: Handle dynamic backward spill for Front section BEFORE generating Front Main
         if (matchedTag === 'front' && spillPending['collar'] && !spillPending['collar'].isNext) {
             const pending = spillPending['collar'];
             const zoneEnd = PART_BOUNDS['collar'].end;
@@ -596,17 +570,17 @@ export const generateLayout = (
         const addInspection = (sName: string, cur: LaneCursors, isAB_sect: boolean, _zns: any[], baseOps?: any[]) => {
             const iDims = getMachineZoneDims('inspection');
 
-            // Anchor inspection to the reserved space at the end of the section.
-            // machineZoneEnd is where regular machines stop; inspection starts right there.
-            // This is more reliable than deriving from lCX/rCX (which can drift when overflow happens).
-            const capTarget = (matchedTag === 'front' || matchedTag === 'back') ? supermarketStart : sectionLimit;
+            const hasCollarSM = sName.toLowerCase().includes('collar');
+            const smReserve = hasCollarSM ? (sDims.width * 2 + 0.1) : sDims.width;
+            const capTarget = (matchedTag === 'front' || matchedTag === 'back' || matchedTag === 'collar')
+                ? (sectionLimit - (hasCollarSM ? smReserve : sDims.width))
+                : sectionLimit;
+
             const reservedStart = capTarget - iDims.length - INSPECTION_GAP;
 
-            // Fall back to cursor position if machines didn't fill the zone
             const cursorPos = Math.max(lCX, rCX) + INSPECTION_GAP;
             let iStart = Math.min(cursorPos, reservedStart);
 
-            // Must stay within section bounds
             const secStart = targetSpecs?.start || 0;
             if (iStart < secStart + 0.01) iStart = secStart + 0.01;
 
@@ -645,7 +619,6 @@ export const generateLayout = (
                 lastM.id = `inspect-${sName}-${uuidv4()}`;
             }
 
-            // Advance cursors past the inspection block
             const iEnd = runX;
             lCX = iEnd;
             rCX = iEnd;
@@ -653,7 +626,6 @@ export const generateLayout = (
             else { cur.C = Math.max(cur.C, iEnd); cur.D = Math.max(cur.D, iEnd); }
         };
 
-        // placeOps: place machines greedily; stops at machineZoneEnd and returns overflow ops
         const placeOps = (opsToPlace: any[], sourceSecLabel: string): any[] => {
             const overflow: any[] = [];
             let overflowing = false;
@@ -671,7 +643,6 @@ export const generateLayout = (
                     const nextX = getNextValidX(cursorVal, w, zones);
 
                     if (nextX + w > machineZoneEnd + 0.01) {
-                        // Zone full — collect remaining count of this op plus all subsequent ops
                         const leftover = item.count - k;
                         if (leftover > 0) overflow.push({ ...item, count: leftover });
                         overflowing = true;
@@ -693,25 +664,20 @@ export const generateLayout = (
             return overflow;
         };
 
-        // 1. If this section is a target for "Next" spillovers
-        // Spilled machines AND their inspection are placed here (inspection follows machines)
         if (matchedTag && spillPending[matchedTag]?.isNext) {
             const pending = spillPending[matchedTag];
             const sourceSec = (pending as any).sourceSection || (pending.ops.length > 0 ? pending.ops[0].operation.section : 'Unknown');
             placeOps(pending.ops, sourceSec);
-            // Inspection always follows the last spilled machine into the same target zone
             addInspection(sourceSec, cursors, isAB, zones);
             delete spillPending[matchedTag];
         }
 
-        // 2. Separate machines for correct end-of-section placement
         const regularOps = ops.filter(o => !o.operation.machine_type.toLowerCase().includes('inspection') && !o.operation.machine_type.toLowerCase().includes('supermarket'));
         const inspectionOps = ops.filter(o => o.operation.machine_type.toLowerCase().includes('inspection'));
         const smOps = ops.filter(o => o.operation.machine_type.toLowerCase().includes('supermarket'));
 
         const overflowOps = placeOps(regularOps, secName);
 
-        // Forward overflow: inject into the next same-lane section's ops BEFORE it is processed
         if (overflowOps.length > 0 && matchedTag) {
             const overflowTarget = findOverflowSection(secLower, cursors, isAB);
             const nextSecName = processingOrder.find(s =>
@@ -733,7 +699,6 @@ export const generateLayout = (
         else { cursors.C = Math.max(cursors.C, lCX); cursors.D = Math.max(cursors.D, rCX); }
 
         // --- PHASE A: INSPECTION PLACEMENT ---
-        // Always place inspection in the source section regardless of overflow.
         addInspection(secName, cursors, isAB, zones, inspectionOps);
 
         // --- PHASE B: PLACE PENDING SPILLOVERS FROM THE END OF THE SECTION ---
@@ -767,35 +732,48 @@ export const generateLayout = (
             else { cursors.C = Math.max(cursors.C, lCX); cursors.D = Math.max(cursors.D, rCX); }
         }
 
-        if (secLower.includes('front') || secLower.includes('back')) {
-            const targetSpecs = secLower.includes('front') ? specs.front : specs.back;
-            const absEnd = targetSpecs.end;
-            const eX = absEnd;
-            if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
-            else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
-        }
-
+        // --- COLLAR: 3-supermarket U-shape (Custom Position) ---
         if (secLower.includes('collar')) {
-            const targetSpecs = specs.collar;
-            const sDims = getMachineZoneDims('supermarket');
-
-            // Anchor to the far end of the Collar section
-            const anchorX = targetSpecs.end - (3.5 * FT);
+            const targetSpecsLocal = specs.collar;
+            const anchorX = targetSpecsLocal.end;
             const collarCenterZ = isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD;
 
             // S2: Base of the U (Vertical pillar on the right edge)
-            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX + 2.3 * FT, undefined, - Math.PI / 2, secName, true);
+            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 0.9 * FT, undefined, - Math.PI / 2, secName, true);
             const sm2 = layout[layout.length - 1]; if (sm2) { sm2.position.z = collarCenterZ - 1.5 * FT; sm2.id = `super2-${secName}`; }
 
             // S1: Top Arm (Horizontal bar extending left)
-            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 2.4 * FT, undefined, Math.PI, secName, true);
+            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 5.2 * FT, undefined, Math.PI, secName, true);
             const sm1 = layout[layout.length - 1]; if (sm1) { sm1.position.z = collarCenterZ + 3.5 * FT; sm1.id = `super1-${secName}`; }
 
             // S3: Bottom Arm (Horizontal bar extending left)
-            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 7 * FT, undefined, Math.PI / 2, secName, true);
+            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 9.6 * FT, undefined, Math.PI / 2, secName, true);
             const sm3 = layout[layout.length - 1]; if (sm3) { sm3.position.z = collarCenterZ - 1.5 * FT; sm3.id = `super3-${secName}`; }
 
-            const eX = targetSpecs.end;
+            const eX = targetSpecsLocal.end;
+            cursors.C = Math.max(cursors.C, eX);
+            cursors.D = Math.max(cursors.D, eX);
+        }
+
+        if (secLower.includes('front') || secLower.includes('back')) {
+            const sDims = getMachineZoneDims('supermarket');
+            const targetSpecs = secLower.includes('front') ? specs.front : specs.back;
+            const absEnd = targetSpecs.end;
+            addMachine(
+                createDummyOp('Supermarket', secName),
+                (isAB ? 'A' : 'C'),
+                absEnd - sDims.width / 2 - 0.2,
+                undefined,
+                undefined,
+                secName,
+                true
+            );
+            const superM = layout[layout.length - 1];
+            if (superM) {
+                superM.rotation.y = ROT_FACE_FRONT + Math.PI;
+                superM.id = `super-${secName}`;
+            }
+            const eX = absEnd;
             if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
             else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
         }
@@ -823,69 +801,6 @@ export const generateLayout = (
             });
         }
     }
-
-    // --- PHASE 2.5: ADD PERMANENT SUPERMARKETS FOR FRONT & BACK ---
-    ['front', 'back'].forEach(tag => {
-        const targetSpecs = specs.sections[tag as keyof typeof specs.sections];
-        if (!targetSpecs) return;
-
-        const isAB = ['cuff', 'sleeve', 'back'].includes(tag);
-        const sDims = getMachineZoneDims('supermarket');
-        const absEnd = targetSpecs.end;
-        const smSecName = tag === 'front' ? "Front Supermarket" : "Back Supermarket";
-
-        sectionLayouts.push({
-            id: uuidv4(),
-            name: smSecName,
-            position: { x: absEnd - sDims.width, y: 0, z: isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD },
-            length: sDims.width,
-            width: isAB ? specs.widthAB : specs.widthCD,
-            color: '#6366f1'
-        });
-
-        const smX = absEnd - sDims.width / 2;
-        addMachine(createDummyOp('Supermarket', smSecName), isAB ? 'A' : 'C', smX, undefined, Math.PI / 2, smSecName, true);
-        const sm = layout[layout.length - 1];
-        if (sm) {
-            sm.id = `super-${tag}-${uuidv4()}`;
-            sm.position.z = isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD;
-        }
-
-        if (isAB) { cursors.A = Math.max(cursors.A, absEnd); cursors.B = Math.max(cursors.B, absEnd); }
-        else { cursors.C = Math.max(cursors.C, absEnd); cursors.D = Math.max(cursors.D, absEnd); }
-    });
-
-    // --- PHASE 3: SLOT ASSIGNMENT (FIXED GRID LOGIC) ---
-    sectionLayouts.forEach(section => {
-        const sectionLower = section.name.toLowerCase();
-        // Collect all machines in this section that are NOT special helpers
-        const sectionMachines = layout.filter(m =>
-            (m.section || '').toLowerCase() === sectionLower &&
-            !m.isInspection &&
-            !m.operation.machine_type.toLowerCase().includes('inspection') &&
-            !m.operation.machine_type.toLowerCase().includes('supermarket') &&
-            !m.operation.machine_type.toLowerCase().startsWith('board')
-        );
-
-        // Sort them deterministically: first by X, then by Lane (Z) to establish rigid slots
-        sectionMachines.sort((a, b) => {
-            // Give X a tight threshold for floating point matching
-            if (Math.abs(a.position.x - b.position.x) > 0.05) {
-                return a.position.x - b.position.x;
-            }
-            return a.position.z - b.position.z;
-        });
-
-        // Generate the exact slot coordinate array
-        section.slots = sectionMachines.map(m => ({
-            position: { x: m.position.x, y: m.position.y, z: m.position.z }
-        }));
-
-        // Assign slot indices strictly
-        sectionMachines.forEach((m, idx) => {
-            m.slotIndex = idx;
-        });
-    });
 
     return { machines: layout, sections: sectionLayouts, warnings };
 };
