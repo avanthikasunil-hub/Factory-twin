@@ -549,7 +549,9 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         machineLayout: state.machineLayout.map((machine) => {
           if (machine.id === machineId)
             return { ...machine, rotation: { ...machine.rotation, y: newRotY }, position: { ...machine.position, x: machine.position.x + machineShiftX, z: newZ } };
-          if (machine.lane === m.lane && machine.position.x > m.position.x)
+          
+          const isFinishing = m.section?.toLowerCase() === 'finishing';
+          if (!isFinishing && machine.lane === m.lane && machine.position.x > m.position.x)
             return { ...machine, position: { ...machine.position, x: machine.position.x + deltaX } };
           return machine;
         }),
@@ -749,7 +751,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       if (ids.includes(m.id)) {
         return {
           ...m,
-          position: { ...m.position, x: m.position.x + deltaX },
+          position: { ...m.position, x: m.position.x + deltaX, z: m.position.z + deltaZ },
           hasManualPosition: true
         };
       }
@@ -761,7 +763,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
 
       draggedMachines.forEach(dragged => {
         const secLower = (dragged.section || '').toLowerCase();
-        if (!secLower || secLower.includes('supermarket')) return;
+        if (!secLower || secLower.includes('supermarket') || secLower === 'finishing') return;
+
 
         const draggedDims = getMachineZoneDims(dragged.operation.machine_type);
         const dragX = dragged.position.x;
@@ -811,6 +814,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   },
 
   _reLayoutSection: (currentLayout: MachinePosition[], secLower: string, isFinalCommit = true) => {
+    if (secLower === 'finishing') return currentLayout;
     const specs = getLayoutSpecs(get().currentLine?.lineNo);
     const isCDGroup = secLower.includes('collar') || secLower.includes('front') || secLower.includes('assembly 3') || secLower.includes('assembly 4');
     const lane1 = isCDGroup ? 'C' : 'A';

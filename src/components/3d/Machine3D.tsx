@@ -8,6 +8,7 @@ import { HumanOperator } from './HumanOperator';
 import { Cabin3D } from './Cabin3D';
 import { IronBox } from './IronBox';
 import { SpotWashBox } from './SpotWashBox';
+import { GarmentConveyor } from './GarmentConveyor';
 
 interface Machine3DProps {
   machineData: MachinePosition;
@@ -214,7 +215,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
   const [modelBounds, setModelBounds] = useState({ sizeX: 0, sizeZ: 0, centerX: 0, centerZ: 0 });
   const [computedScale, setComputedScale] = useState<[number, number, number]>([1, 1, 1]);
 
-  const { selectedMachines, toggleMachineSelection, visibleSection, isMoveMode, isDeleteMode, deleteMachine, setPlacingMachine } = useLineStore();
+  const { selectedMachines, toggleMachineSelection, visibleSection, isMoveMode, isDeleteMode, deleteMachine, setPlacingMachine, setDraggingActive, moveSelectedMachines, updateMachinesPositions } = useLineStore();
   const isSelected = selectedMachines.includes(machineData.id);
 
   const isVisible = isOverview || !visibleSection || (machineData.section && machineData.section.toLowerCase() === visibleSection.toLowerCase());
@@ -479,10 +480,46 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
       {/* Selection Highlight Ring */}
       {isSelected && (
-        <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.55, 0.65, 32]} />
-          <meshBasicMaterial color="#3b82f6" toneMapped={false} />
+        <mesh position={[0, -0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[targetDims.length / 2 + 0.2, targetDims.length / 2 + 0.35, 64]} />
+          <meshBasicMaterial color={isMoveMode ? "#10b981" : "#facc15"} transparent opacity={0.6} depthWrite={false} />
         </mesh>
+      )}
+
+      {/* Movement Arrows - Per-machine ('Line Planner' style) */}
+      {isSelected && isMoveMode && (
+        <PivotControls
+          anchor={[0, 0.1, 1.25]}
+          depthTest={false}
+          scale={75}
+          fixed={true}
+          activeAxes={[true, false, true]}
+          onDragStart={() => {
+            setDraggingActive(true);
+            (window as any)._dragLastX = 0;
+            (window as any)._dragLastZ = 0;
+          }}
+          onDrag={(matrix) => {
+            const translation = new THREE.Vector3();
+            const rotation = new THREE.Quaternion();
+            const scale = new THREE.Vector3();
+            matrix.decompose(translation, rotation, scale);
+            
+            const dx = translation.x - ((window as any)._dragLastX || 0);
+            const dz = translation.z - ((window as any)._dragLastZ || 0);
+            
+            moveSelectedMachines(dx, dz);
+            
+            (window as any)._dragLastX = translation.x;
+            (window as any)._dragLastZ = translation.z;
+          }}
+          onDragEnd={() => {
+            updateMachinesPositions([machineData.id]);
+            setDraggingActive(false);
+          }}
+        >
+             <mesh visible={false}><boxGeometry args={[0.01, 0.01, 0.01]} /></mesh>
+        </PivotControls>
       )}
 
       {/* Info Label (Visible on Hover) */}

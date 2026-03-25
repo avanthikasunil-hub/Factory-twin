@@ -109,13 +109,13 @@ export const Scene3D = ({
 
   // Stable drag-centre — computed once when drag starts, not every frame
   const dragCenter = useMemo(() => {
-    if ((!isDraggingActive && !isMoveGizmoVisible) || selectedMachines.length === 0) return null;
+    if ((!isDraggingActive && !isMoveMode) || selectedMachines.length === 0) return null;
     const selectedData = machineLayout.filter(m => selectedMachines.includes(m.id));
     if (selectedData.length === 0) return null;
     const avgX = selectedData.reduce((sum, m) => sum + m.position.x, 0) / selectedData.length;
     const avgZ = selectedData.reduce((sum, m) => sum + m.position.z, 0) / selectedData.length;
     return { x: avgX, z: avgZ, items: selectedData };
-  }, [isDraggingActive, isMoveGizmoVisible, selectedMachines.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isDraggingActive, isMoveMode, selectedMachines, machineLayout]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Camera look-at target: geometric centre of the whole floor plan
   const sceneCenter = useMemo((): [number, number, number] => {
@@ -308,14 +308,13 @@ export const Scene3D = ({
           {showMachines &&
             selectedMachines.length > 0 &&
             isMoveMode &&
-            isMoveGizmoVisible &&
             dragCenter && (
               <PivotControls
-                key={`pivot-${selectedMachines.join('-')}`} // Force re-render on selection change
-                anchor={[dragCenter.x, 0.1, dragCenter.z]}
+                key={`pivot-${selectedMachines.join('-')}`} 
+                anchor={[dragCenter.x, 0.2, dragCenter.z + 1.25]}
                 activeAxes={[true, false, true]}
                 depthTest={false}
-                scale={85}
+                scale={75}
                 fixed={true} 
                 onDragStart={() => {
                   setDraggingActive(true);
@@ -329,15 +328,15 @@ export const Scene3D = ({
                   setSelectionOffset({ x: translation.x, z: translation.z });
                 }}
                 onDragEnd={() => {
-                  // Final commit to store precisely once
                   moveSelectedMachines(selectionOffset.x, selectionOffset.z);
                   updateMachinesPositions(selectedMachines);
-                  
-                  // Reset local states
                   setSelectionOffset({ x: 0, z: 0 });
                   setDraggingActive(false);
                 }}
-              />
+              >
+                  {/* Invisible child to ensure control presence */}
+                  <mesh visible={false}><boxGeometry args={[0.1, 0.1, 0.1]} /></mesh>
+              </PivotControls>
             )}
 
           {/* ── Manual Placement Ghost ── */}
