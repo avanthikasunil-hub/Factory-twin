@@ -79,6 +79,8 @@ interface LineStore {
   updateMachinesPositions: (machineIds: string[]) => void;
   moveSelectedMachines: (deltaX: number, deltaZ: number) => void;
   addMachine: (machineType: string, section: string, opName: string) => void;
+  deleteSelectedMachines: () => void;
+  rotateSelectedMachines: (angleRad: number) => void;
 
   undo: () => void;
   redo: () => void;
@@ -88,6 +90,10 @@ interface LineStore {
   future: any[];
   isMoveMode: boolean;
   setMoveMode: (mode: boolean) => void;
+  isDeleteMode: boolean;
+  setDeleteMode: (mode: boolean) => void;
+  isRotateMode: boolean;
+  setRotateMode: (mode: boolean) => void;
   isDraggingActive: boolean;
   setDraggingActive: (active: boolean) => void;
   preDragLayout: Record<string, { x: number; y: number; z: number }> | null;
@@ -104,6 +110,11 @@ interface LineStore {
   fetchAndApplyOB: (lineNo: string, styleNo: string, conNo: string) => Promise<void>;
   globalOverflow: boolean;
   setGlobalOverflow: (overflow: boolean) => void;
+  
+  isMoveGizmoVisible: boolean;
+  setMoveGizmoVisible: (visible: boolean) => void;
+  placingMachine: { type: string; section: string; opName: string } | null;
+  setPlacingMachine: (machine: { type: string; section: string; opName: string } | null) => void;
 }
 
 const FT = 0.3048;
@@ -166,7 +177,33 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   canUndo: false,
   canRedo: false,
   isMoveMode: false,
-  setMoveMode: (mode) => set({ isMoveMode: mode, isDraggingActive: false, selectedMachines: [], selectedMachine: null }),
+  isDeleteMode: false,
+  isRotateMode: false,
+  setMoveMode: (mode) => set({ 
+    isMoveMode: mode, 
+    isDeleteMode: mode ? false : get().isDeleteMode, 
+    isRotateMode: mode ? false : get().isRotateMode,
+    isDraggingActive: false, 
+    isMoveGizmoVisible: false,
+    selectedMachines: [], 
+    selectedMachine: null 
+  }),
+  setDeleteMode: (mode) => set({ 
+    isDeleteMode: mode, 
+    isMoveMode: mode ? false : get().isMoveMode, 
+    isRotateMode: mode ? false : get().isRotateMode,
+    isMoveGizmoVisible: false,
+    selectedMachines: [], 
+    selectedMachine: null 
+  }),
+  setRotateMode: (mode) => set({ 
+    isRotateMode: mode, 
+    isMoveMode: mode ? false : get().isMoveMode, 
+    isDeleteMode: mode ? false : get().isDeleteMode,
+    isMoveGizmoVisible: false,
+    selectedMachines: [], 
+    selectedMachine: null 
+  }),
   isDraggingActive: false,
   preDragLayout: null,
   setDraggingActive: (active) => {
@@ -185,6 +222,10 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   globalOverflow: false,
   setGlobalOverflow: (overflow) => set({ globalOverflow: overflow }),
   clearWarnings: () => set({ warnings: [] }),
+  isMoveGizmoVisible: false,
+  setMoveGizmoVisible: (visible) => set({ isMoveGizmoVisible: visible }),
+  placingMachine: null,
+  setPlacingMachine: (machine) => set({ placingMachine: machine }),
 
   // ─── Alerts: start empty, only populated by checkLayoutAlerts after a drag ───
   layoutAlerts: [],
@@ -274,8 +315,10 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       selectedMachine: null,
       selectedMachines: [],
       warnings: warnings || [],
-      layoutAlerts: [],   // ← clear — freshly generated layout is always valid
+      layoutAlerts: [],   // ← clear — will be re-evaluated
     });
+    // Re-evaluate alerts for the new state
+    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
   },
 
   // ─── generateMachineLayout: clear stale alerts, do NOT re-check ───
@@ -289,8 +332,10 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       machineLayout: machines,
       sectionLayout: sections,
       warnings: warnings || [],
-      layoutAlerts: [],   // ← clear — fresh layout has no user-caused violations
+      layoutAlerts: [],   // ← clear — will be re-evaluated
     });
+    // Re-evaluate alerts for the new state
+    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
   },
 
   setOperations: (operations) => {
@@ -348,7 +393,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       warnings: [],
       currentLine: null,
       preparatoryOps: preparatoryOpsToUse,
-      layoutAlerts: [],   // ← clear on OB update
+      layoutAlerts: [],   // ← clear — will be re-evaluated
     });
 
     if (newOperations.length === 0) return;
@@ -383,6 +428,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         }
         : null,
     });
+    // Re-evaluate alerts for the new state
+    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
 
     toast.success(`Layout updated from new OB (${sourceSheet || "default sheet"})`);
   },
@@ -427,9 +474,11 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       selectedMachine: null,
       selectedMachines: [],
       warnings: [],
-      layoutAlerts: [],   // ← clear on load — stale alerts from a previous session are meaningless
+      layoutAlerts: [],   // ← clear — will be re-evaluated
       layoutError: null
     });
+    // Re-evaluate alerts for the new state
+    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
   },
 
   deleteLine: (id) => set((state) => ({ savedLines: state.savedLines.filter((l) => l.id !== id) })),
@@ -660,7 +709,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         machineMinX < bounds.start - TOLERANCE;
 
       if (isOutside) {
-        violatingSectionNames.add(cap(labelSec));
+        const name = labelSec.toLowerCase().includes('assembly') ? 'Assembly' : cap(labelSec);
+        violatingSectionNames.add(name);
       }
     });
 
@@ -755,77 +805,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   // This is the ONLY place (besides redo) that calls checkLayoutAlerts.
   // ═══════════════════════════════════════════════════════════════════════════
   updateMachinesPositions: (machineIds) => {
-    const state = get();
-
-    if (machineIds.length === 0) {
-      set({ isDraggingActive: false });
-      return;
-    }
-
-    const affectedSections = new Set<string>();
-    let finalLayout = [...state.machineLayout];
-
-    finalLayout = finalLayout.map(m => {
-      if (machineIds.includes(m.id)) {
-        const secLow = (m.section || '').toLowerCase();
-        if (m.section) affectedSections.add(secLow);
-        return { ...m, hasManualPosition: false };
-      }
-      return m;
-    });
-
-    affectedSections.forEach(secLower => {
-      if (secLower.includes('supermarket')) return;
-
-      const sectionMachines = finalLayout.filter(m =>
-        (m.section || '').toLowerCase() === secLower &&
-        !m.isInspection &&
-        !m.operation.machine_type.toLowerCase().includes('inspection') &&
-        !m.operation.machine_type.toLowerCase().includes('supermarket') &&
-        !m.id.startsWith('board') &&
-        !m.operation.machine_type.toLowerCase().includes('board')
-      );
-
-      const dragged = sectionMachines.filter(m => machineIds.includes(m.id));
-      const stationary = sectionMachines.filter(m => !machineIds.includes(m.id));
-      stationary.sort((a, b) => a.position.x - b.position.x);
-
-      dragged.forEach(draggedMachine => {
-        const dropX = draggedMachine.position.x;
-        let insertIdx = stationary.length;
-        for (let i = 0; i < stationary.length; i++) {
-          if (dropX < stationary[i].position.x) {
-            insertIdx = i;
-            break;
-          }
-        }
-        stationary.splice(insertIdx, 0, draggedMachine);
-      });
-
-      const EPSILON = 1.0;
-      const specs = getLayoutSpecs(get().currentLine?.lineNo);
-
-      let sectionStartX: number;
-      if (secLower.includes('assembly')) {
-        const isCD = secLower.includes('3') || secLower.includes('4');
-        const specsKey = isCD ? 'assemblyCD' : 'assemblyAB';
-        sectionStartX = (specs.sections as any)[specsKey]?.start ?? 0;
-      } else {
-        sectionStartX = (specs.sections as any)[secLower]?.start ?? 0;
-      }
-
-      stationary.forEach((m, idx) => {
-        m = { ...m, position: { ...m.position, x: sectionStartX + idx * EPSILON } };
-        const li = finalLayout.findIndex(fm => fm.id === m.id);
-        if (li !== -1) finalLayout[li] = m;
-      });
-
-      finalLayout = (get() as any)._reLayoutSection(finalLayout, secLower, true);
-    });
-
-    set({ machineLayout: finalLayout, isDraggingActive: false });
-
-    // ← THE ONLY place checkLayoutAlerts is called during normal flow
+    set({ isDraggingActive: false, isMoveGizmoVisible: false });
+    // Re-evaluate alerts for the new state
     setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
   },
 
@@ -1054,7 +1035,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
 
     const segment = activeZones.find(z => startX >= z.start && startX <= z.end);
     if (segment && maxSectionX > segment.end + 0.1) {
-      const errorMsg = `No space in ${secLower}`;
+      const displaySec = secLower.includes('assembly') ? 'assembly' : secLower;
+      const errorMsg = `No space in ${displaySec}`;
       if (isFinalCommit) {
         set({ layoutError: errorMsg });
       }
@@ -1066,6 +1048,39 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     return [...others, ...boards, ...reLayouted, ...finalInspections, ...finalSupers];
   },
 
+  rotateSelectedMachines: (angleRad: number) => {
+    const { selectedMachines, machineLayout, past } = get();
+    if (selectedMachines.length === 0) return;
+    
+    set({
+      past: [...past, { machineLayout: [...machineLayout] }],
+      future: [],
+      machineLayout: machineLayout.map(m => {
+        if (selectedMachines.includes(m.id)) {
+          return {
+            ...m,
+            rotation: {
+              ...m.rotation,
+              y: (m.rotation.y || 0) + angleRad
+            }
+          };
+        }
+        return m;
+      })
+    });
+  },
+  deleteSelectedMachines: () => {
+    const { selectedMachines, machineLayout, past } = get();
+    if (selectedMachines.length === 0) return;
+    
+    set({
+      past: [...past, { machineLayout: [...machineLayout] }],
+      future: [],
+      machineLayout: machineLayout.filter(m => !selectedMachines.includes(m.id)),
+      selectedMachines: [],
+      selectedMachine: null
+    });
+  },
   deleteMachine: (machineId) => {
     (get() as any).takeSnapshot();
     const state = get();
@@ -1079,6 +1094,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       machineLayout: result,
       selectedMachine: state.selectedMachine?.id === machineId ? null : state.selectedMachine
     });
+    // Re-evaluate alerts for the new state
+    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
   },
 
   addMachine: (mType, section, opName) => {
@@ -1102,6 +1119,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const updatedLayout = [...state.machineLayout, newMachine];
     const result = (get() as any)._reLayoutSection(updatedLayout, section.toLowerCase());
     set({ machineLayout: result });
+    // Re-evaluate alerts for the new state
+    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
   },
 
   fetchAndApplyOB: async (lineNo, styleNo, conNo) => {

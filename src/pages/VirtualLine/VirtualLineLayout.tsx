@@ -315,8 +315,10 @@ export default function VirtualLineLayout() {
                 </header>
 
                 <div className={cn(
-                    "flex-1 overflow-y-auto relative z-10 scroll-smooth",
-                    (currentPath === "/virtual-line/floor" || (currentPath === "/virtual-line/tracker" && searchParams.get("line"))) ? "p-0" : "p-8"
+                    "relative z-10 scroll-smooth",
+                    (currentPath === "/virtual-line/floor" || (currentPath === "/virtual-line/tracker" && searchParams.get("line")))
+                        ? "flex-1 overflow-hidden p-0"
+                        : "flex-1 overflow-y-auto p-8"
                 )}>
                     <Outlet />
                 </div>

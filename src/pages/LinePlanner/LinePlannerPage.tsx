@@ -307,23 +307,43 @@ const LinePlannerPage = () => {
             <h1 className="text-xl font-bold leading-tight uppercase tracking-tight">
               {currentLine ? `${currentLine.lineNo}` : 'Factory Twin'}
             </h1>
-            {currentLine?.coneNo && (
-              <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3">
+              {currentLine?.coneNo && (
                 <p className="text-[11px] text-muted-foreground uppercase tracking-widest font-black text-left">
                   {currentLine.coneNo}
                 </p>
-                {currentLine.buyer && (
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">
-                    <Users className="w-3 h-3 text-primary" />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-primary">
-                      {currentLine.buyer}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+              {currentLine?.buyer && (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">
+                  <Users className="w-3 h-3 text-primary" />
+                  <span className="text-[9px] font-black uppercase tracking-widest text-primary">
+                    {currentLine.buyer}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
+          
+          {/* Space Violation Alert in Header */}
+          {(layoutAlerts.length > 0 || layoutError) && (
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="ml-6 px-4 py-1.5 rounded-xl bg-red-600 border border-red-500 shadow-[0_0_20px_rgba(220,38,38,0.4)] flex items-center gap-2 animate-pulse"
+            >
+              <AlertCircle className="w-4 h-4 text-white" />
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-white uppercase tracking-widest leading-tight">
+                  Space Violation
+                </span>
+                <span className="text-[8px] font-bold text-white/80 uppercase tracking-tighter leading-none">
+                  Capacity Exceeded
+                </span>
+              </div>
+            </motion.div>
+          )}
         </div>
+
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-secondary/50 rounded-xl p-1 border border-primary/20 gap-1.5 px-2">
             <Button variant={canUndo ? "default" : "outline"} size="icon" onClick={undo} disabled={!canUndo} className="h-8 w-8">

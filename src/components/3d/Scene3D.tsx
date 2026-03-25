@@ -1,4 +1,4 @@
-import { Suspense, useRef, useMemo } from 'react';
+import { Suspense, useRef, useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Text, PivotControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -71,7 +71,8 @@ export const Scene3D = ({
   sections: sectionsOverride,
   isOverview = false,
   cameraPosition,
-  cameraFov
+  cameraFov,
+  children
 }: {
   showMachines?: boolean;
   machines?: MachinePosition[];
@@ -79,6 +80,7 @@ export const Scene3D = ({
   isOverview?: boolean;
   cameraPosition?: [number, number, number];
   cameraFov?: number;
+  children?: React.ReactNode;
 }) => {
   const {
     machineLayout: storeMachineLayout,
@@ -89,8 +91,15 @@ export const Scene3D = ({
     updateMachinesPositions,
     moveSelectedMachines,
     isDraggingActive,
-    setDraggingActive
+    setDraggingActive,
+    placingMachine,
+    setPlacingMachine,
+    addMachine,
+    updateMachinePosition,
+    isMoveGizmoVisible,
   } = useLineStore();
+
+  const [selectionOffset, setSelectionOffset] = useState({ x: 0, z: 0 });
 
   const machineLayout = machinesOverride || storeMachineLayout;
   const sectionLayout = sectionsOverride || storeSectionLayout;
@@ -100,13 +109,13 @@ export const Scene3D = ({
 
   // Stable drag-centre — computed once when drag starts, not every frame
   const dragCenter = useMemo(() => {
-    if (!isDraggingActive || selectedMachines.length === 0) return null;
+    if ((!isDraggingActive && !isMoveGizmoVisible) || selectedMachines.length === 0) return null;
     const selectedData = machineLayout.filter(m => selectedMachines.includes(m.id));
     if (selectedData.length === 0) return null;
     const avgX = selectedData.reduce((sum, m) => sum + m.position.x, 0) / selectedData.length;
     const avgZ = selectedData.reduce((sum, m) => sum + m.position.z, 0) / selectedData.length;
     return { x: avgX, z: avgZ, items: selectedData };
-  }, [isDraggingActive, selectedMachines.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isDraggingActive, isMoveGizmoVisible, selectedMachines.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Camera look-at target: geometric centre of the whole floor plan
   const sceneCenter = useMemo((): [number, number, number] => {
@@ -143,6 +152,7 @@ export const Scene3D = ({
         />
 
         <Suspense fallback={null}>
+          {children}
 
           {/* ── Section floor tiles + labels ── */}
           {sectionLayout?.map((section) => {
@@ -274,11 +284,20 @@ export const Scene3D = ({
           {showMachines && (
             <group>
               {machineLayout.map((machine) => {
-                // Hide machines that are currently being dragged (shown in proxy instead)
-                if (selectedMachines.includes(machine.id) && isDraggingActive) return null;
+                const isSelected = selectedMachines.includes(machine.id);
+                const offset = (isSelected && isMoveMode) ? selectionOffset : undefined;
                 return (
                   <Suspense key={`suspense-${machine.id}`} fallback={null}>
-                    <Machine3D key={machine.id} machineData={machine} isOverview={isOverview} />
+                    <Machine3D 
+                        key={machine.id} 
+                        machineData={machine} 
+                        isOverview={isOverview} 
+                        relativePosition={offset ? { 
+                            x: machine.position.x + offset.x, 
+                            y: machine.position.y, 
+                            z: machine.position.z + offset.z 
+                        } : undefined}
+                    />
                   </Suspense>
                 );
               })}
@@ -289,54 +308,67 @@ export const Scene3D = ({
           {showMachines &&
             selectedMachines.length > 0 &&
             isMoveMode &&
-            isDraggingActive &&
+            isMoveGizmoVisible &&
             dragCenter && (
-              <group position={[dragCenter.x, 0.05, dragCenter.z]}>
-                <PivotControls
-                  activeAxes={[true, false, true]}
-                  depthTest={false}
-                  scale={3}
-                  onDragStart={() => {
-                    setDraggingActive(true);
-                    if (groupPivotRef.current) {
-                      lastPivotPos.current = new THREE.Vector3();
-                      groupPivotRef.current.getWorldPosition(lastPivotPos.current);
-                    }
-                  }}
-                  onDrag={() => {
-                    if (groupPivotRef.current && lastPivotPos.current) {
-                      const currentPos = new THREE.Vector3();
-                      groupPivotRef.current.getWorldPosition(currentPos);
-                      const dx = currentPos.x - lastPivotPos.current.x;
-                      const dz = currentPos.z - lastPivotPos.current.z;
-                      if (Math.abs(dx) > 0.0001 || Math.abs(dz) > 0.0001) {
-                        moveSelectedMachines(dx, dz);
-                        lastPivotPos.current.copy(currentPos);
-                      }
-                    }
-                  }}
-                  onDragEnd={() => {
-                    lastPivotPos.current = null;
-                    updateMachinesPositions(selectedMachines);
-                    setDraggingActive(false);
-                  }}
-                >
-                  <group ref={groupPivotRef}>
-                    {dragCenter.items.map(m => (
-                      <Machine3D
-                        key={`proxy-${m.id}`}
-                        machineData={m}
-                        relativePosition={{
-                          x: m.position.x - dragCenter.x,
-                          y: 0,
-                          z: m.position.z - dragCenter.z
-                        }}
-                      />
-                    ))}
-                  </group>
-                </PivotControls>
-              </group>
+              <PivotControls
+                key={`pivot-${selectedMachines.join('-')}`} // Force re-render on selection change
+                anchor={[dragCenter.x, 0.1, dragCenter.z]}
+                activeAxes={[true, false, true]}
+                depthTest={false}
+                scale={85}
+                fixed={true} 
+                onDragStart={() => {
+                  setDraggingActive(true);
+                  setSelectionOffset({ x: 0, z: 0 });
+                }}
+                onDrag={(matrix) => {
+                  const translation = new THREE.Vector3();
+                  const rotation = new THREE.Quaternion();
+                  const scale = new THREE.Vector3();
+                  matrix.decompose(translation, rotation, scale);
+                  setSelectionOffset({ x: translation.x, z: translation.z });
+                }}
+                onDragEnd={() => {
+                  // Final commit to store precisely once
+                  moveSelectedMachines(selectionOffset.x, selectionOffset.z);
+                  updateMachinesPositions(selectedMachines);
+                  
+                  // Reset local states
+                  setSelectionOffset({ x: 0, z: 0 });
+                  setDraggingActive(false);
+                }}
+              />
             )}
+
+          {/* ── Manual Placement Ghost ── */}
+          {placingMachine && (
+            <PlacementGhost 
+              config={placingMachine} 
+              onPlace={(pos) => {
+                const id = THREE.MathUtils.generateUUID();
+                const newMachine: MachinePosition = {
+                    id,
+                    operation: {
+                        op_no: `NEW-${id.substring(0, 4)}`,
+                        op_name: placingMachine.opName,
+                        machine_type: placingMachine.type,
+                        smv: 0,
+                        section: placingMachine.section,
+                    },
+                    position: pos,
+                    rotation: { x: 0, y: 0, z: 0 },
+                    lane: 'A',
+                    section: placingMachine.section,
+                    centerModel: true
+                };
+                
+                // We bypass the standard re-layout for manual placement in Finishing
+                const currentLayout = useLineStore.getState().machineLayout;
+                useLineStore.getState().setMachineLayout([...currentLayout, newMachine]);
+                setPlacingMachine(null);
+              }}
+            />
+          )}
 
         </Suspense>
       </Canvas>
@@ -380,3 +412,62 @@ const WideBorder = ({
     </mesh>
   </group>
 );
+
+/* ─── Placement Ghost Component ────────────────────────────────────────── */
+
+const PlacementGhost = ({ 
+    config, 
+    onPlace 
+}: { 
+    config: { type: string, section: string, opName: string },
+    onPlace: (pos: { x: number, y: number, z: number }) => void
+}) => {
+    const [ghostPos, setGhostPos] = useState<{ x: number, y: number, z: number } | null>(null);
+
+    return (
+        <group>
+            <mesh 
+                rotation={[-Math.PI / 2, 0, 0]} 
+                position={[0, 0, 0]}
+                onPointerMove={(e) => {
+                    e.stopPropagation();
+                    setGhostPos({ x: e.point.x, y: 0, z: e.point.z });
+                }}
+                onPointerUp={(e) => {
+                    e.stopPropagation();
+                    if (ghostPos) onPlace(ghostPos);
+                }}
+            >
+                <planeGeometry args={[20000, 20000]} />
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+
+            {ghostPos && (
+                <group position={[ghostPos.x, 0.1, ghostPos.z]}>
+                    <Machine3D 
+                        machineData={{
+                            id: 'ghost',
+                            operation: {
+                                op_no: 'GHOST',
+                                op_name: config.opName,
+                                machine_type: config.type,
+                                smv: 0,
+                                section: config.section
+                            },
+                            position: { x: 0, y: 0, z: 0 },
+                            rotation: { x: 0, y: 0, z: 0 },
+                            lane: 'A',
+                            section: config.section,
+                            centerModel: true
+                        }} 
+                    />
+                    {/* Visual indicator of placement mode */}
+                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
+                        <ringGeometry args={[0.8, 1.0, 32]} />
+                        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.8} />
+                    </mesh>
+                </group>
+            )}
+        </group>
+    );
+};

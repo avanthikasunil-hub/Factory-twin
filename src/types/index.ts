@@ -50,6 +50,7 @@ export interface MachinePosition {
   centerModel?: boolean;
   machineIndex?: number; // 0 for first machine of this op, 1 for second, etc.
   hasManualPosition?: boolean;
+  modelRotation?: number; 
 }
 
 export interface SectionLayout {

@@ -42,23 +42,56 @@ async function getAccessToken() {
   }
 }
 
+const graphCache = new Map();
+const pendingRequests = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // Increase cache to 5 minutes for better performance
+
 async function fetchGraphData(sheetName) {
-  const token = await getAccessToken();
-  if (!token) return [];
-
-  const filePath = "Book 1.xlsx";
-  const graphUrl = `https://graph.microsoft.com/v1.0/users/${personalUserPrincipalName}/drive/root:/${encodeURIComponent(filePath)}:/workbook/worksheets('${sheetName}')/usedRange?$select=values`;
-
-  try {
-    const res = await fetch(graphUrl, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    const data = await res.json();
-    return data.values || [];
-  } catch (error) {
-    console.error(`Graph Fetch Error (${sheetName}):`, error);
-    return [];
+  const now = Date.now();
+  
+  // 1. Check cache
+  if (graphCache.has(sheetName)) {
+    const { data, expiry } = graphCache.get(sheetName);
+    if (now < expiry) {
+      console.log(`[Cache] Returning cached data: ${sheetName}`);
+      return data;
+    }
   }
+
+  // 2. Check if a request is already in progress
+  if (pendingRequests.has(sheetName)) {
+    console.log(`[Coalesce] Waiting for in-flight request: ${sheetName}`);
+    return pendingRequests.get(sheetName);
+  }
+
+  // 3. Start a new request and track it
+  const fetchPromise = (async () => {
+    try {
+      const token = await getAccessToken();
+      if (!token) return [];
+
+      const filePath = "Book 1.xlsx";
+      const graphUrl = `https://graph.microsoft.com/v1.0/users/${personalUserPrincipalName}/drive/root:/${encodeURIComponent(filePath)}:/workbook/worksheets('${sheetName}')/usedRange?$select=values`;
+
+      console.log(`[API] Fetching from Graph: ${sheetName}`);
+      const res = await fetch(graphUrl, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      const values = data.values || [];
+      
+      graphCache.set(sheetName, { data: values, expiry: Date.now() + CACHE_DURATION });
+      return values;
+    } catch (error) {
+      console.error(`Graph Fetch Error (${sheetName}):`, error);
+      return [];
+    } finally {
+      pendingRequests.delete(sheetName);
+    }
+  })();
+
+  pendingRequests.set(sheetName, fetchPromise);
+  return fetchPromise;
 }
 
 // Reuse the extraction logic from server.js

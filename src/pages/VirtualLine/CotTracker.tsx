@@ -280,7 +280,7 @@ export default function CotTracker() {
     return (
         <div className={cn(
             "flex flex-col h-full",
-            (!activeLine || activeLine === "All Lines") ? "space-y-8 max-w-7xl mx-auto px-6 pb-10" : "bg-slate-950"
+            (!activeLine || activeLine === "All Lines") ? "space-y-8 max-w-7xl mx-auto px-6 pb-10 overflow-y-auto" : "bg-slate-950 overflow-hidden"
         )}>
             {!activeLine || activeLine === "All Lines" ? (
                 <>
@@ -397,10 +397,16 @@ export default function CotTracker() {
                     </div>
                 </>
             ) : (
-                <div className="flex-1 relative bg-slate-950 overflow-hidden flex flex-col md:flex-row border-t border-white/5">
+                <div
+                    className="relative bg-slate-950 border-t border-white/5 flex flex-col md:flex-row"
+                    style={{ height: 'calc(100vh - 80px)' }}
+                >
                     {/* Main 3D Viewport */}
-                    <div className="flex-1 relative order-2 md:order-1 border-b md:border-b-0 md:border-r border-white/5">
-                        <div className="w-full h-full">
+                    <div
+                        className="relative order-2 md:order-1 border-b md:border-b-0 md:border-r border-white/5 flex-1"
+                        style={{ minHeight: 0 }}
+                    >
+                        <div style={{ width: '100%', height: '100%' }}>
                             <Scene3D
                                 key={`${activeFloor}-${activeLine}`}
                                 showMachines={true}
@@ -414,7 +420,10 @@ export default function CotTracker() {
                     </div>
 
                     {/* External Activity Checklist Sidebar */}
-                    <div className="w-full md:w-[380px] bg-slate-900/95 backdrop-blur-2xl p-6 z-20 order-1 md:order-2 flex flex-col space-y-6 border-l border-white/10 shadow-[-20px_0_60px_rgba(0,0,0,0.4)] overflow-y-auto max-h-screen relative">
+                    <div
+                        className="w-full md:w-[380px] bg-slate-900/95 backdrop-blur-2xl p-6 z-20 order-1 md:order-2 flex flex-col space-y-6 border-l border-white/10 shadow-[-20px_0_60px_rgba(0,0,0,0.4)] overflow-y-auto relative"
+                        style={{ maxHeight: 'calc(100vh - 80px)' }}
+                    >
                         {/* Decorative Top Accent */}
                         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent" />
 
