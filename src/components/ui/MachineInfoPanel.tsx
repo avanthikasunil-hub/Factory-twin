@@ -38,7 +38,8 @@ export const MachineInfoPanel = () => {
     setMoveMode,
     machineLayout,
     workingHours,
-    efficiency
+    efficiency,
+    moveToPreparatory
   } = useLineStore();
 
   // Local state for adding a new machine within this section
@@ -137,6 +138,16 @@ export const MachineInfoPanel = () => {
                     <DropdownMenuItem onClick={() => setShowAddForm(true)} className="cursor-pointer flex items-center">
                       <Plus className="w-4 h-4 mr-2" />
                       <span>Add Machine</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        moveToPreparatory(selectedMachine.id);
+                        setSelectedMachine(null);
+                      }}
+                      className="cursor-pointer text-amber-500 focus:bg-amber-500 focus:text-white flex items-center"
+                    >
+                      <Layers className="w-4 h-4 mr-2" />
+                      <span>Move to Preparatory</span>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -354,7 +365,13 @@ export const MachineInfoPanel = () => {
                         className="w-full h-9 flex items-center gap-2 mt-2 font-bold"
                         size="sm"
                         onClick={() => {
-                          addMachine(newType, operation.section || "Assembly", newOpName);
+                          addMachine(
+                            newType, 
+                            operation.section || "Assembly", 
+                            newOpName, 
+                            selectedMachine.position.x, 
+                            operation.seqIndex
+                          );
                           setNewOpName(''); // Reset
                           setShowAddForm(false);
                         }}

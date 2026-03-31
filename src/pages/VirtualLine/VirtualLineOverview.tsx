@@ -30,27 +30,88 @@ const LINE_DATA = [
     { id: 9, name: "Line 9", floor: "Floor 2", style: "Performance Shorts", buyer: "Adidas", startDate: "20/03/2024", endDate: "05/04/2024", status: "Pending" },
 ];
 
+import { db } from "@/firebase";
+import { collection, query, onSnapshot } from "firebase/firestore";
+
 export default function VirtualLineOverview() {
     const navigate = useNavigate();
     const [lineStatuses, setLineStatuses] = useState<any[]>([]);
 
     useEffect(() => {
-        const fetchAllStatus = async () => {
+        let isMounted = true;
+        let unsub = null;
+
+        const syncAllStatus = async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/current-styles`);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data)) {
-                        setLineStatuses(data);
+                // 1. Fetch from Local Backend (SQLite) - Optional
+                let backendData = [];
+                try {
+                    const res = await fetch(`${API_BASE_URL}/current-styles`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (Array.isArray(data)) backendData = data;
                     }
+                } catch (e) {
+                    console.warn("[Overview] Backend fetch skipped (using only Firestore)");
                 }
+
+
+                // 2. Setup Firestore Real-time Listener
+                const q = collection(db, "changeoverData");
+                unsub = onSnapshot(q, (snap) => {
+                    if (!isMounted) return;
+
+                    const firestoreLines = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+                    
+                    // Group by line to find the latest
+                    const latestByLine: Record<string, any> = {};
+                    firestoreLines.forEach(l => {
+                        const ln = l.line || l.summaryData?.line;
+                        if (!ln) return;
+                        const match = ln.match(/\d+/);
+                        const normalizedLn = match ? `Line ${match[0]}` : ln;
+                        
+                        if (!latestByLine[normalizedLn]) {
+                            latestByLine[normalizedLn] = l;
+                        }
+                    });
+
+
+                    // Prepare merged statuses for all 9 lines
+                    const merged = [];
+                    for (let i = 1; i <= 9; i++) {
+                        const ln = `Line ${i}`;
+                        const foundCloud = latestByLine[ln];
+                        const foundBackend = backendData.find(s => 
+                            String(s.line_no).toUpperCase().replace(' ', '') === ln.toUpperCase().replace(' ', '')
+                        );
+
+                        if (foundCloud) {
+
+                            merged.push({
+                                line_no: ln,
+                                style_no: foundCloud.style_no || foundCloud.summaryData?.toStyle || foundCloud.toStyle || '---',
+                                con_no: foundCloud.conNo || foundCloud.summaryData?.conNo || '---',
+                                buyer: foundCloud.buyer || foundCloud.summaryData?.buyer || '---',
+                                status: (foundCloud.status === 'partial' || foundCloud.status === 'in_progress') ? 'Changeover' : (foundCloud.status || 'Running'),
+                                isLive: true
+                            });
+                        } else if (foundBackend) {
+                            merged.push(foundBackend);
+                        } else {
+                            merged.push({ line_no: ln, status: 'Idle', style_no: '---', con_no: '---', buyer: '---' });
+                        }
+                    }
+
+                    setLineStatuses(merged);
+                });
             } catch (err) {
-                console.error("Error fetching all status:", err);
+                console.error("Error syncing status:", err);
             }
         };
-        fetchAllStatus();
-        const interval = setInterval(fetchAllStatus, 15000);
-        return () => clearInterval(interval);
+
+        syncAllStatus();
+        return () => { isMounted = false; if (unsub) unsub(); };
     }, []);
 
     const mergedLineData = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(id => {
@@ -67,13 +128,15 @@ export default function VirtualLineOverview() {
             status: statusData?.status || "Idle",
             con_no: statusData?.con_no || "---"
         };
-    });
+    }).filter(line => line.status !== 'Idle');
+
+    const activeCount = mergedLineData.length;
 
     const stats = [
-        { label: "Total Capacity", value: "9 Lines", icon: Layers, color: "text-blue-600", bg: "bg-blue-50" },
-        { label: "Active Staff", value: "324", icon: Users, color: "text-purple-600", bg: "bg-purple-50" },
-        { label: "Plant Efficiency", value: "78.4%", icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
-        { label: "On Time Delivery", value: "92%", icon: Clock3, color: "text-orange-600", bg: "bg-orange-50" }
+        { label: "Active Lines", value: `${activeCount} / 9`, icon: Layers, color: "text-blue-600", bg: "bg-blue-50" },
+        { label: "Active Staff", value: activeCount > 0 ? (activeCount * 36).toString() : "0", icon: Users, color: "text-purple-600", bg: "bg-purple-50" },
+        { label: "Plant Efficiency", value: activeCount > 0 ? "78.4%" : "0%", icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
+        { label: "On Time Delivery", value: activeCount > 0 ? "92%" : "---", icon: Clock3, color: "text-orange-600", bg: "bg-orange-50" }
     ];
 
     return (

@@ -18,7 +18,7 @@ import {
   getLayoutSpecs,
   LANE_Z_CENTER_AB,
   LANE_Z_CENTER_CD,
-  findOverflowSection
+  findOverflowSection,
 } from "@/utils/layoutGenerator";
 import { calculateMachineRequirements } from '@/utils/lineBalancing';
 import { toast } from 'sonner';
@@ -78,7 +78,6 @@ interface LineStore {
   updateMachinePosition: (machineId: string, position: { x: number, y: number, z: number }) => void;
   updateMachinesPositions: (machineIds: string[]) => void;
   moveSelectedMachines: (deltaX: number, deltaZ: number) => void;
-  addMachine: (machineType: string, section: string, opName: string) => void;
   deleteSelectedMachines: () => void;
   rotateSelectedMachines: (angleRad: number) => void;
 
@@ -115,6 +114,9 @@ interface LineStore {
   setMoveGizmoVisible: (visible: boolean) => void;
   placingMachine: { type: string; section: string; opName: string } | null;
   setPlacingMachine: (machine: { type: string; section: string; opName: string } | null) => void;
+  moveToPreparatory: (machineId: string) => void;
+  moveToLayout: (opIndex: number) => void;
+  addMachine: (machineType: string, section: string, opName: string, parentX?: number, parentSeqIndex?: number) => void;
 }
 
 const FT = 0.3048;
@@ -254,6 +256,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       machineLayout: JSON.parse(JSON.stringify(state.machineLayout)),
       sectionLayout: JSON.parse(JSON.stringify(state.sectionLayout)),
       operations: JSON.parse(JSON.stringify(state.operations)),
+      preparatoryOps: JSON.parse(JSON.stringify(state.preparatoryOps)),
       targetOutput: state.targetOutput,
       workingHours: state.workingHours,
       efficiency: state.efficiency,
@@ -263,22 +266,22 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   },
 
   undo: () => {
-    const { past, future, machineLayout, sectionLayout, operations, targetOutput, workingHours, efficiency } = get();
+    const { past, future, machineLayout, sectionLayout, operations, preparatoryOps, targetOutput, workingHours, efficiency } = get();
     if (past.length === 0) return;
     const previous = past[past.length - 1];
     const newPast = past.slice(0, past.length - 1);
-    const currentSnapshot = { machineLayout, sectionLayout, operations, targetOutput, workingHours, efficiency };
+    const currentSnapshot = { machineLayout, sectionLayout, operations, preparatoryOps, targetOutput, workingHours, efficiency };
     const newFuture = [currentSnapshot, ...future].slice(0, 50);
     // Clear alerts when undoing a drag — the old layout was valid
     set({ ...previous, past: newPast, future: newFuture, canUndo: newPast.length > 0, canRedo: true, selectedMachine: null, layoutAlerts: [] });
   },
 
   redo: () => {
-    const { past, future, machineLayout, sectionLayout, operations, targetOutput, workingHours, efficiency } = get();
+    const { past, future, machineLayout, sectionLayout, operations, preparatoryOps, targetOutput, workingHours, efficiency } = get();
     if (future.length === 0) return;
     const next = future[0];
     const newFuture = future.slice(1);
-    const currentSnapshot = { machineLayout, sectionLayout, operations, targetOutput, workingHours, efficiency };
+    const currentSnapshot = { machineLayout, sectionLayout, operations, preparatoryOps, targetOutput, workingHours, efficiency };
     const newPast = [...past, currentSnapshot].slice(-50);
     // Re-check after redo since the redone state might have had a violation
     set({ ...next, past: newPast, future: newFuture, canUndo: true, canRedo: newFuture.length > 0, selectedMachine: null });
@@ -321,21 +324,114 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
   },
 
-  // ─── generateMachineLayout: clear stale alerts, do NOT re-check ───
-  generateMachineLayout: (operations) => {
+  moveToPreparatory: (machineId: string) => {
     (get() as any).takeSnapshot();
-    const { targetOutput, workingHours, efficiency, currentLine } = get();
-    const lineNo = currentLine?.lineNo || "Line 1";
-    const { machines, sections, warnings } = generateLayout(operations, targetOutput, workingHours, efficiency, lineNo);
+    const state = get();
+    const machine = state.machineLayout.find(m => m.id === machineId);
+    if (!machine) return;
+
+    const opName = machine.operation.op_name;
+    const opSection = machine.section || machine.operation.section;
+
+    // Find all operations with matching name and section to move them together
+    const opsToMove = state.operations.filter(op => 
+      op.op_name === opName && (op.section || "") === (opSection || "")
+    );
+    
+    if (opsToMove.length === 0) return;
+
+    const remainingOps = state.operations.filter(op => 
+      !(op.op_name === opName && (op.section || "") === (opSection || ""))
+    );
+
+    const updatedPrepOps = [...state.preparatoryOps, ...opsToMove].sort((a, b) => 
+      (a.seqIndex || 0) - (b.seqIndex || 0)
+    );
 
     set({
-      machineLayout: machines,
-      sectionLayout: sections,
-      warnings: warnings || [],
-      layoutAlerts: [],   // ← clear — will be re-evaluated
+      operations: remainingOps,
+      preparatoryOps: updatedPrepOps,
+      selectedMachine: null,
+      selectedMachines: []
     });
-    // Re-evaluate alerts for the new state
-    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
+
+    state.generateMachineLayout(remainingOps);
+    toast.success(`Moved "${opName}" to preparatory staging.`);
+  },
+
+  moveToLayout: (opIndex: number) => {
+    (get() as any).takeSnapshot();
+    const state = get();
+    const opToRestore = state.preparatoryOps[opIndex];
+    if (!opToRestore) return;
+
+    const updatedPrepOps = state.preparatoryOps.filter((_, i) => i !== opIndex);
+    const updatedOps = [...state.operations, opToRestore].sort((a, b) => 
+      (a.seqIndex || 0) - (b.seqIndex || 0)
+    );
+
+    set({
+      operations: updatedOps,
+      preparatoryOps: updatedPrepOps
+    });
+
+    state.generateMachineLayout(updatedOps);
+    toast.success(`Placed "${opToRestore.op_name}" back into sequential layout.`);
+  },
+
+  generateMachineLayout: (operations: Operation[]) => {
+    try {
+      (get() as any).takeSnapshot();
+      const { targetOutput, workingHours, efficiency, currentLine, savedLines } = get();
+      const lineNo = currentLine?.lineNo || "Line 1";
+      
+      console.log(`[useLineStore] Generating layout for ${lineNo}: Target=${targetOutput}, Hours=${workingHours}, Eff=${efficiency}%`);
+
+      if (!operations || operations.length === 0) {
+        console.warn("[useLineStore] Cannot generate layout: No operations provided");
+        return;
+      }
+
+      const { machines, sections, warnings } = generateLayout(
+        operations, 
+        targetOutput, 
+        workingHours, 
+        efficiency, 
+        lineNo
+      );
+
+      console.log(`[useLineStore] Layout generated: ${machines.length} machines, ${sections.length} sections, ${warnings?.length || 0} warnings`);
+
+      // Keep currentLine in sync with the new layout
+      const updatedLine = currentLine ? {
+        ...currentLine,
+        machineLayout: machines,
+        sectionLayout: sections,
+        targetOutput,
+        workingHours,
+        efficiency,
+        updatedAt: new Date().toISOString()
+      } : null;
+
+      // Also update in savedLines if it exists there
+      const updatedSavedLines = updatedLine ? savedLines.map(l => 
+        l.id === updatedLine.id ? updatedLine : l
+      ) : savedLines;
+
+      set({
+        machineLayout: machines,
+        sectionLayout: sections,
+        warnings: warnings || [],
+        layoutAlerts: [],
+        currentLine: updatedLine,
+        savedLines: updatedSavedLines
+      });
+
+      // Re-evaluate alerts for the new state
+      setTimeout(() => (get() as any).checkLayoutAlerts(), 100);
+    } catch (err) {
+      console.error("[useLineStore] Error in generateMachineLayout:", err);
+    }
   },
 
   setOperations: (operations) => {
@@ -1053,78 +1149,126 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   },
 
   rotateSelectedMachines: (angleRad: number) => {
-    const { selectedMachines, machineLayout, past } = get();
+    const { selectedMachines, machineLayout, currentLine, savedLines, past } = get();
     if (selectedMachines.length === 0) return;
     
+    const newLayout = machineLayout.map(m => {
+      if (selectedMachines.includes(m.id)) {
+        return {
+          ...m,
+          rotation: {
+            ...m.rotation,
+            y: (m.rotation.y || 0) + angleRad
+          }
+        };
+      }
+      return m;
+    });
+
+    const updatedLine = currentLine ? { ...currentLine, machineLayout: newLayout, updatedAt: new Date().toISOString() } : null;
+    const updatedSavedLines = updatedLine ? savedLines.map(l => l.id === updatedLine.id ? updatedLine : l) : savedLines;
+
     set({
       past: [...past, { machineLayout: [...machineLayout] }],
       future: [],
-      machineLayout: machineLayout.map(m => {
-        if (selectedMachines.includes(m.id)) {
-          return {
-            ...m,
-            rotation: {
-              ...m.rotation,
-              y: (m.rotation.y || 0) + angleRad
-            }
-          };
-        }
-        return m;
-      })
+      machineLayout: newLayout,
+      currentLine: updatedLine,
+      savedLines: updatedSavedLines
     });
   },
   deleteSelectedMachines: () => {
-    const { selectedMachines, machineLayout, past } = get();
+    const { selectedMachines, machineLayout, currentLine, savedLines, past } = get();
     if (selectedMachines.length === 0) return;
     
+    const newLayout = machineLayout.filter(m => !selectedMachines.includes(m.id));
+    const updatedLine = currentLine ? { ...currentLine, machineLayout: newLayout, updatedAt: new Date().toISOString() } : null;
+    const updatedSavedLines = updatedLine ? savedLines.map(l => l.id === updatedLine.id ? updatedLine : l) : savedLines;
+
     set({
       past: [...past, { machineLayout: [...machineLayout] }],
       future: [],
-      machineLayout: machineLayout.filter(m => !selectedMachines.includes(m.id)),
+      machineLayout: newLayout,
       selectedMachines: [],
-      selectedMachine: null
+      selectedMachine: null,
+      currentLine: updatedLine,
+      savedLines: updatedSavedLines
     });
   },
   deleteMachine: (machineId) => {
     (get() as any).takeSnapshot();
     const state = get();
+    const { currentLine, savedLines } = state;
     const updatedLayout = state.machineLayout.filter(m => m.id !== machineId);
     const m = state.machineLayout.find(x => x.id === machineId);
     if (!m) return;
     const result = m.section
       ? (get() as any)._reLayoutSection(updatedLayout, m.section.toLowerCase())
       : updatedLayout;
+
+    const updatedLine = currentLine ? { ...currentLine, machineLayout: result, updatedAt: new Date().toISOString() } : null;
+    const updatedSavedLines = updatedLine ? savedLines.map(l => l.id === updatedLine.id ? updatedLine : l) : savedLines;
+
     set({
       machineLayout: result,
-      selectedMachine: state.selectedMachine?.id === machineId ? null : state.selectedMachine
+      selectedMachine: state.selectedMachine?.id === machineId ? null : state.selectedMachine,
+      currentLine: updatedLine,
+      savedLines: updatedSavedLines
     });
     // Re-evaluate alerts for the new state
-    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
+    setTimeout(() => (get() as any).checkLayoutAlerts(), 100);
   },
 
-  addMachine: (mType, section, opName) => {
+  addMachine: (mType, section, opName, parentX, parentSeqIndex) => {
     (get() as any).takeSnapshot();
     const id = uuidv4();
     const state = get();
+    const { currentLine, savedLines, operations } = state;
+
+    // Use parent sequence index if provided, otherwise append to end
+    const targetSeqIndex = parentSeqIndex !== undefined ? parentSeqIndex : (9999 + operations.length);
+
+    const op: Operation = {
+      op_no: `NEW-${id.substring(0, 4)}`,
+      op_name: opName || mType,
+      machine_type: mType,
+      smv: 0.1, 
+      section,
+      seqIndex: targetSeqIndex,
+    };
+
     const newMachine: MachinePosition = {
       id,
-      operation: {
-        op_no: `NEW-${id.substring(0, 4)}`,
-        op_name: opName || mType,
-        machine_type: mType,
-        smv: 0,
-        section,
-      },
-      position: { x: 0, y: 0, z: 0 },
+      operation: op,
+      // Place it physically next to the parent if provided so _reLayoutSection picks it up sequentially
+      position: { x: parentX !== undefined ? (parentX + 0.01) : 0, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0 },
       lane: 'A',
       section,
     };
+
     const updatedLayout = [...state.machineLayout, newMachine];
+    const updatedOps = [...operations, op].sort((a, b) => (a.seqIndex || 0) - (b.seqIndex || 0));
+
     const result = (get() as any)._reLayoutSection(updatedLayout, section.toLowerCase());
-    set({ machineLayout: result });
+    
+    const updatedLine = currentLine ? { 
+      ...currentLine, 
+      machineLayout: result, 
+      operations: updatedOps,
+      updatedAt: new Date().toISOString() 
+    } : null;
+    
+    const updatedSavedLines = updatedLine ? savedLines.map(l => l.id === updatedLine.id ? updatedLine : l) : savedLines;
+
+    set({
+      machineLayout: result,
+      operations: updatedOps,
+      currentLine: updatedLine,
+      savedLines: updatedSavedLines
+    });
+
     // Re-evaluate alerts for the new state
-    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
+    setTimeout(() => (get() as any).checkLayoutAlerts(), 100);
   },
 
   fetchAndApplyOB: async (lineNo, styleNo, conNo) => {

@@ -1,4 +1,7 @@
 const express = require("express");
+const dns = require("node:dns");
+dns.setDefaultResultOrder("ipv4first");
+
 const cors = require("cors");
 const multer = require("multer");
 const XLSX = require("xlsx");
@@ -21,26 +24,40 @@ const personalUserPrincipalName = "ratneshkumar@yorkermedia.com";
 let cachedToken = null;
 let tokenExpiry = 0;
 
-async function getAccessToken() {
+async function getAccessToken(retries = 3) {
   const now = Date.now();
   if (cachedToken && now < tokenExpiry) {
     return cachedToken;
   }
 
-  try {
-    const response = await fetch("https://us-central1-lagunaclothing-ishika.cloudfunctions.net/getAccessToken");
-    const data = await response.json();
-    if (data.access_token) {
-      cachedToken = data.access_token;
-      tokenExpiry = now + 3500000; // Assume ~1 hour expiry
-      return cachedToken;
+  for (let i = 0; i < retries; i++) {
+    try {
+      console.log(`[Token] Fetching access token (Attempt ${i + 1}/${retries})...`);
+      const response = await fetch("https://us-central1-lagunaclothing-ishika.cloudfunctions.net/getAccessToken", {
+        signal: AbortSignal.timeout(15000) // 15-second timeout
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.access_token) {
+        cachedToken = data.access_token;
+        tokenExpiry = now + 3500000; // Assume ~1 hour expiry
+        console.log("[Token] Successfully fetched access token.");
+        return cachedToken;
+      }
+      throw new Error("Failed to get token from cloud function: No access_token in response");
+    } catch (error) {
+      console.error(`[Token] Cloud Function Token Error (Attempt ${i + 1}):`, error.message);
+      if (i === retries - 1) return null;
+      // Exponential backoff
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
     }
-    throw new Error("Failed to get token from cloud function");
-  } catch (error) {
-    console.error("Cloud Function Token Error:", error);
-    return null;
   }
 }
+
 
 const graphCache = new Map();
 const pendingRequests = new Map();
@@ -118,14 +135,14 @@ function extractBuyerFromHeader(sheetData) {
 // OB Parsing logic (ported from obParser.ts)
 // ---------------------------------------------------------------------------
 const COLUMN_ALIASES = {
-  op_no: ['op no', 'op_no', 'op. no.', 'operation number', 'op id', 'id', 'sl', 'sl.', 's.l', 'no', 'seq', 'opseq', 'op seq'],
+  op_no: ['op no', 'op_no', 'op. no.', 'operation number', 'op id', 'id', 'sl', 'sl.', 's.l', 'no', 'seq', 'opseq', 'op seq', 'a', 'A'],
   op_name: [
     'operation', 'op name', 'op_name', 'operation name', 'op description', 'description',
-    'op_desc', 'operation_name', 'particulars', 'process', 'process name', 'opname', 'op name'
+    'op_desc', 'operation_name', 'particulars', 'process', 'process name', 'opname', 'b', 'B'
   ],
   machine_type: [
     'machine', 'mc type', 'm/c type', 'machine type', 'mc_type', 'm/c', 'mc', 'machine_type',
-    'equipment', 'machinery', 'm/c name', 'mc name', 'machine name'
+    'equipment', 'machinery', 'm/c name', 'mc name', 'machine name', 'c', 'C'
   ],
   smv: [
     'smv', 'sam', 's m v', 's a m', 'standard_minute', 'std min', 'standard minute',
@@ -133,8 +150,9 @@ const COLUMN_ALIASES = {
     'allocated time', 'target time', 'estimated time', 'val', 'standard val',
     'smv total', 'total smv', 'work content', 'mins', 'min', 'pitch time', 'standard minutes',
     'standard value', 'std value', 'std.min', 'smv/pc', 'smv / pc', 'machine smv',
-    'target smv', 'm/c smv', 'manual smv', 'cycle_time', 'pitch_time', 'smv_total', 'total_smv'
+    'target smv', 'm/c smv', 'manual smv', 'cycle_time', 'pitch_time', 'smv_total', 'total_smv', 'd', 'D'
   ],
+
   section: ['section', 'sect', 'department', 'dept', 'area', 'zone', 'component', 'garment part'],
   tool_folder: ['tool/folder', 'tool', 'folder', 'attachment', 'guide', 'folder/tool'],
   machinist_smv: ['machinist smv', 'machinist', 'operator smv', 'operator time', 'machinist time', 'machinist_smv'],

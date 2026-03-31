@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Factory, Hash, Shirt, Spool, Activity, Target, Clock, Users } from "lucide-react";
+import { ArrowLeft, Factory, Hash, Shirt, Spool, Activity, Target, Clock, Users, RefreshCw, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -134,6 +134,8 @@ const CreateLinePage = () => {
 
   // ── Create line ────────────────────────────────────────────────────────────
   const handleCreateLine = useCallback(() => {
+    console.log("[CreateLinePage] handleCreateLine triggered", { lineNo, styleNo, coneNo, buyer, parsedOperationsLen: parsedOperations.length });
+    
     if (!lineNo || !buyer || !styleNo || !coneNo) {
       toast({ title: "Missing Fields", description: "Please select Line, Con, Style and Con No.", variant: "destructive" });
       return;
@@ -144,22 +146,34 @@ const CreateLinePage = () => {
       return;
     }
 
-    const line = createLine(
-      lineNo,
-      styleNo,
-      coneNo,
-      buyer,
-      parsedOperations,
-      parseFloat(efficiency || "90"),
-      parseFloat(targetOutput || "1200"),
-      parsedTotalSMV,
-      parseFloat(workingHours || "9"),
-      sourceSheet,
-      useLineStore.getState().preparatoryOps || []
-    );
-    saveLine(line);
-    toast({ title: "Line Created Successfully", description: `${lineNo} created.` });
-    navigate("/line-planner/planner");
+    try {
+      setIsLoading(true);
+      const line = createLine(
+        lineNo,
+        styleNo,
+        coneNo,
+        buyer,
+        parsedOperations,
+        parseFloat(efficiency || "90"),
+        parseFloat(targetOutput || "1200"),
+        parsedTotalSMV,
+        parseFloat(workingHours || "9"),
+        sourceSheet,
+        useLineStore.getState().preparatoryOps || []
+      );
+
+      console.log("[CreateLinePage] Line created successfully", line);
+      saveLine(line);
+      toast({ title: "Line Created Successfully", description: `${lineNo} created.` });
+      
+      // Delay navigation slightly to allow store state to propagate
+      setTimeout(() => navigate("/line-planner/planner"), 100);
+    } catch (err) {
+      console.error("[CreateLinePage] Error in handleCreateLine:", err);
+      toast({ title: "Generation Error", description: "Failed to generate 3D layout. See console for details.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
   }, [lineNo, styleNo, coneNo, buyer, parsedOperations, parsedTotalSMV, efficiency, targetOutput, workingHours, sourceSheet, createLine, saveLine, navigate, toast]);
 
   return (
@@ -281,7 +295,24 @@ const CreateLinePage = () => {
             </motion.div>
           )}
 
-          <Button type="button" onClick={handleCreateLine} className="w-full h-12">Generate 3D Line Layout</Button>
+          <Button 
+            type="button" 
+            onClick={handleCreateLine} 
+            className="w-full h-12 relative overflow-hidden group shadow-lg shadow-primary/20"
+            disabled={isLoading || !uploadSuccess}
+          >
+            {isLoading ? (
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-white/60" />
+                <span>Generating Layout...</span>
+              </div>
+            ) : (
+              <span className="flex items-center gap-2 font-black uppercase tracking-widest text-[11px]">
+                Generate 3D Line Layout
+                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+              </span>
+            )}
+          </Button>
         </div>
       </div>
     </div>

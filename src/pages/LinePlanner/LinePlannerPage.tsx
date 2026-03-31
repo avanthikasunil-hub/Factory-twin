@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Save, Factory, Eye, Activity, Target,
   Undo2, Redo2, Move, AlertCircle, X, ChevronDown, ChevronUp, Settings, Filter,
-  Users, Scissors, TrendingUp, Info, RefreshCw
+  Users, Scissors, TrendingUp, Info, RefreshCw, Plus, Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,7 +28,7 @@ const LinePlannerPage = () => {
     setLineParameters, visibleSection, setVisibleSection, undo, redo,
     canUndo, canRedo, isMoveMode, setMoveMode, selectedMachines,
     isDraggingActive, setDraggingActive, layoutError, warnings, clearWarnings,
-    layoutAlerts, dismissLayoutAlert, fetchAndApplyOB, preparatoryOps
+    layoutAlerts, dismissLayoutAlert, fetchAndApplyOB, preparatoryOps, moveToLayout
   } = useLineStore();
 
   const [localTarget, setLocalTarget] = useState(targetOutput.toString());
@@ -482,6 +482,14 @@ const LinePlannerPage = () => {
                         <p className="text-[13px] font-bold text-foreground/90 truncate">{op.op_name}</p>
                         <p className="text-[10px] font-medium text-muted-foreground/60 mt-0.5">{op.machine_type} · {op.smv?.toFixed(2)} min</p>
                       </div>
+                      <Button
+                        variant="ghost" size="icon"
+                        onClick={() => moveToLayout(i)}
+                        className="h-8 w-8 text-amber-500 hover:bg-amber-500/20 opacity-0 group-hover:opacity-100 transition-all rounded-lg"
+                        title="Move to Layout (Sequential Position)"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
                     </div>
                   ))}
                 </div>

@@ -12,6 +12,8 @@ export interface Operation {
   machinist_smv?: number;
   non_machinist_smv?: number;
   no_of_machines?: number;
+  seqIndex?: number;      // v165: Original index in OB sequence for staging logic
+  isPreparatory?: boolean; // v165: Explicit flag for manual staging
 }
 export type ColumnAliases = {
   op_no: string[];
@@ -51,6 +53,9 @@ export interface MachinePosition {
   machineIndex?: number; // 0 for first machine of this op, 1 for second, etc.
   hasManualPosition?: boolean;
   modelRotation?: number; 
+  tableLength?: number;
+  tableWidth?: number;
+  tableOnly?: boolean;
 }
 
 export interface SectionLayout {

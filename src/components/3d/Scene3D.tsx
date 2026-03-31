@@ -72,6 +72,7 @@ export const Scene3D = ({
   isOverview = false,
   cameraPosition,
   cameraFov,
+  target: targetOverride,
   children
 }: {
   showMachines?: boolean;
@@ -80,6 +81,7 @@ export const Scene3D = ({
   isOverview?: boolean;
   cameraPosition?: [number, number, number];
   cameraFov?: number;
+  target?: [number, number, number];
   children?: React.ReactNode;
 }) => {
   const {
@@ -148,7 +150,9 @@ export const Scene3D = ({
         <CameraController
           machineLayout={machineLayout}
           selectedMachine={selectedMachine}
-          target={sceneCenter}
+          target={targetOverride || sceneCenter}
+          cameraPosition={cameraPosition}
+          cameraFov={cameraFov}
         />
 
         <Suspense fallback={null}>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { storage, db } from "../../firebase";
+import { storage, prodDb as db } from "../../firebase";
 import {
     ref as storageRef,
     uploadBytes,
@@ -13,10 +13,16 @@ import {
     setDoc,
     deleteDoc,
     onSnapshot,
+    collection,
+    query,
+    where,
+    getDocs
 } from "firebase/firestore";
-import { FaFileUpload, FaCloudDownloadAlt, FaFileExcel, FaExchangeAlt } from "react-icons/fa";
+import { FaFileUpload, FaCloudDownloadAlt, FaFileExcel, FaExchangeAlt, FaBolt } from "react-icons/fa";
 import md5 from "crypto-js/md5";
 import dayjs from "dayjs";
+import { API_BASE_URL } from "../../config";
+import { parseOBExcel } from "../../utils/obParser";
 
 // Compute MD5 hash for a row using the same columns/order
 function getRowHashFromVals(vals) {
@@ -94,12 +100,76 @@ export default function StyleOB() {
     const [sheetData, setSheetData] = useState([]);
     const [accessToken, setAccessToken] = useState("");
     const [error, setError] = useState(null);
+    const [liveStatuses, setLiveStatuses] = useState([]);
     const [rowUploads, setRowUploads] = useState({});
     const [currentPage, setCurrentPage] = useState(() =>
         Number(sessionStorage.getItem("styleOB_currentPage")) || 1
     );
     const itemsPerPage = 15;
     const listenersRef = useRef({});
+
+    // 1. Unified Sync for Real-Time Floor Activity (Match other app)
+    useEffect(() => {
+        let isMounted = true;
+        let fbUnsub = null;
+
+        const syncLive = async () => {
+            try {
+                // Fetch from Local Backend (SQLite)
+                const res = await fetch(`${API_BASE_URL}/current-styles`);
+                let backendData = [];
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data)) backendData = data;
+                }
+
+                // Setup Firebase Real-time Listener
+                const q = collection(db, "changeoverData");
+                fbUnsub = onSnapshot(q, (snap) => {
+                    if (!isMounted) return;
+
+                    const today = new Date();
+                    const dStr_today = `${today.getDate()}/${today.getMonth() + 1}/${today.getFullYear()}`;
+                    const dStr_alt = dStr_today.split('/').map(p => p.padStart(2, '0')).join('/');
+
+                    const firestoreLines = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                        .filter(l => {
+                            const status = (l.status || "").toLowerCase();
+                            if (status !== 'partial' && status !== 'in_progress' && status !== 'changeover' && status !== 'running') return false;
+                            const dStr = l.lastUpdated || l.summaryData?.lastUpdated || "";
+                            return (dStr.includes(dStr_today) || dStr.includes(dStr_alt));
+                        });
+
+                    // Merge Statuses for all lines
+                    const merged = [];
+                    for (let i = 1; i <= 9; i++) {
+                        const ln = `Line ${i}`;
+                        const foundCloud = firestoreLines.find(fl => (fl.line || fl.summaryData?.line) === ln);
+                        const foundBackend = backendData.find(s =>
+                            String(s.line_no).toUpperCase().replace(' ', '') === ln.toUpperCase().replace(' ', '')
+                        );
+
+                        if (foundCloud) {
+                            merged.push({
+                                line_no: ln,
+                                style_no: foundCloud.style_no || foundCloud.summaryData?.toStyle || foundCloud.toStyle || '---',
+                                con_no: foundCloud.conNo || foundCloud.summaryData?.conNo || '---',
+                                buyer: foundCloud.buyer || foundCloud.summaryData?.buyer || '---',
+                                status: (foundCloud.status === 'partial' || foundCloud.status === 'in_progress') ? 'Changeover' : (foundCloud.status || 'Running'),
+                                isLive: true
+                            });
+                        } else if (foundBackend) {
+                            merged.push(foundBackend);
+                        }
+                    }
+                    setLiveStatuses(merged);
+                });
+            } catch (err) { }
+        };
+
+        syncLive();
+        return () => { isMounted = false; if (fbUnsub) fbUnsub(); };
+    }, []);
 
     // Persist selectedSheet & currentPage
     useEffect(() => {
@@ -156,8 +226,35 @@ export default function StyleOB() {
 
         const fetchAndSetSheetData = async (sheetName) => {
             try {
-                const data = await fetchSheetData(sheetName, accessToken);
-                setSheetData(data);
+                let data = await fetchSheetData(sheetName, accessToken);
+
+                // Fallback: If Excel fetch fails or returns no data, populate from ALL Firestore metadata
+                if (!data || data.length < 4) {
+                    console.log(`[StyleOB] Excel data empty for ${sheetName}, trying global Firestore fallback...`);
+                    const q = query(collection(db, "styleOBmetadata"));
+                    const snap = await getDocs(q);
+                    if (!snap.empty) {
+                        // Mock the Excel structure to reuse existing processing logic
+                        // header rows: 0, 1, 2. Indices: 0=Buyer, 1=ConNo, 2=Color, 3=Qty, 4=Style, 9=WeekPlan
+                        const mockExcel = [
+                            ["Fallback Data"], ["Buyer", "Con No", "Color", "Qty", "Style", "", "", "", "", "Week Plan"], ["", "", "", "", "", "", "", "", "", ""],
+                        ];
+                        snap.docs.forEach(d => {
+                            const m = d.data();
+                            const row = new Array(10).fill("");
+                            row[0] = m.buyer;
+                            row[1] = m.conNo;
+                            row[2] = m.color;
+                            row[3] = m.orderQty;
+                            row[4] = m.style;
+                            row[9] = m.weekPlan;
+                            mockExcel.push(row);
+                        });
+                        data = mockExcel;
+                    }
+                }
+
+                setSheetData(data || []);
                 const processed = processRows(data);
                 const totalRows = processed.length;
                 const totalPagesCalc = Math.ceil(totalRows / itemsPerPage);
@@ -176,59 +273,20 @@ export default function StyleOB() {
             listenersRef.current = {};
 
             try {
-                const subfolder = sheetName;
-                const listRef = storageRef(storage, `styleOBUploads/${subfolder}`);
-                const fileList = await listAll(listRef);
-                const uploadsMap = {};
+                // Rely strictly on Firestore metadata (which we already listen to in real-time)
+                // This avoids CORS errors from Storage listAll() on some environments
+                const q = query(collection(db, "styleOBmetadata"));
+                const unsub = onSnapshot(q, (snapshot) => {
+                    const metadataUpdates = {};
+                    snapshot.docs.forEach((docSnap) => {
+                        metadataUpdates[docSnap.id] = docSnap.data();
+                    });
+                    setRowUploads(prev => ({ ...prev, ...metadataUpdates }));
+                });
+                listenersRef.current['collection'] = unsub;
 
-                for (const itemRef of fileList.items) {
-                    try {
-                        const fileUrl = await getDownloadURL(itemRef);
-                        const hashedFileName = itemRef.name;
-                        const dotIndex = hashedFileName.lastIndexOf(".");
-                        const rowHash =
-                            dotIndex > 0
-                                ? hashedFileName.substring(0, dotIndex)
-                                : hashedFileName;
-
-                        uploadsMap[rowHash] = {
-                            fileUrl,
-                            hashedName: hashedFileName,
-                        };
-
-                        // Listen to metadata changes in Firestore
-                        const metadataRef = doc(db, "styleOBmetadata", rowHash);
-                        const unsub = onSnapshot(
-                            metadataRef,
-                            (docSnap) => {
-                                if (docSnap.exists()) {
-                                    const metadata = docSnap.data();
-                                    setRowUploads((prev) => ({
-                                        ...prev,
-                                        [rowHash]: {
-                                            ...prev[rowHash],
-                                            ...uploadsMap[rowHash],
-                                            ...metadata,
-                                        },
-                                    }));
-                                }
-                            },
-                            (err) => {
-                                console.error("Snapshot error for styleOBmetadata:", err);
-                            }
-                        );
-                        listenersRef.current[rowHash] = unsub;
-                    } catch (err) {
-                        console.error("Error loading uploaded file URL:", err);
-                    }
-                }
-                setRowUploads((prev) => ({
-                    ...uploadsMap,
-                    ...prev,
-                }));
             } catch (err) {
-                console.error("Error loading styleOB files from storage:", err);
-                setError("Error loading previously uploaded OB files.");
+                console.error("Error loading styleOB files:", err);
             }
         };
 
@@ -244,6 +302,26 @@ export default function StyleOB() {
             }
         })();
     }, [accessToken, selectedSheet]);
+
+    // 3. Lazy Load Storage URLs as needed (Matches Reference App)
+    useEffect(() => {
+        if (!selectedSheet || currentData.length === 0) return;
+
+        currentData.forEach(async ({ rowHash }) => {
+            const info = rowUploads[rowHash] || {};
+            // If we know there's a file (from metadata) but lack the URL
+            if (info.hashedFileName && !info.fileUrl) {
+                try {
+                    const path = `styleOBUploads/${selectedSheet}/${info.hashedFileName}`;
+                    const url = await getDownloadURL(storageRef(storage, path));
+                    setRowUploads(prev => ({
+                        ...prev,
+                        [rowHash]: { ...prev[rowHash], fileUrl: url }
+                    }));
+                } catch (e) { }
+            }
+        });
+    }, [currentPage, selectedSheet, Object.keys(rowUploads).length]);
 
     const handleSheetSwitch = (sheetName) => {
         setSelectedSheet(sheetName);
@@ -302,6 +380,20 @@ export default function StyleOB() {
                 customMetadata: metadataFields,
             });
 
+            // 1.5 Parse the Excel file locally using our robust obParser
+            let parsedOBData = null;
+            let preparatoryOps = null;
+            try {
+                const parsedResult = await parseOBExcel(file);
+                if (parsedResult && parsedResult.operations) {
+                    parsedOBData = parsedResult.operations;
+                    preparatoryOps = parsedResult.preparatoryOps || [];
+                    console.log(`[StyleOB] Successfully parsed ${parsedResult.operations.length} operations before saving to Firestore.`);
+                }
+            } catch (parseErr) {
+                console.warn("[StyleOB] Failed to parse Excel before saving to DB, skipping parsedOBData attachment:", parseErr);
+            }
+
             // 2. Get Download URL
             const fileUrl = await getDownloadURL(storageReference);
 
@@ -311,7 +403,10 @@ export default function StyleOB() {
                 ...metadataFields,
                 hashedFileName,
                 fileUrl,
+                ...(parsedOBData && { parsedOBData }),
+                ...(preparatoryOps && { preparatoryOps })
             };
+
 
             // 4. Save to Firestore
             await setDoc(doc(db, "styleOBmetadata", rowHash), initialMetadata, {
@@ -398,17 +493,43 @@ export default function StyleOB() {
 
     const headerMainRaw = sheetData[1] || [];
     const headerSubRaw = sheetData[2] || [];
-    const headerMain = headerMainRaw.map((h) =>
+
+    const parsedHeaderMain = headerMainRaw.map((h) =>
         typeof h === "string" ? h.replace(/-Subodh$/i, "").trim() : h
     );
-    const headerSub = headerSubRaw.map((h) =>
+    const parsedHeaderSub = headerSubRaw.map((h) =>
         typeof h === "string" ? h.replace(/-Subodh$/i, "").trim() : h
     );
 
-    // Columns to display
+    // Columns: [0:Buyer, 4:Style, 1:ConNo, 2:Color, 3:Qty, 9:WeekPlan]
     const selectedColsConst = [0, 4, 1, 2, 3, 9];
 
-    const processedRowsList = processRows(sheetData);
+    // 1. Get rows from Excel
+    const excelRows = processRows(sheetData);
+
+    // 2. MERGE: Add any styles from Firestore that aren't in the Excel list
+    const processedRowsList = [...excelRows];
+    const excelHashes = new Set(excelRows.map(r => r.rowHash));
+
+    Object.entries(rowUploads).forEach(([hash, metadata]) => {
+        // If it has a file but isn't in our Excel, add it!
+        if (metadata.fileUrl && !excelHashes.has(hash)) {
+            // Build temporary vals from metadata if available
+            const buyer = metadata.buyer || "DB Export";
+            const style = metadata.style || "Unknown";
+            const conNo = metadata.conNo || "---";
+            const color = metadata.color || "---";
+            const qty = metadata.qty || "0";
+            const week = metadata.weekPlan || "---";
+
+            processedRowsList.push({
+                rowHash: hash,
+                vals: [buyer, style, conNo, color, qty, week],
+                isFromDB: true
+            });
+            excelHashes.add(hash);
+        }
+    });
 
     const totalRows = processedRowsList.length;
     const totalPages = Math.ceil(totalRows / itemsPerPage) || 1;
@@ -433,18 +554,32 @@ export default function StyleOB() {
                 </p>
             )}
             <div className="flex flex-wrap items-center gap-2 mb-4">
-                {worksheets.map((sheetName) => (
-                    <button
-                        key={sheetName}
-                        onClick={() => handleSheetSwitch(sheetName)}
-                        className={`px-4 py-2 rounded-md font-semibold text-gray-800 ${selectedSheet === sheetName ? "border-2 border-gray-400" : ""
-                            }`}
-                        style={{ backgroundColor: "#DBD4D4" }}
-                    >
-                        <FaFileExcel className="inline mr-2" />
-                        {sheetName}
-                    </button>
-                ))}
+                {worksheets.map((sheetName) => {
+                    const lineNumMatch = String(sheetName).match(/\d+/);
+                    const lineNum = lineNumMatch ? lineNumMatch[0] : null;
+                    const isLive = liveStatuses.some(ls =>
+                        ls.line_no.includes(lineNum) && lineNum !== null
+                    );
+
+                    return (
+                        <button
+                            key={sheetName}
+                            onClick={() => handleSheetSwitch(sheetName)}
+                            className={`relative px-4 py-2 rounded-md font-semibold text-gray-800 transition-all ${selectedSheet === sheetName ? "border-2 border-gray-400" : "hover:bg-opacity-80"
+                                }`}
+                            style={{ backgroundColor: "#DBD4D4" }}
+                        >
+                            {isLive && (
+                                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                                </span>
+                            )}
+                            <FaFileExcel className="inline mr-2" />
+                            {sheetName}
+                        </button>
+                    );
+                })}
             </div>
 
             <div className="overflow-x-auto border border-gray-200 rounded-md">
@@ -454,10 +589,10 @@ export default function StyleOB() {
                             {selectedColsConst.map((ci, colIdx) => (
                                 <th
                                     key={ci}
-                                    rowSpan={headerSub[ci] ? 1 : 2}
+                                    rowSpan={parsedHeaderSub[ci] ? 1 : 2}
                                     className={`px-6 py-3 border text-center uppercase text-xs font-bold ${colIdx === 1 ? 'sticky left-0 bg-[#ECE7E7] z-10' : ''}`}
                                 >
-                                    {headerMain[ci] || ""}
+                                    {parsedHeaderMain[ci] || ""}
                                 </th>
                             ))}
                             <th
@@ -475,24 +610,38 @@ export default function StyleOB() {
                         </tr>
                         <tr>
                             {selectedColsConst.map((ci, colIdx) =>
-                                headerSub[ci] && (
+                                parsedHeaderSub[ci] && (
                                     <th
                                         key={ci}
                                         className={`px-6 py-3 border text-center uppercase text-xs font-bold ${colIdx === 1 ? 'sticky left-0 bg-[#ECE7E7] z-10' : ''}`}
                                     >
-                                        {headerSub[ci]}
+                                        {parsedHeaderSub[ci]}
                                     </th>
                                 )
                             )}
                         </tr>
                     </thead>
                     <tbody>
-                        {currentData.map(({ vals, rowHash }, idx) => {
-                            const info = rowUploads[rowHash] || {};
+                        {currentData.map(({ vals, rowHash, isFromDB }, idx) => {
+                            // 1. ATTEMPT EXACT MATCH
+                            let info = rowUploads[rowHash] || {};
+
+                            // 2. ATTEMPT FUZZY MATCH (Critical for cross-app sync)
+                            if (!info.fileUrl) {
+                                const fuzzyMatch = Object.values(rowUploads).find(v =>
+                                    (v.style === vals[1] && v.conNo === vals[2]) ||
+                                    (v.style === vals[1] && !vals[2]) ||
+                                    (v.style === vals[1] && v.buyer === vals[0])
+                                );
+                                if (fuzzyMatch) {
+                                    info = fuzzyMatch;
+                                    console.log(`[StyleOB] Connected Firebase data via Fuzzy Match for Style: ${vals[1]}`);
+                                }
+                            }
+
                             const fileUrl = info.fileUrl || null;
 
                             // --- Changeover Logic ---
-                            // Compare current row style (index 1) with previous row style.
                             const globalIndex = startIdx + idx;
                             let isChangeover = false;
 
@@ -504,10 +653,16 @@ export default function StyleOB() {
                                 }
                             }
 
+                            // --- Real-time Floor Status Logic ---
+                            const liveEntry = liveStatuses.find(ls =>
+                                ls.style_no === vals[1] &&
+                                (ls.con_no === vals[2] || !vals[2])
+                            );
+
                             return (
                                 <tr
                                     key={rowHash + "_" + idx}
-                                    className="border-b border-gray-200 hover:bg-gray-50"
+                                    className={`border-b border-gray-200 hover:bg-gray-50 ${liveEntry ? 'bg-emerald-50/30' : ''}`}
                                 >
                                     {vals.map((cell, ci) => (
                                         <td key={ci} className={`px-6 py-2 text-center ${ci === 1 ? 'sticky left-0 bg-white z-10' : ''}`}>
@@ -515,15 +670,22 @@ export default function StyleOB() {
                                         </td>
                                     ))}
 
-                                    {/* Changeover Column */}
+                                    {/* Changeover / Live Status Column */}
                                     <td className="px-6 py-2 text-center font-bold">
-                                        {isChangeover ? (
-                                            <span className="bg-red-100 text-red-600 px-2 py-1 rounded-full text-xs flex items-center justify-center gap-1">
-                                                <FaExchangeAlt /> Changeover
-                                            </span>
-                                        ) : (
-                                            <span className="text-gray-400 text-xs">-</span>
-                                        )}
+                                        <div className="flex flex-col items-center gap-1">
+                                            {liveEntry && (
+                                                <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter flex items-center gap-1">
+                                                    <FaBolt className="animate-pulse" /> {liveEntry.line_no}: {liveEntry.status}
+                                                </span>
+                                            )}
+                                            {isChangeover ? (
+                                                <span className="bg-red-100 text-red-600 px-2 py-1 rounded-full text-xs flex items-center justify-center gap-1">
+                                                    <FaExchangeAlt /> Changeover
+                                                </span>
+                                            ) : (
+                                                !liveEntry && <span className="text-gray-400 text-xs">-</span>
+                                            )}
+                                        </div>
                                     </td>
 
                                     {/* Upload OB Column */}

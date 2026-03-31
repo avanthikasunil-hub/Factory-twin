@@ -16,6 +16,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import styled from "styled-components";
 import { getLayoutSpecs, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD } from "@/utils/layoutGenerator";
 import { API_BASE_URL } from "../../config";
+import { db } from "@/firebase";
+import { collection, query, where, limit, onSnapshot } from "firebase/firestore";
 import { generateCotLayout } from "@/utils/cotLayoutGenerator";
 import { SectionLayout, MachinePosition } from "@/types";
 import { cn } from "@/lib/utils";
@@ -105,62 +107,103 @@ export default function DigitalTwinPage() {
     return { pos: [-30, 40, (LANE_Z_CENTER_AB + LANE_Z_CENTER_CD) / 2 + (idx * zStep)], fov: 25 };
   }, [activeFloor, activeLine]);
 
+  // 1. Unified Sync for Line Statuses & Layouts (Backend + Firebase)
   useEffect(() => {
-    const f = async () => {
+    let isMounted = true;
+    let unsub = null;
+
+    const syncStatus = async () => {
       try {
-        const r = await fetch(`${API_BASE_URL}/current-styles`);
-        if (r.ok) {
-          const data = await r.json();
-          if (Array.isArray(data)) setLineStatuses(data);
+        // First: Fetch from Local Backend (SQLite)
+        const res = await fetch(`${API_BASE_URL}/active-layouts`);
+        let backendData = [];
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) backendData = data;
         }
-      } catch { }
-    };
-    f(); const t = setInterval(f, 15000); return () => clearInterval(t);
-  }, []);
 
-  const [styleCache] = useState<Map<string, any>>(new Map());
-  const [lastStyleSignature, setLastStyleSignature] = useState("");
+        // Second: Setup Firestore Real-time Listener
+        const q = collection(db, "changeoverData");
+        unsub = onSnapshot(q, (snap) => {
+          if (!isMounted) return;
 
-  useEffect(() => {
-    if (activeTab !== "sewing") return;
-    const f = async () => {
-      try {
-        const r = await fetch(`${API_BASE_URL}/active-layouts`);
-        if (!r.ok) return;
-        const data = await r.json();
-        if (!Array.isArray(data)) return;
+          const today = new Date();
+          const dStr_today = `${today.getDate()}/${today.getMonth() + 1}/${today.getFullYear()}`;
+          const dStr_alt = dStr_today.split('/').map(p => p.padStart(2, '0')).join('/');
 
-        const getN = (l: string) => { const m = String(l).match(/\d+/); return m ? parseInt(m[0]) : null; };
-        let fd = data.filter((s: any) => { 
-          const n = getN(s.line_no); 
-          if (n === null) return false; 
-          return activeFloor === "Floor 1" ? (n >= 1 && n <= 6) : (n >= 7 && n <= 9); 
+          const firestoreLines = snap.docs.map(d => ({ id: d.id, ...d.data() } as any))
+            .filter(l => {
+              const status = (l.status || "").toLowerCase();
+              if (status !== 'partial' && status !== 'in_progress' && status !== 'changeover' && status !== 'running') return false;
+              const dStr = l.lastUpdated || l.summaryData?.lastUpdated || "";
+              return (dStr.includes(dStr_today) || dStr.includes(dStr_alt));
+            });
+
+          // Merge Backend and Firestore Statuses
+          const mergedStatuses = [];
+          for (let i = 1; i <= 9; i++) {
+            const ln = `Line ${i}`;
+            const foundCloud = firestoreLines.find(fl => (fl.line || fl.summaryData?.line) === ln);
+            const foundBackend = backendData.find(s => 
+              String(s.line_no || s.status_line).toUpperCase().replace(' ', '') === ln.toUpperCase().replace(' ', '')
+            );
+
+            if (foundCloud) {
+              mergedStatuses.push({
+                line_no: ln,
+                style_no: foundCloud.style_no || foundCloud.summaryData?.toStyle || foundCloud.toStyle || '---',
+                con_no: foundCloud.conNo || foundCloud.summaryData?.conNo || '---',
+                buyer: foundCloud.buyer || foundCloud.summaryData?.buyer || '---',
+                status: (foundCloud.status === 'partial' || foundCloud.status === 'in_progress') ? 'Changeover' : (foundCloud.status || 'Running'),
+                isLive: true,
+                operations: foundBackend?.operations || []
+              });
+            } else if (foundBackend) {
+              mergedStatuses.push({
+                ...foundBackend,
+                line_no: ln,
+                style_no: foundBackend.style_no || foundBackend.status_style || '---',
+                con_no: foundBackend.con_no || foundBackend.status_con || '---',
+                status: foundBackend.status || 'Running'
+              });
+            } else {
+              mergedStatuses.push({ line_no: ln, status: 'Idle', style_no: '---', con_no: '---', buyer: '---' });
+            }
+          }
+          setLineStatuses(mergedStatuses);
+
+          // 2. Generate Active Machines if we're in the Sewing tab
+          if (activeTab === "sewing") {
+            const getN = (l: string) => { const m = String(l).match(/\d+/); return m ? parseInt(m[0]) : null; };
+            let floorData = mergedStatuses.filter(s => {
+              const n = getN(s.line_no);
+              if (n === null) return false;
+              return activeFloor === "Floor 1" ? (n >= 1 && n <= 6) : (n >= 7 && n <= 9);
+            });
+            if (activeLine !== "All Lines") floorData = floorData.filter(s => getN(s.line_no) === getN(activeLine));
+            
+            const { specs } = getLayoutSpecs("Line 1");
+            const zStep = (LANE_Z_CENTER_CD + specs.widthCD / 2 - (LANE_Z_CENTER_AB - specs.widthAB / 2)) + 3.7;
+
+            const machines = floorData.flatMap(item => {
+              if (!item.operations || !Array.isArray(item.operations) || item.operations.length === 0) return [];
+              const result = generateCotLayout(item.operations, item.line_no);
+              const n = getN(item.line_no)!;
+              const ri = n <= 6 ? n - 1 : n - 7;
+              return result.machines.map(m => ({
+                ...m,
+                position: { ...m.position, z: m.position.z + (ri * zStep) }
+              }));
+            });
+            setActiveMachines(machines);
+          }
         });
-        if (activeLine !== "All Lines") fd = fd.filter((s: any) => getN(s.line_no) === getN(activeLine));
-        fd = fd.filter((s: any) => s.operations && Array.isArray(s.operations) && s.operations.length > 0);
-
-        const signature = fd.map(s => `${s.line_no}_${s.style_no}_${s.con_no}`).join('|');
-        if (signature === lastStyleSignature) return;
-
-        const { specs } = getLayoutSpecs("Line 1");
-        const zStep = (LANE_Z_CENTER_CD + specs.widthCD / 2 - (LANE_Z_CENTER_AB - specs.widthAB / 2)) + 3.7;
-        
-        const machines = fd.flatMap((item: any) => {
-          const styleKey = `${item.line_no}_${item.style_no}_${item.con_no}`;
-          let result;
-          if (styleCache.has(styleKey)) result = styleCache.get(styleKey);
-          else { result = generateCotLayout(item.operations, item.line_no); styleCache.set(styleKey, result); }
-          const n = getN(item.line_no)!;
-          const ri = n <= 6 ? n - 1 : n - 7;
-          return result.machines.map((m: any) => ({ ...m, position: { ...m.position, z: m.position.z + (ri * zStep) } }));
-        });
-
-        setLastStyleSignature(signature);
-        setActiveMachines(machines);
-      } catch { }
+      } catch (err) { }
     };
-    f(); const t = setInterval(f, 20000); return () => clearInterval(t);
-  }, [activeTab, activeFloor, activeLine, lastStyleSignature]);
+
+    syncStatus();
+    return () => { isMounted = false; if (unsub) unsub(); };
+  }, [activeTab, activeFloor, activeLine]);
 
   return (
     <Wrapper>
@@ -219,7 +262,7 @@ export default function DigitalTwinPage() {
             )}
           </div>
 
-          {["cutting", "sewing"].includes(activeTab) && (
+          {activeTab === "sewing" && (
             <div className="w-[340px] bg-slate-900 border-l border-white/5 flex flex-col shadow-2xl relative z-20">
               <div className="p-6 border-b border-white/5 bg-slate-900/50 backdrop-blur-md">
                 <h3 className="text-white font-black text-xs uppercase tracking-[0.2em] flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />Live Status</h3>

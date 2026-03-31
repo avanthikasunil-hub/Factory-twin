@@ -16,7 +16,8 @@ import {
     Map,
     ArrowUpRight,
     ChevronDown,
-    Layers
+    Layers,
+    Monitor
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -32,12 +33,16 @@ const NAV_ITEMS = [
     { id: "overview", label: 'Overview', icon: LayoutDashboard, path: '/virtual-line/overview' },
     { id: "floor", label: 'Floor View', icon: Map, path: '/virtual-line/floor' },
     { id: "tracker", label: 'COT Tracker', icon: Activity, path: '/virtual-line/tracker' },
+    { id: "war-room", label: 'War Room', icon: Monitor, path: '/virtual-line/war-room' },
     { id: "ob", label: 'Style OB', icon: Layers, path: '/virtual-line/ob' },
     { id: "dashboard", label: 'Dashboard', icon: Layout, path: '/' },
 ];
 
 // This will be replaced by dynamic data in the component
 let COT_DATA: any[] = [];
+
+import { db, prodDb } from "@/firebase";
+import { collection, onSnapshot, query, where, limit } from "firebase/firestore";
 
 export default function VirtualLineLayout() {
     const navigate = useNavigate();
@@ -53,25 +58,80 @@ export default function VirtualLineLayout() {
     const [liveCotData, setLiveCotData] = useState<any[]>([]);
 
     useEffect(() => {
-        const fetchStatus = async () => {
+        let isMounted = true;
+        let unsub = null;
+
+        const syncStatus = async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/current-styles`);
-                if (res.ok) {
-                    const data = await res.json();
-                    console.log("[VirtualLineLayout] liveCotData received:", data);
-                    if (Array.isArray(data)) {
-                        setLiveCotData(data);
-                    } else {
-                        console.error("[VirtualLineLayout] Expected array for live status but got:", data);
+                // 1. Backend Fetch - Optional
+                let backendData = [];
+                try {
+                    const res = await fetch(`${API_BASE_URL}/current-styles`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (Array.isArray(data)) backendData = data;
                     }
+                } catch (e) {
+                    console.warn("[Layout] Backend fetch skipped");
                 }
-            } catch (err) {
-                console.error("Error fetching live status:", err);
-            }
+
+
+                // 2. Firebase Listener - Targeted for efficiency
+                // We use prodDb because the production data is in laguna-ishika
+                const q = query(
+                    collection(prodDb, "changeoverData"), 
+                    where("docType", "==", "summary"),
+                    limit(100)
+                );
+                
+                unsub = onSnapshot(q, (snap) => {
+                    if (!isMounted) return;
+                    
+                    const firestoreLines = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+                    
+                    const latestByLine: Record<string, any> = {};
+                    firestoreLines.forEach(l => {
+                        const ln = l.line || l.summaryData?.line;
+                        if (!ln) return;
+                        const match = ln.match(/\d+/);
+                        const normalizedLn = match ? `Line ${match[0]}` : ln;
+                        if (!latestByLine[normalizedLn]) {
+                            latestByLine[normalizedLn] = l;
+                        }
+                    });
+
+
+                    const merged = [];
+                    for (let i = 1; i <= 9; i++) {
+                        const ln = `Line ${i}`;
+                        const foundCloud = latestByLine[ln];
+                        const foundBackend = backendData.find(s => 
+                            String(s.line_no).toUpperCase().replace(' ', '') === ln.toUpperCase().replace(' ', '')
+                        );
+
+
+                        if (foundCloud) {
+                            merged.push({
+                                line_no: ln,
+                                style_no: foundCloud.style_no || foundCloud.summaryData?.toStyle || foundCloud.toStyle || '---',
+                                con_no: foundCloud.conNo || foundCloud.summaryData?.conNo || '---',
+                                buyer: foundCloud.buyer || foundCloud.summaryData?.buyer || '---',
+                                status: (foundCloud.status === 'partial' || foundCloud.status === 'in_progress') ? 'Changeover' : (foundCloud.status || 'Running'),
+                                isLive: true
+                            });
+                        } else if (foundBackend) {
+                            merged.push(foundBackend);
+                        } else {
+                            merged.push({ line_no: ln, status: 'Idle', style_no: '---', con_no: '---', buyer: '---' });
+                        }
+                    }
+                    setLiveCotData(merged);
+                });
+            } catch (err) { }
         };
-        fetchStatus();
-        const interval = setInterval(fetchStatus, 15000);
-        return () => clearInterval(interval);
+
+        syncStatus();
+        return () => { isMounted = false; if (unsub) unsub(); };
     }, []);
 
     const activeLineData = Array.isArray(liveCotData) ? liveCotData.find(i => i.line_no === activeLine) : null;
@@ -202,25 +262,7 @@ export default function VirtualLineLayout() {
 
                         {(currentPath === "/virtual-line/floor" || (currentPath === "/virtual-line/tracker" && searchParams.get("line"))) && (
                             <div className="flex items-center gap-1 ml-4 bg-slate-100/50 p-1 rounded-2xl border border-slate-200/60 shadow-inner">
-                                {searchParams.get("line") && activeLineData && (
-                                    <div className="flex items-center gap-1 border-r border-slate-200/60 pr-1 mr-1">
-                                        {/* Current Style - Click to see Layout */}
-                                        <button
-                                            onClick={() => navigate(`/virtual-line/floor?${searchParams.toString()}`)}
-                                            className="flex flex-col items-start px-4 py-2 rounded-xl hover:bg-white transition-all shrink-0 text-left group/run"
-                                        >
-                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5 group-hover/run:text-slate-600 transition-colors">
-                                                {isRunning ? 'Running Style' : 'Changeover Style'}
-                                            </span>
-                                            <div className="flex items-center gap-2.5">
-                                                <div className={cn("w-1.5 h-1.5 rounded-full", isRunning ? "bg-emerald-500" : "bg-indigo-500 animate-pulse")} />
-                                                <span className="text-slate-900 font-black text-[13px] tracking-tight">{activeLineData.style_no}</span>
-                                            </div>
-                                        </button>
-                                    </div>
-                                )}
-
-                                {currentPath === "/virtual-line/floor" ? (
+                                {location.pathname === "/virtual-line/floor" ? (
                                     <div className="flex items-center gap-1">
                                         {/* Floor Toggle */}
                                         <div className="flex items-center gap-1 bg-white/50 p-1 rounded-2xl border border-slate-200/50 mr-2">

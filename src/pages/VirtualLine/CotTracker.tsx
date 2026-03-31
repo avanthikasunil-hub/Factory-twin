@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { Scene3D } from "@/components/3d/Scene3D";
 import { getLayoutSpecs, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD, LANE_Z_A, LANE_Z_B, LANE_Z_C, LANE_Z_D } from "@/utils/layoutGenerator";
-import { generateCotLayout } from "@/utils/cotLayoutGenerator";
+import { generateCotLayout } from "@/pages/VirtualLine/generatorCotLayout";
 import { SectionLayout, MachinePosition } from "@/types";
 import {
     PlayCircle,
@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 import { API_BASE_URL } from "../../config";
-import { db } from "@/firebase";
+import { prodDb as db } from "@/firebase";
 import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore";
 import { parseOBExcel } from "@/utils/obParser";
 import { toast } from "sonner";

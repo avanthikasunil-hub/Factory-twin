@@ -4,11 +4,16 @@ import { Text, useGLTF, Html, Line, PivotControls } from '@react-three/drei';
 import * as THREE from 'three';
 import type { MachinePosition } from '@/types';
 import { useLineStore } from '@/store/useLineStore';
-import { HumanOperator } from './HumanOperator';
+import HumanOperator from './HumanOperator';
 import { Cabin3D } from './Cabin3D';
 import { IronBox } from './IronBox';
 import { SpotWashBox } from './SpotWashBox';
 import { GarmentConveyor } from './GarmentConveyor';
+import { GerberParagon } from './GerberParagon';
+import AutoSpreader from './AutoSpreader';
+import { FusingMachine } from './FusingMachine';
+import { FT } from '@/pages/VirtualLine/layoutGenerator';
+
 
 interface Machine3DProps {
   machineData: MachinePosition;
@@ -77,6 +82,7 @@ const MODEL_MAP: Record<string, string> = {
   folding: 'folding.glb',
   macpi: 'macpi.glb',
   finishing: 'finishing.glb',
+  bandknife: 'bandknife.glb',
 
   // Default override
   default: 'last machine.glb'
@@ -105,9 +111,18 @@ const getModelUrl = (type: string) => {
   return `/models/${MODEL_MAP['default']}`;
 };
 
-const getTargetDimensionsMeters = (type: string) => {
+const getTargetDimensionsMeters = (type: string, data?: any) => {
   const t = type.toLowerCase();
   const FT = 0.3048;
+
+  // 1. Direct override from layout properties (Priority)
+  if (data?.tableLength) {
+    return {
+      length: data.tableLength * FT,
+      width: (data.tableWidth || 7.1) * FT,
+      height: (data.tableHeight || 3) * FT
+    };
+  }
 
   let l = 4 * FT, w = 2.5 * FT, h = 4 * FT;
 
@@ -125,14 +140,12 @@ const getTargetDimensionsMeters = (type: string) => {
     l = 4.72 * FT; w = 4 * FT; h = 5 * FT;
   } else if (t.includes('iron') || t.includes('press')) {
     l = 4.0 * FT; w = 3.0 * FT; h = 4.0 * FT;
+  } else if (t.includes('inspection') || t.includes('checking')) {
+    l = 5.0 * FT; w = 4.0 * FT; h = 6.5 * FT;
   } else if (t.includes('helper') || t.includes('work table') || t.includes('table') || t.includes('trolley')) {
     l = 4.5 * FT; w = 2.5 * FT; h = 2.2 * FT;
-  } else if (t.includes('outinspection') || t.includes('outsideinspection') || t.includes('outside inspection')) {
-    l = 3 * FT; w = 2.5 * FT; h = 5.5 * FT;
-  } else if (t.includes('inspection')) {
-    l = 5.0 * FT; w = 4.0 * FT; h = 6.5 * FT;
   } else if (t.includes('fusing') || t.includes('rotary')) {
-    l = 4.5 * FT; w = 3.0 * FT; h = 4.0 * FT;
+    l = 4 * FT; w = 3.0 * FT; h = 4.0 * FT;
   } else if (t.includes('blocking')) {
     l = 4 * FT; w = 2.5 * FT; h = 4.0 * FT;
   } else if (t.includes('supermarket')) {
@@ -154,6 +167,10 @@ const getTargetDimensionsMeters = (type: string) => {
     l = 7 * FT; w = 7 * FT; h = 9 * FT; // 7ft x 7ft x 7ft
   } else if (t.includes('spotwash')) {
     l = 4 * FT; w = 2.5 * FT; h = 5 * FT; // Restore Original Dimensions
+  } else if (t.includes('bandknife')) {
+    l = 7 * FT; w = 4 * FT; h = 6.5 * FT;
+  } else if (t.includes('fusing_custom')) {
+    l = 24.4 * FT; w = 5.7 * FT; h = 6 * FT; // Updated to exactly 24.4ft L, 5.7ft W, and 5ft H
   }
 
   return {
@@ -213,7 +230,15 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
   const [hovered, setHovered] = useState(false);
   const [clicked, setClicked] = useState(false);
   const [modelBounds, setModelBounds] = useState({ sizeX: 0, sizeZ: 0, centerX: 0, centerZ: 0 });
-  const [computedScale, setComputedScale] = useState<[number, number, number]>([1, 1, 1]);
+  const targetDims = useMemo(() => getTargetDimensionsMeters(machineData.operation.machine_type, machineData), [machineData.operation.machine_type, machineData]);
+  const initialScale = useMemo(() => {
+    if (machineData.operation.machine_type.toLowerCase().includes('fusing_custom')) {
+      return [1, 1, 1] as [number, number, number]; // Let the component handle its own internal feet-to-meters scaling
+    }
+    return [1, 1, 1] as [number, number, number];
+  }, [machineData.operation.machine_type]);
+
+  const [computedScale, setComputedScale] = useState<[number, number, number]>(initialScale);
 
   const { selectedMachines, toggleMachineSelection, visibleSection, isMoveMode, isDeleteMode, deleteMachine, setPlacingMachine, setDraggingActive, moveSelectedMachines, updateMachinesPositions } = useLineStore();
   const isSelected = selectedMachines.includes(machineData.id);
@@ -224,11 +249,44 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
   const isUnused = machineData.operation.op_no === '---';
 
   const modelUrl = getModelUrl(machineData.operation.machine_type);
-  const targetDims = useMemo(() => getTargetDimensionsMeters(machineData.operation.machine_type), [machineData.operation.machine_type]);
   const { scene: gltfScene } = useGLTF(modelUrl, true);
   const clonedScene = useMemo(() => (gltfScene ? gltfScene.clone() : null), [gltfScene]);
 
   if (!isVisible) return null;
+
+  const mType = machineData.operation.machine_type.toLowerCase();
+
+  if (mType === 'gerber') {
+    return (
+      <group
+        position={[machineData.position.x, machineData.position.y || 0, machineData.position.z]}
+        rotation={[machineData.rotation.x, (machineData.rotation.y || 0) + (machineData.modelRotation || 0), machineData.rotation.z]}
+      >
+        <GerberParagon
+          tableLength={machineData.tableLength || 17.0}
+          tableWidth={machineData.tableWidth || 7.1}
+          tableOnly={machineData.tableOnly || false}
+          spreadingLength={(machineData as any).spreadingLength || 33.9}
+          operatorOnFarSide={(machineData as any).operatorOnFarSide || false}
+        />
+      </group>
+    );
+  }
+
+  if (mType === 'auto-spreader') {
+    return (
+      <group
+        position={[machineData.position.x, machineData.position.y || 0, machineData.position.z]}
+        rotation={[machineData.rotation.x, (machineData.rotation.y || 0) + (machineData.modelRotation || 0), machineData.rotation.z]}
+      >
+        <AutoSpreader
+          tableWidth={machineData.tableWidth || 7.1}
+          status="spreading"
+        />
+      </group>
+    );
+  }
+
 
   // Board check after hooks
   if (machineData.operation.machine_type.toLowerCase().startsWith('board')) {
@@ -314,6 +372,11 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
   // Handle centering logic once when model loads
   useLayoutEffect(() => {
+    if (machineData.operation.machine_type.toLowerCase().includes('fusing_custom')) {
+      setComputedScale([1, 1, 1]); // Reset scaling for precision-built models
+      return;
+    }
+
     if (gltfScene && clonedScene) {
       const box = new THREE.Box3().setFromObject(gltfScene);
       const size = box.getSize(new THREE.Vector3());
@@ -325,6 +388,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
       const type = machineData.operation.machine_type.toLowerCase();
       const isFusingLocally = type.includes('fusing') || type.includes('rotary');
 
+      const isInspectionLocally = type.includes('inspection') || type.includes('checking');
       const scaleFactor = type.includes('turning') ? 1.4 : 1.0;
 
       const scaleX = size.x > 0.001 ? (isFusingLocally ? (targetDims.length * scaleFactor) / size.z : (targetDims.length * scaleFactor) / size.x) : 1;
@@ -433,14 +497,13 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
   const zoneWidthZ = targetDims.width;
 
   const op = machineData.operation || { op_name: 'N/A', machine_type: 'default' };
-  const mType = (op.machine_type || 'default').toLowerCase();
   const needsOperator = !mType.includes('supermarket') && !mType.includes('trolley') && !mType.includes('pathway') && !mType.startsWith('board') && !mType.includes('cabin') && !mType.includes('supervisor');
 
   const displayPos = relativePosition || machineData.position || { x: 0, y: 0, z: 0 };
 
   // ACCESSORY CHECK - Iron box should appear on Iron machines, or any task involving 'pressing'
   const opNameLower = (machineData.operation?.op_name || (machineData as any).opName || "").toLowerCase();
-  const hasIronBox = mType.includes('iron') || opNameLower.includes('pressing') || (machineData as any).showIronBox === true;
+  const hasIronBox = (mType.includes('iron') || opNameLower.includes('pressing') || (machineData as any).showIronBox === true) && (machineData as any).hideIronBox !== true;
 
   return (
     <group
@@ -465,7 +528,16 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
         }}
       >
         {/* 3D Model */}
-        <primitive object={clonedScene} castShadow receiveShadow />
+        { (mType.includes('fusing') || mType.includes('rotary')) ? (
+          <FusingMachine
+            L={(machineData as any).tableLength || (targetDims.length / FT)}
+            W={(machineData as any).tableWidth || (targetDims.width / FT)}
+            H={(machineData as any).tableHeight || 5.0}
+          />
+        ) : (
+
+          <primitive object={clonedScene} castShadow receiveShadow />
+        )}
 
         {/* Garment Bundles for Supermarket - Hidden in Overview for performance */}
         {mType.includes('supermarket') && !isOverview && <GarmentBundles />}
@@ -504,12 +576,12 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
             const rotation = new THREE.Quaternion();
             const scale = new THREE.Vector3();
             matrix.decompose(translation, rotation, scale);
-            
+
             const dx = translation.x - ((window as any)._dragLastX || 0);
             const dz = translation.z - ((window as any)._dragLastZ || 0);
-            
+
             moveSelectedMachines(dx, dz);
-            
+
             (window as any)._dragLastX = translation.x;
             (window as any)._dragLastZ = translation.z;
           }}
@@ -518,7 +590,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
             setDraggingActive(false);
           }}
         >
-             <mesh visible={false}><boxGeometry args={[0.01, 0.01, 0.01]} /></mesh>
+          <mesh visible={false}><boxGeometry args={[0.01, 0.01, 0.01]} /></mesh>
         </PivotControls>
       )}
 
@@ -554,77 +626,106 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
         </Html>
       )}
 
-      {/* Human Operator - RESTORED visibility for all modes */ }
-  {
-    needsOperator && (() => {
-      const isRotated90 = Math.abs(machineData.rotation.y % Math.PI) > 0.1;
-      const operatorOffsetZ = isRotated90 ? -0.25 : 0;
-      const isStanding = mType.includes('inspection') || mType.includes('iron') || mType.includes('press') || mType.includes('fusing') || mType.includes('rotary') || mType.includes('helper') || mType.includes('table') || mType.includes('folding') || mType.includes('macpi') || mType.includes('checking') || mType.includes('thread') || mType.includes('finishing') || mType.includes('spotwash');
-      const moveX = Math.sin(machineData.rotation.y) * operatorOffsetZ;
-      const moveZ = Math.cos(machineData.rotation.y) * operatorOffsetZ;
+      {/* Human Operator - RESTORED visibility for all modes */}
+      {
+        needsOperator && (() => {
+          const isRotated90 = Math.abs(machineData.rotation.y % Math.PI) > 0.1;
+          const operatorOffsetZ = isRotated90 ? -0.25 : 0;
+          const isStanding = mType.includes('bandknife') || mType.includes('inspection') || mType.includes('iron') || mType.includes('press') || mType.includes('fusing') || mType.includes('rotary') || mType.includes('helper') || mType.includes('table') || mType.includes('folding') || mType.includes('macpi') || mType.includes('checking') || mType.includes('thread') || mType.includes('finishing') || mType.includes('spotwash');
+          const moveX = Math.sin(machineData.rotation.y) * operatorOffsetZ;
+          const moveZ = Math.cos(machineData.rotation.y) * operatorOffsetZ;
 
-      let extraLocalZ = 0;
-      let extraLocalX = 0;
-      if (mType.includes('inspection')) {
-        extraLocalZ = 0.25; // Closer to standard inspection table
-        extraLocalX = 0;
-      } else if (mType.includes('thread')) {
-        extraLocalZ = 0.4; // Give extra space for thread/cleanup mc
-        extraLocalX = 0;
-      }
+          let extraLocalZ = 0;
+          let extraLocalX = 0;
 
-      const isInspection = mType.includes('inspection');
+          // Use table width to offset operator to the side
+          const tableW = (machineData as any).tableWidth || targetDims.length;
+          const machineHalfW = tableW / 2;
 
-      return (
-        <group>
-          <group position={[zoneOffsetX + moveX + extraLocalX, 0, zoneOffsetZ + moveZ + extraLocalZ]}>
-            <HumanOperator id={machineData.id} rotation={machineData.rotation.y} isStanding={isStanding} isInspection={isInspection} />
-          </group>
-          {mType.includes('outinspection') && (
-            <group position={[zoneOffsetX - moveX - extraLocalX, 0, zoneOffsetZ - moveZ - extraLocalZ]} rotation={[0, Math.PI, 0]}>
-              <HumanOperator id={`${machineData.id}-2`} rotation={machineData.rotation.y + Math.PI} isStanding={isStanding} isInspection={isInspection} />
+          const isInspection = mType.includes('inspection');
+
+          // Standard offset for someone standing/sitting at a machine (industrial man-allowance)
+          const isFusing = false; // Aligned with Iron Press (uses default offset)
+          const isSpreading = mType.includes('gerber') || mType.includes('auto-spreader');
+
+          // For Fusing, the operator stands on the aisle side (Positive Z if rotation is 0)
+          if (isFusing) {
+            extraLocalZ = machineHalfW + 0.55; // Sit directly at the edge of the 5.7ft wide table
+          } else if (isInspection) {
+            extraLocalZ = -0.2; // Very slightly back from inspection, inside yellow zone
+          } else if (mType.includes('thread')) {
+            extraLocalZ = 0.4;
+          } else if (mType.includes('bandknife')) {
+            if (isRotated90) { extraLocalZ = 0.4; } else { extraLocalX = 0.4; }
+          } else if (isSpreading) {
+            extraLocalZ = machineHalfW + 0.3; // Offset for spreading table workers
+          }
+          
+          if ((machineData as any).rotateOperatorAxis) {
+            const oldX = extraLocalX;
+            extraLocalX = extraLocalZ;
+            extraLocalZ = oldX;
+          }
+
+          return (
+            <group>
+              <group 
+                position={[zoneOffsetX + moveX + extraLocalX, 0, zoneOffsetZ + moveZ + extraLocalZ]}
+                rotation={[0, (machineData as any).rotateOperatorAxis ? Math.PI / 2 : 0, 0]}
+              >
+                <HumanOperator 
+                    id={machineData.id} 
+                    rotation={machineData.rotation.y + ((machineData as any).rotationOffset || 0)} 
+                    isStanding={isStanding} 
+                    isInspection={isInspection} 
+                />
+              </group>
+              {mType.includes('outinspection') && (
+                <group position={[zoneOffsetX - moveX - extraLocalX, 0, zoneOffsetZ - moveZ - extraLocalZ]} rotation={[0, Math.PI, 0]}>
+                  <HumanOperator id={`${machineData.id}-2`} rotation={machineData.rotation.y + Math.PI} isStanding={isStanding} isInspection={isInspection} />
+                </group>
+              )}
             </group>
-          )}
-        </group>
-      );
-    })()
-  }
-
-  {/* Ground Zone Area Border - RESTORED visibility for all modes */ }
-  {
-    (() => {
-      let humanMaxZ = 0;
-      if (needsOperator) {
-        const isRotated90 = Math.abs(machineData.rotation.y % Math.PI) > 0.1;
-        const operatorOffsetZ = isRotated90 ? -0.25 : 0;
-        const moveZ = Math.cos(machineData.rotation.y) * operatorOffsetZ;
-        const extraLocalZ = mType.includes('inspection') ? 0.25 : 0;
-        const isStanding = mType.includes('inspection') || mType.includes('iron') || mType.includes('press') || mType.includes('fusing') || mType.includes('rotary') || mType.includes('helper') || mType.includes('table');
-        const baseHumanDepth = isStanding ? 0.45 : 0.65; // Slightly shallower depth for better look
-        humanMaxZ = moveZ + extraLocalZ + baseHumanDepth;
+          );
+        })()
       }
 
-      const maxPositiveZ = Math.max(zoneWidthZ / 2, humanMaxZ);
-      const operatorSideZ = -maxPositiveZ;
-      const machineSideZ = zoneWidthZ / 2;
+      {/* Ground Zone Area Border - RESTORED visibility for all modes */}
+      {
+        !(machineData as any).tableOnly && (
+          (() => {
+            let humanMaxZ = 0;
+            if (needsOperator) {
+              const isRotated90 = Math.abs(machineData.rotation.y % Math.PI) > 0.1;
+              const operatorOffsetZ = isRotated90 ? -0.25 : 0;
+              const moveZ = Math.cos(machineData.rotation.y) * operatorOffsetZ;
+              const extraLocalZ = mType.includes('inspection') ? 0.25 : 0;
+              const isStanding = mType.includes('inspection') || mType.includes('iron') || mType.includes('press') || mType.includes('fusing') || mType.includes('rotary') || mType.includes('helper') || mType.includes('table');
+              const baseHumanDepth = isStanding ? 0.45 : 0.65; // Slightly shallower depth for better look
+              humanMaxZ = moveZ + extraLocalZ + baseHumanDepth;
+            }
 
-      return (
-        <group position={[zoneOffsetX, 0.05, zoneOffsetZ]} rotation={[-Math.PI / 2, 0, 0]}>
-          <Line
-            points={[
-              [-zoneLengthX / 2, operatorSideZ, 0],
-              [zoneLengthX / 2, operatorSideZ, 0],
-              [zoneLengthX / 2, machineSideZ, 0],
-              [-zoneLengthX / 2, machineSideZ, 0],
-              [-zoneLengthX / 2, operatorSideZ, 0],
-            ]}
-            color={(isSelected && isMoveMode) ? "#3b82f6" : "#ffff00"}
-            lineWidth={(isSelected && isMoveMode) ? 3 : 1.5}
-          />
-        </group>
-      );
-    })()
-  }
+            const maxPositiveZ = Math.max(zoneWidthZ / 2, humanMaxZ);
+            const operatorSideZ = -maxPositiveZ;
+            const machineSideZ = zoneWidthZ / 2;
+
+            return (
+              <group position={[zoneOffsetX, 0.05, zoneOffsetZ]} rotation={[-Math.PI / 2, 0, 0]}>
+                <Line
+                  points={[
+                    [zoneLengthX / 2, machineSideZ, 0],
+                    [zoneLengthX / 2, operatorSideZ, 0],
+                    [-zoneLengthX / 2, operatorSideZ, 0],
+                    [-zoneLengthX / 2, machineSideZ, 0],
+                  ]}
+                  color={(isSelected && isMoveMode) ? "#3b82f6" : "#ffff00"}
+                  lineWidth={(isSelected && isMoveMode) ? 3 : 1.5}
+                />
+              </group>
+            );
+          })()
+        )
+      }
     </group>
   );
 };

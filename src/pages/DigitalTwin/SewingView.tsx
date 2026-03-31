@@ -19,7 +19,6 @@ export const SewingView: React.FC<SewingViewProps> = ({
 }) => {
   return (
     <Scene3D
-      key={activeFloor + activeLine}
       showMachines={true}
       machines={activeMachines}
       sections={floorSections}

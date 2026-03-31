@@ -124,7 +124,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
         for (let i = 0; i < numLines; i++) {
             const lineNum = activeFloor === "Floor 1" ? i + 1 : i + 7;
             const lineVal = `Line ${lineNum}`;
-            if (activeLine !== "All Lines" && lineVal !== activeLine) continue;
+            // Removed activeLine filter from template generation to prevent store drift
 
             const zo = i * zStep;
             const machineX = 55.0;
@@ -284,11 +284,17 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
     const [editTool, setEditTool] = useState<"move" | "rotate" | "delete" | "add">("move");
 
     const displayMachines = useMemo(() => {
-        // If the store already has finishing machines for this view, use them
         const storeFinishing = machineLayout.filter(m => m.section === 'Finishing');
-        if (storeFinishing.length > 0) return storeFinishing;
-        return finishingMachines;
-    }, [machineLayout, finishingMachines]);
+        const machinesToUse = storeFinishing.length > 0 ? storeFinishing : finishingMachines;
+
+        // Apply line filter ONLY at the display layer, not the template layer
+        if (activeLine === "All Lines") return machinesToUse;
+        return machinesToUse.filter(m => {
+            const name = (m.operation.op_no || "").toString();
+            // Match line number if encoded in ID or OpNo, otherwise fallback to index-based line derivation
+            return m.id.includes(`l${activeLine.split(' ')[1]}-`) || (m as any).lineVal === activeLine;
+        });
+    }, [machineLayout, finishingMachines, activeLine]);
 
     // Sync store with default finishing machines when entering edit mode if empty
     useEffect(() => {
@@ -653,7 +659,6 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                 )}
 
                 <Scene3D
-                    key={"finishing" + activeFloor + activeLine}
                     showMachines={true}
                     machines={displayMachines}
                     sections={finishingSections}

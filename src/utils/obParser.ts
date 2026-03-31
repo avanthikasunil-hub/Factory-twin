@@ -5,14 +5,14 @@ import type { Operation, ColumnAliases } from '@/types';
 // Column aliases
 // ---------------------------------------------------------------------------
 const COLUMN_ALIASES = {
-  op_no: ['op no', 'op_no', 'op. no.', 'operation number', 'op id', 'id', 'sl', 'sl.', 's.l', 'no', 'seq', 'opseq', 'op seq'],
+  op_no: ['op no', 'op_no', 'op. no.', 'operation number', 'op id', 'id', 'sl', 'sl.', 's.l', 'no', 'seq', 'opseq', 'op seq', 'a', 'A'],
   op_name: [
     'operation', 'op name', 'op_name', 'operation name', 'op description', 'description',
-    'op_desc', 'operation_name', 'particulars', 'process', 'process name', 'opname', 'op name'
+    'op_desc', 'operation_name', 'particulars', 'process', 'process name', 'opname', 'op name', 'b', 'B'
   ],
   machine_type: [
     'machine', 'mc type', 'm/c type', 'machine type', 'mc_type', 'm/c', 'mc', 'machine_type',
-    'equipment', 'machinery', 'm/c name', 'mc name', 'machine name'
+    'equipment', 'machinery', 'm/c name', 'mc name', 'machine name', 'c', 'C'
   ],
   smv: [
     'smv', 'sam', 's m v', 's a m', 'standard_minute', 'std min', 'standard minute',
@@ -20,7 +20,7 @@ const COLUMN_ALIASES = {
     'allocated time', 'target time', 'estimated time', 'val', 'standard val',
     'smv total', 'total smv', 'work content', 'mins', 'min', 'pitch time', 'standard minutes',
     'standard value', 'std value', 'std.min', 'smv/pc', 'smv / pc', 'machine smv',
-    'target smv', 'm/c smv', 'manual smv', 'cycle_time', 'pitch_time', 'smv_total', 'total_smv'
+    'target smv', 'm/c smv', 'manual smv', 'cycle_time', 'pitch_time', 'smv_total', 'total_smv', 'd', 'D'
   ],
   section: ['section', 'sect', 'department', 'dept', 'area', 'zone', 'component', 'garment part'],
   tool_folder: ['tool/folder', 'tool', 'folder', 'attachment', 'guide', 'folder/tool'],
@@ -452,6 +452,7 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
       tool_folder: toolIndex >= 0 ? String(readCell(wsRow, toolIndex) ?? '').trim() : '',
       machinist_smv,
       non_machinist_smv,
+      seqIndex: wsRow, // v165: Use worksheet row as a unique, increasing sequence index
     };
 
     // Route: preparatory ops go to separate list; all others to main operations

@@ -16,10 +16,11 @@ import LinePlannerPage from "./pages/LinePlanner/LinePlannerPage";
 /* VIRTUAL LINE MODULE */
 import VirtualLineLayout from "./pages/VirtualLine/VirtualLineLayout";
 import VirtualLineOverview from "./pages/VirtualLine/VirtualLineOverview";
-import VirtualFloor from "./pages/VirtualLine/VirtualFloor";
+import VirtualFloorView from "./pages/VirtualLine/VirtualFloorView";
 import LineScheduleDetails from "./pages/VirtualLine/LineScheduleDetails";
 import CotTracker from "./pages/VirtualLine/CotTracker";
 import StyleOB from "./features/Cutting/StyleOB";
+import WarRoomPage from "./pages/VirtualLine/WarRoomPage";
 import { Navigate } from "react-router-dom";
 
 /* DIGITAL TWIN MODULE */
@@ -33,7 +34,7 @@ export default function App() {
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
 
             {/* HOME */}
@@ -47,12 +48,13 @@ export default function App() {
 
             {/* VIRTUAL LINE MODULE */}
             <Route path="/virtual-line" element={<VirtualLineLayout />}>
-              <Route index element={<Navigate to="overview" replace />} />
+              <Route index element={<VirtualLineOverview />} />
               <Route path="overview" element={<VirtualLineOverview />} />
-              <Route path="floor" element={<VirtualFloor />} />
+              <Route path="floor" element={<VirtualFloorView />} />
               <Route path="schedule" element={<LineScheduleDetails />} />
               <Route path="tracker" element={<CotTracker />} />
               <Route path="ob" element={<StyleOB />} />
+              <Route path="war-room" element={<WarRoomPage />} />
             </Route>
 
             {/* DIGITAL TWIN MODULE */}
