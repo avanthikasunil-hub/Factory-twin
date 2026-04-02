@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { useEffect } from "react";
 
 /* MAIN HOME */
 import HomeScreenPage from "./pages/HomeScreenPage";
@@ -29,6 +30,13 @@ import DigitalTwinPage from "./pages/DigitalTwin/DigitalTwinPage";
 const queryClient = new QueryClient();
 
 export default function App() {
+  // Wake up the backend on app load (prevents Render cold starts)
+  useEffect(() => {
+    fetch("https://factory-twin-2.onrender.com/ping").catch(() => {
+      // Slient fail - this is for server wakeup only
+    });
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
