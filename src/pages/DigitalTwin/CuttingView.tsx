@@ -4,6 +4,7 @@ import { SectionLayout, MachinePosition } from "@/types";
 import { useLineStore } from "@/store/useLineStore";
 import { Layout, Settings, Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { API_BASE_URL } from "@/config";
 
 const FT = 0.3048;
 const Z_LENGTH = 500;
@@ -157,7 +158,7 @@ export const CuttingView: React.FC = () => {
     // ── ON MOUNT: Load layout from the backend server (not localStorage) ──
     // This ensures the same layout is shown in ALL browsers, not just the one that made changes.
     useEffect(() => {
-        fetch('http://localhost:4000/api/cutting/get-layout')
+        fetch(`${API_BASE_URL}/api/cutting/get-layout`)
             .then(r => r.json())
             .then((savedLayout: any[]) => {
                 if (savedLayout && savedLayout.length > 0) {
@@ -217,7 +218,7 @@ export const CuttingView: React.FC = () => {
 
         if (cuttingMachines.length === 0) return;
 
-        fetch('http://localhost:4000/api/cutting/save-layout', {
+        fetch(`${API_BASE_URL}/api/cutting/save-layout`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(cuttingMachines),
@@ -288,7 +289,7 @@ export const CuttingView: React.FC = () => {
                                         (m.operation?.section && m.operation.section.toLowerCase().includes('cutting'))
                                     );
                                     try {
-                                        const res = await fetch('http://localhost:4000/api/cutting/save-layout', {
+                                        const res = await fetch(`${API_BASE_URL}/api/cutting/save-layout`, {
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify(cuttingMachines),

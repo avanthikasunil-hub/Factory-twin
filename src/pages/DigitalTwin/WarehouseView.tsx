@@ -11,6 +11,8 @@ import * as THREE from "three";
 import styled from "styled-components";
 import { Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLineStore } from "@/store/useLineStore";
+import { API_BASE_URL } from "@/config";
 
 const Wrapper = styled.div`
   width: 100%;
@@ -799,7 +801,7 @@ export const WarehouseView = () => {
   };
 
   useEffect(() => {
-    fetch("http://localhost:4000/api/warehouse/get-layout")
+    fetch(`${API_BASE_URL}/api/warehouse/get-layout`)
       .then(res => res.json())
       .then(data => {
         if (data && Array.isArray(data) && data.length > 0) {
@@ -860,7 +862,7 @@ export const WarehouseView = () => {
 
   const handleSave = async () => {
     try {
-      const res = await fetch("http://localhost:4000/api/warehouse/save-layout", {
+      const res = await fetch(`${API_BASE_URL}/api/warehouse/save-layout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(addedItems),

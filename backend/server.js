@@ -597,6 +597,7 @@ const LAYOUT_DIR = path.join(__dirname, "data");
 const CUTTING_LAYOUT_FILE = path.join(LAYOUT_DIR, "cutting_layout.json");
 const SEWING_LAYOUT_FILE = path.join(LAYOUT_DIR, "sewing_layout.json");
 const WAREHOUSE_LAYOUT_FILE = path.join(LAYOUT_DIR, "warehouse_layout.json");
+const FINISHING_LAYOUT_FILE = path.join(LAYOUT_DIR, "finishing_layout.json");
 
 // Ensure the data directory exists
 if (!fs.existsSync(LAYOUT_DIR)) {
@@ -640,6 +641,10 @@ app.post("/api/sewing/save-layout", (req, res) => writeLayout(SEWING_LAYOUT_FILE
 // Warehouse Routes
 app.get("/api/warehouse/get-layout", (req, res) => readLayout(WAREHOUSE_LAYOUT_FILE, res));
 app.post("/api/warehouse/save-layout", (req, res) => writeLayout(WAREHOUSE_LAYOUT_FILE, req, res, "Warehouse"));
+
+// Finishing Routes
+app.get("/api/finishing/get-layout", (req, res) => readLayout(FINISHING_LAYOUT_FILE, res));
+app.post("/api/finishing/save-layout", (req, res) => writeLayout(FINISHING_LAYOUT_FILE, req, res, "Finishing"));
 
 
 app.use(express.static(path.join(__dirname, "../dist")));

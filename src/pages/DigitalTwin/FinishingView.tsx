@@ -6,6 +6,7 @@ import { GarmentConveyor } from "@/components/3d/GarmentConveyor";
 import { Layout, Filter, Settings, ChevronDown, Edit2, Save, Play, CheckCircle, Search, Bell, Undo2, Redo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLineStore } from "@/store/useLineStore";
+import { API_BASE_URL } from "@/config";
 
 interface FinishingViewProps {
     activeFloor: string;
@@ -304,18 +305,52 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
         if (hasInitialized.current) return;
         hasInitialized.current = true;
 
-        // Use a timeout of 0 to let the component fully mount before reading store state
-        const timer = setTimeout(() => {
-            const currentLayout = useLineStore.getState().machineLayout;
-            const alreadyHasFinishing = currentLayout.some(m => m.section === 'Finishing');
-            if (!alreadyHasFinishing) {
+        const loadSaved = async () => {
+            try {
+                const r = await fetch(`${API_BASE_URL}/api/finishing/get-layout`);
+                const saved = await r.json();
+                
+                const currentLayout = useLineStore.getState().machineLayout;
+                const otherMachines = currentLayout.filter(m => m.section !== 'Finishing');
+                
+                if (saved && saved.length > 0) {
+                    const savedMap = new Map(saved.map((m: any) => [m.id, m]));
+                    const merged = finishingMachines.map(base => 
+                        savedMap.has(base.id) ? { ...base, ...(savedMap.get(base.id) as any) } : base
+                    );
+                    const baseIds = new Set(finishingMachines.map(m => m.id));
+                    saved.forEach((m: any) => { if (!baseIds.has(m.id)) merged.push(m); });
+                    setMachineLayout([...otherMachines, ...merged]);
+                } else {
+                    setMachineLayout([...otherMachines, ...finishingMachines]);
+                }
+            } catch (e) {
+                const currentLayout = useLineStore.getState().machineLayout;
                 const otherMachines = currentLayout.filter(m => m.section !== 'Finishing');
                 setMachineLayout([...otherMachines, ...finishingMachines]);
             }
-        }, 0);
+        };
+        loadSaved();
+    }, []);
 
-        return () => clearTimeout(timer);
-    }, []); // ✅ Empty deps: safe, refs guard against double-run
+    const handleSave = async () => {
+        const finishingToSave = machineLayout.filter(m => 
+            m.section === 'Finishing' || m.id.includes('finishing-')
+        );
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/finishing/save-layout`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(finishingToSave),
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(`✅ Finishing layout saved permanently! (${data.count} units)`);
+            }
+        } catch {
+            alert("❌ Could not reach server. Make sure the backend is running.");
+        }
+    };
 
     const finalCamera = useMemo(() => {
         if (activeLine === "All Lines") return { pos: cameraConfig.pos, fov: cameraConfig.fov };
@@ -462,7 +497,11 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                             {isEditMode ? "Exit" : "Modify Layout"}
                         </button>
                         {isEditMode && (
-                            <button className="flex items-center justify-center w-9 h-9 rounded-xl bg-emerald-600 text-white shadow-2xl shadow-emerald-600/30 animate-in fade-in zoom-in-75 hover:bg-emerald-500 transition-colors">
+                            <button 
+                                onClick={handleSave}
+                                className="flex items-center justify-center w-9 h-9 rounded-xl bg-emerald-600 text-white shadow-2xl shadow-emerald-600/30 animate-in fade-in zoom-in-75 hover:bg-emerald-500 transition-colors"
+                                title="Save Layout"
+                            >
                                 <Save size={16} />
                             </button>
                         )}

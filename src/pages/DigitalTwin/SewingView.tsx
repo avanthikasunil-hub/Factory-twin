@@ -4,6 +4,7 @@ import { MachinePosition, SectionLayout } from "@/types";
 import { useLineStore } from "@/store/useLineStore";
 import { Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { API_BASE_URL } from "@/config";
 
 interface SewingViewProps {
   activeFloor: string;
@@ -47,7 +48,7 @@ export const SewingView: React.FC<SewingViewProps> = ({
   const [loadedMachines, setLoadedMachines] = useState<MachinePosition[] | null>(null);
 
   useEffect(() => {
-    fetch("http://localhost:4000/api/sewing/get-layout")
+    fetch(`${API_BASE_URL}/api/sewing/get-layout`)
       .then(res => res.json())
       .then(data => {
         if (data && Array.isArray(data) && data.length > 0) {
@@ -103,7 +104,7 @@ export const SewingView: React.FC<SewingViewProps> = ({
       m.section === "Collar" || m.section === "Front" || m.section?.includes("Assembly")
     );
     try {
-      const res = await fetch("http://localhost:4000/api/sewing/save-layout", {
+      const res = await fetch(`${API_BASE_URL}/api/sewing/save-layout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sewingMachines),
