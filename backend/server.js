@@ -14,6 +14,11 @@ const fs = require("fs");
 app.use(cors());
 app.use(express.json());
 
+// Server health check route
+app.get("/ping", (req, res) => {
+  res.status(200).send("Server alive");
+});
+
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Microsoft Graph Credentials
