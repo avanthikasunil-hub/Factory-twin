@@ -248,7 +248,7 @@ const GarmentBundles = () => {
   );
 };
 
-export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine3DProps) => {
+const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machine3DProps) => {
   const rootRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
@@ -270,11 +270,15 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
     toggleMachineSelection,
     visibleSection,
     isMoveMode,
+    isRotateMode,
+    isDeleteMode,
     isDraggingActive,
     setDraggingActive,
     moveSelectedMachines,
     updateMachinesPositions,
-    updateMachineName
+    updateMachineName,
+    labelMachineId,
+    setLabelMachineId
   } = useLineStore();
 
   const [isEditingName, setIsEditingName] = useState(false);
@@ -298,13 +302,14 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
   // Handle centering logic once when model loads
   useLayoutEffect(() => {
-    const isSpecialMachine = mType === 'gerber' ||
-      mType === 'auto-spreader' ||
-      mType === 'manual-spreader' ||
-      mType.includes('fusing_custom') ||
-      mType.includes('cabin') ||
+    const isSpecialMachine = mType.includes('gerber') || 
+      mType.includes('spreader') || 
+      mType.includes('fusing_custom') || 
+      mType.includes('cabin') || 
       mType.includes('supervisor') ||
-      mType === 'human' ||
+      mType.includes('human') || 
+      mType.includes('conveyor') ||
+      mType.includes('garment') ||
       mType.startsWith('board');
 
     if (isSpecialMachine) {
@@ -314,7 +319,15 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
     }
 
     if (gltfScene && clonedScene) {
+      // 1. Initial State Sync
       gltfScene.updateMatrixWorld(true);
+      
+      // 2. Pre-calculation rotation for specific models to ensure grounding logic sees the right footprint
+      let isRotaryFusing = mType.includes('rotary') && !mType.includes('fusing_custom');
+      if (isRotaryFusing) {
+        clonedScene.rotation.y = -Math.PI / 2;
+      }
+
       const box = new THREE.Box3().setFromObject(gltfScene);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
@@ -329,7 +342,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
       const scaleFactor = type.includes('turning') ? 1.4 : 1.0;
 
       // Scaling logic - Swap length and width for rotary fusing to match internal rotation
-      const isRotaryFusing = mType.includes('rotary') && !mType.includes('fusing_custom');
+      isRotaryFusing = mType.includes('rotary') && !mType.includes('fusing_custom');
       const scaleX = size.x > 0.001 ? ((isRotaryFusing ? targetDims.width : targetDims.length) * scaleFactor) / size.x : 1;
       const scaleY = size.y > 0.001 ? (targetDims.height * scaleFactor) / size.y : 1;
       const scaleZ = size.z > 0.001 ? ((isRotaryFusing ? targetDims.length : targetDims.width) * scaleFactor) / size.z : 1;
@@ -338,16 +351,16 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
       if (machineData.centerModel) {
         // Enforce 0 internal rotation for layout consistency (90 deg from previous system)
-        clonedScene.rotation.y = mType.includes('fusing_custom') ? -Math.PI / 2 : 0;
+        if (!isRotaryFusing) {
+          clonedScene.rotation.y = mType.includes('fusing_custom') ? -Math.PI / 2 : 0;
+        }
 
         clonedScene.position.x = -center.x;
         clonedScene.position.z = -center.z;
       }
 
-      // Internal rotation for specific models - applied BEFORE grounding for accurate bounding box
-      if (mType.includes('rotary') && !mType.includes('fusing_custom')) {
-        clonedScene.rotation.y = -Math.PI / 2; // Rotate the GLB -90 degrees internally
-      }
+      // 3. Precise Grounding - Use the rotated scene to find the absolute lowest point
+      clonedScene.updateMatrixWorld(true);
 
       // Standard grounding - Snap internal position based on CLONED scene to be most accurate
       const finalBox = new THREE.Box3().setFromObject(clonedScene);
@@ -465,12 +478,12 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
       : (
         mType.includes('snls') || mType.includes('overlock') || mType.includes('fusing') ||
         mType.includes('iron') || mType.includes('press') || mType.includes('inspection') ||
-        mType.includes('bandknife') || mType.includes('cuttingf') || mType.includes('rotary') ||
+        mType.includes('bandknife') || mType.includes('rotary') ||
         mType.includes('folding') || mType.includes('macpi') || mType.includes('checking') ||
         mType.includes('thread') || mType.includes('spotwash') || mType.includes('finishing') ||
         mType.includes('helper')
       )
-  ) && !machineData.hideOperator && mType !== 'human' && !mType.includes('supermarket') && !mType.includes('cabin');
+  ) && !machineData.hideOperator && mType !== 'human' && !mType.includes('sitting-human') && !mType.includes('supermarket') && !mType.includes('cabin');
 
   const displayPos = relativePosition || machineData.position || { x: 0, y: 0, z: 0 };
 
@@ -577,18 +590,20 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
           </group>
         ) : mType.includes('cabin') || mType.includes('supervisor') ? (
           <Cabin3D width={targetDims.length} height={targetDims.height} depth={targetDims.width} />
+        ) : (mType.includes('conveyor') || mType.includes('garment')) ? (
+          <GarmentConveyor railLength={targetDims.length} railWidth={targetDims.width} />
         ) : mType === 'fusing_custom' ? (
           <FusingMachine
             L={machineData.tableLength || (targetDims.length / FT)}
             W={machineData.tableWidth || (targetDims.width / FT)}
             H={machineData.tableHeight || 5.0}
           />
-        ) : mType === 'human' ? (
+        ) : mType.includes('human') ? (
           <group position={[zoneOffsetX, 0, zoneOffsetZ]}>
             <HumanOperator
               id={machineData.id}
               rotation={0}
-              isStanding={true}
+              isStanding={!mType.includes('sitting')}
               isInspection={false}
             />
           </group>
@@ -596,6 +611,37 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
           <group position={[zoneOffsetX, 0, zoneOffsetZ]}>
             <primitive object={clonedScene} castShadow receiveShadow />
           </group>
+        )}
+
+        {/* Selected Movement Controls */}
+        {isSelected && isMoveMode && (
+          <PivotControls
+            anchor={[0, 0, 0]}
+            depthTest={false}
+            fixed={true}
+            scale={75}
+            activeAxes={[true, false, true]} // Constrain to floor (X and Z only)
+            onDrag={(matrix) => {
+              const position = new THREE.Vector3();
+              position.setFromMatrixPosition(matrix);
+              
+              // Visual feedback only during drag for performance
+              if (rootRef.current) {
+                rootRef.current.position.x = position.x;
+                rootRef.current.position.z = position.z;
+              }
+            }}
+            onDragEnd={() => {
+              if (rootRef.current) {
+                const newPos = {
+                  x: rootRef.current.position.x,
+                  y: machineData.position.y || 0,
+                  z: rootRef.current.position.z
+                };
+                useLineStore.getState().updateMachinePosition(machineData.id, newPos);
+              }
+            }}
+          />
         )}
 
         {/* Garment Bundles for Supermarket - Hidden in Overview for performance */}
@@ -619,11 +665,10 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
       {/* Info Label (Exclusive Visibility) */}
       {(() => {
-        const state = useLineStore.getState();
-        const labelMachineId = state.labelMachineId;
-        const isModifying = state.isMoveMode || state.isRotateMode || state.isDeleteMode || state.isDraggingActive || state.placingMachine;
-
-        const shouldShow = (labelMachineId === machineData.id || (hovered && !isOverview)) && !isModifying;
+        const isEditMode = isMoveMode || isRotateMode || isDeleteMode;
+        const isPlacing = !!useLineStore.getState().placingMachine;
+        const isModifying = isEditMode || isDraggingActive || isPlacing;
+        const shouldShow = (labelMachineId === machineData.id || hovered || isSelected) && !isModifying;
 
         const section = machineData?.section || "";
         const mTypeLower = (machineData?.operation?.machine_type || "default").toLowerCase();
@@ -657,34 +702,34 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
         ).length;
 
         return (
-          <Html position={[0, labelHeight, 0]} center style={{ pointerEvents: 'none' }}>
+          <Html position={[0, labelHeight, 0]} center style={{ pointerEvents: 'none', zIndex: 1000 }}>
             <AnimatePresence>
               {shouldShow && (
                 <motion.div
-                  initial={{ opacity: 0, y: 15, scale: 0.9 }}
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                  transition={{ type: 'spring', damping: 25, stiffness: 400 }}
+                  exit={{ opacity: 0, y: 5, scale: 0.98 }}
+                  transition={{ type: 'spring', damping: 30, stiffness: 150, mass: 0.8 }}
                   style={{
                     background: 'rgba(7, 7, 15, 0.95)',
                     border: '1px solid rgba(255, 255, 255, 0.15)',
-                    borderRadius: '16px',
-                    padding: '12px 16px',
-                    minWidth: '160px',
+                    borderRadius: '12px',
+                    padding: '8px 12px',
+                    minWidth: '140px',
                     boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
                     backdropFilter: 'blur(24px)',
-                    pointerEvents: 'auto',
+                    pointerEvents: isSelected ? 'auto' : 'none',
                     fontFamily: '"Outfit", system-ui, sans-serif',
                   }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '10px', fontWeight: 900, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '8px', fontWeight: 900, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
                       {mTypeLower.replace('_custom', '').replace('-', ' ')}
                     </span>
                   </div>
 
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#ffffff', lineHeight: 1.4, marginBottom: '8px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#ffffff', lineHeight: 1.4, marginBottom: '6px' }}>
                     {isEditingName ? (
                       <input
                         autoFocus
@@ -713,14 +758,10 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>SECTION</span>
-                      <span style={{ fontSize: '9px', color: '#fff', fontWeight: 700 }}>{section}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>POOL SIZE</span>
-                      <span style={{ fontSize: '10px', color: '#818cf8', fontWeight: 900 }}>{totalCount}</span>
+                      <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>SECTION</span>
+                      <span style={{ fontSize: '8px', color: '#fff', fontWeight: 700 }}>{section}</span>
                     </div>
                   </div>
                 </motion.div>
@@ -866,3 +907,5 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
     </group>
   );
 };
+
+export const Machine3D = React.memo(Machine3DInternal);

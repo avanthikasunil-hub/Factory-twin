@@ -246,18 +246,18 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                     }
 
                     arr.push({
-                        id: `finishing-spotwash-l${lineNum}`,
-                        operation: { op_no: `F-SWASH`, op_name: 'Spot Wash', machine_type: 'spotwash', smv: 0.5, section: 'Finishing' },
-                        position: { x: machineX + 10.8, z: centerZ + 3.1, y: 0 },
-                        rotation: { x: 0, y: -Math.PI / 2, z: 0 },
+                        id: `finishing-cabin-l${lineNum}`,
+                        operation: { op_no: `F-CABIN`, op_name: 'Supervisor Cabin', machine_type: 'Cabin', smv: 0, section: 'Finishing' },
+                        position: { x: machineX + 11.0, z: centerZ + 2.9, y: 0 },
+                        rotation: { x: 0, y: 0, z: 0 },
                         lane: 'B', section: 'Finishing', centerModel: true
                     } as any);
 
                     arr.push({
-                        id: `finishing-cabin-l${lineNum}`,
-                        operation: { op_no: `F-CABIN`, op_name: 'Supervisor Cabin', machine_type: 'Cabin', smv: 0, section: 'Finishing' },
-                        position: { x: machineX + 13.2, z: centerZ + 3.1, y: 0 },
-                        rotation: { x: 0, y: 0, z: 0 },
+                        id: `finishing-spotwash-l${lineNum}`,
+                        operation: { op_no: `F-SWASH`, op_name: 'Spot Wash', machine_type: 'spotwash', smv: 0.5, section: 'Finishing' },
+                        position: { x: machineX + 10.8, z: centerZ + 2.9, y: 0 },
+                        rotation: { x: 0, y: -Math.PI / 2, z: 0 },
                         lane: 'B', section: 'Finishing', centerModel: true
                     } as any);
 
@@ -366,10 +366,10 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
 
     const finalCamera = useMemo(() => {
         if (activeLine === "All Lines") return { pos: cameraConfig.pos, fov: cameraConfig.fov };
-        // Zoom in for individual lines
+        // Zoom in more for individual lines by narrowing the FOV further
         return {
-            pos: [cameraConfig.pos[0] + 5, cameraConfig.pos[1] - 8, cameraConfig.pos[2]],
-            fov: cameraConfig.fov - 12
+            pos: cameraConfig.pos,
+            fov: cameraConfig.fov - 15 
         };
     }, [activeLine, cameraConfig]);
 
@@ -580,6 +580,10 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                                             <option value="spotwash">Spot Wash</option>
                                             <option value="Thread">Thread Sucking</option>
                                             <option value="Inspection">EOL Inspection</option>
+                                        </optgroup>
+                                        <optgroup label="Labor Pool" className="bg-slate-900">
+                                            <option value="human">Standing Worker</option>
+                                            <option value="sitting-human">Sitting Worker</option>
                                         </optgroup>
                                         <optgroup label="Infrastructure" className="bg-slate-900">
                                             <option value="Supermarket">Supermarket Rack</option>

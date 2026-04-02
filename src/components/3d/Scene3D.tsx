@@ -39,6 +39,14 @@ const getSectionLabel = (section: SectionLayout): string | null => {
   label = label.replace(/undefined/gi, '').trim();
 
   if (!label) return null;
+  
+  // Specific fix for Assembly labeling - preserve Lane Numbers 1-4
+  if (label.toLowerCase().includes('assembly')) {
+    if (raw.toLowerCase().includes('ab')) return 'ASSEMBLY 1 & 2';
+    if (raw.toLowerCase().includes('cd')) return 'ASSEMBLY 3 & 4';
+    return 'ASSEMBLY';
+  }
+
   return label.toUpperCase();
 };
 
@@ -216,26 +224,40 @@ export const Scene3D = ({
                 {/* ── Yellow border ── */}
                 <WideBorder length={section.length} width={section.width} color="#facc15" />
 
+                {/* ── Section Label ── */}
+                {label && (
+                    <Text
+                      position={[0, 0.05, labelZOffset]}
+                      rotation={[-Math.PI / 2, 0, 0]}
+                      fontSize={0.8}
+                      color="#cbd5e1"
+                      anchorX="center"
+                      anchorY="middle"
+                      outlineWidth={0.04}
+                      outlineColor="#000"
+                      fillOpacity={1.0}
+                    >
+                      {label}
+                    </Text>
+                  )}
+
               </group>
             );
           })}
 
           {/* ── Machines ── */}
           {showMachines && (
-            <group>
-              {machineLayout.map((machine) => {
-                const isSelected = selectedMachines.includes(machine.id);
-                return (
-                  <Suspense key={`suspense-${machine.id}`} fallback={null}>
-                    <Machine3D 
-                        key={machine.id} 
-                        machineData={machine} 
-                        isOverview={isOverview} 
-                    />
-                  </Suspense>
-                );
-              })}
-            </group>
+            <Suspense fallback={null}>
+              <group>
+                {machineLayout.map((machine) => (
+                  <Machine3D 
+                      key={machine.id} 
+                      machineData={machine} 
+                      isOverview={isOverview} 
+                  />
+                ))}
+              </group>
+            </Suspense>
           )}
 
 

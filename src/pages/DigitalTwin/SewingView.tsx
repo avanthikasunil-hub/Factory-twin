@@ -222,7 +222,8 @@ export const SewingView: React.FC<SewingViewProps> = ({
                 <option value="Inspection">Inspection Table</option>
                 <option value="Helper Table">Helper Table</option>
                 <option value="supermarket">Supermarket</option>
-                <option value="human">Human Operator</option>
+                <option value="human">Standing Worker</option>
+                <option value="sitting-human">Sitting Worker</option>
               </select>
               <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
             </div>

@@ -47,7 +47,7 @@ export const CameraController = ({
     // 1. Move camera position smoothly if goal is set
     if (goalPos) {
       const targetVec = new THREE.Vector3(...goalPos);
-      pCamera.position.lerp(targetVec, delta * 2.5);
+      pCamera.position.lerp(targetVec, delta * 2.2);
       
       // Stop lerping when close enough
       if (pCamera.position.distanceTo(targetVec) < 0.1) {
@@ -57,14 +57,14 @@ export const CameraController = ({
 
     // 2. Adjust FOV smoothly
     if (pCamera.fov !== cameraFov) {
-        pCamera.fov = THREE.MathUtils.lerp(pCamera.fov, cameraFov, delta * 2.5);
+        pCamera.fov = THREE.MathUtils.lerp(pCamera.fov, cameraFov, delta * 2.2);
         pCamera.updateProjectionMatrix();
     }
 
     // 3. Move orbit target smoothly if goal is set
     if (controlsRef.current && goalTarget) {
       const targetVec = new THREE.Vector3(...goalTarget);
-      controlsRef.current.target.lerp(targetVec, delta * 3.5);
+      controlsRef.current.target.lerp(targetVec, delta * 2.5);
       controlsRef.current.update();
 
       // Stop lerping when close enough
@@ -79,10 +79,10 @@ export const CameraController = ({
       ref={controlsRef}
       makeDefault
       enableDamping
-      dampingFactor={0.1}
-      zoomSpeed={0.5}
-      rotateSpeed={1.0}
-      panSpeed={1.5}
+      dampingFactor={0.05}
+      zoomSpeed={0.6}
+      rotateSpeed={0.8}
+      panSpeed={1.0}
       minDistance={0.5}
       maxDistance={3000}
       maxPolarAngle={Math.PI / 2.2}

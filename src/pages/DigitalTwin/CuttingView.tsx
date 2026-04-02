@@ -371,7 +371,8 @@ export const CuttingView: React.FC = () => {
                                         <option value="auto-spreader">Auto Spreader</option>
                                         <option value="manual-spreader">Manual Spreader</option>
                                         <option value="straightknife">Straight Knife</option>
-                                        <option value="human">Human Operator</option>
+                                        <option value="human">Standing Worker</option>
+                                        <option value="sitting-human">Sitting Worker</option>
                                         <option value="bandknife">Bandknife</option>
                                         <option value="snls">SNLS Sewing Machine</option>
                                         <option value="iron">Iron Press</option>
