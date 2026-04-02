@@ -4,8 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Save, Factory, Eye, Activity, Target,
   Undo2, Redo2, Move, AlertCircle, X, ChevronDown, ChevronUp, Settings, Filter,
-  Users, Scissors, TrendingUp, Info, RefreshCw, Plus, Layers
+  Users, Scissors, TrendingUp, Info, RefreshCw, Plus, Layers, FileDown
 } from 'lucide-react';
+import { generateLinePDF } from '@/utils/pdfGenerator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -360,9 +361,17 @@ const LinePlannerPage = () => {
               <Move className="w-4 h-4" />
             </Button>
           </div>
-          <Button size="sm" onClick={handleSave} className="text-[13px] px-4 font-bold shadow-lg">
-            <Save className="w-4 h-4 mr-2" />SAVE PLAN
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => currentLine && generateLinePDF(currentLine)}
+              className="text-[13px] px-3 font-bold border-primary/30 hover:bg-primary/10 transition-all active:scale-95"
+            >
+              <FileDown className="w-4 h-4 mr-2" />PDF
+            </Button>
+            <Button size="sm" onClick={handleSave} className="text-[13px] px-4 font-bold shadow-lg">
+              <Save className="w-4 h-4 mr-2" />SAVE PLAN
+            </Button>
         </div>
       </header>
 

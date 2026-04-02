@@ -81,7 +81,8 @@ export const Scene3D = ({
   cameraPosition,
   cameraFov,
   target: targetOverride,
-  children
+  children,
+  hideLabels = false
 }: {
   showMachines?: boolean;
   machines?: MachinePosition[];
@@ -91,6 +92,7 @@ export const Scene3D = ({
   cameraFov?: number;
   target?: [number, number, number];
   children?: React.ReactNode;
+  hideLabels?: boolean;
 }) => {
   const {
     machineLayout: storeMachineLayout,
@@ -225,7 +227,7 @@ export const Scene3D = ({
                 <WideBorder length={section.length} width={section.width} color="#facc15" />
 
                 {/* ── Section Label ── */}
-                {label && (
+                {label && !hideLabels && (
                     <Text
                       position={[0, 0.05, labelZOffset]}
                       rotation={[-Math.PI / 2, 0, 0]}

@@ -867,9 +867,9 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
         })()
       }
 
-      {/* Ground Zone Area Border - RESTORED visibility for all modes */}
+      {/* Ground Zone Area Border - Skip for pure humans */}
       {
-        !(machineData as any).tableOnly && !(machineData as any).hideZone && (
+        !(machineData as any).tableOnly && !(machineData as any).hideZone && !mType.includes('human') && (
           (() => {
             let humanMaxZ = 0;
             if (needsOperator) {

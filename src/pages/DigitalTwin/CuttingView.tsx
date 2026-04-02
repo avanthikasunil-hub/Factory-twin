@@ -431,7 +431,7 @@ export const CuttingView: React.FC = () => {
                         </div>
                     </div>
                 )}
-                <Scene3D showMachines={true} machines={displayMachines} sections={cuttingZones} cameraPosition={[110, 100, 50]} target={[startX + (maxL * FT) / 2, 0, (z0Pos + z3Pos) / 2]} isOverview={true} />
+                <Scene3D showMachines={true} machines={displayMachines} sections={cuttingZones} cameraPosition={[110, 100, 50]} target={[startX + (maxL * FT) / 2, 0, (z0Pos + z3Pos) / 2]} isOverview={true} hideLabels={true} />
             </div>
         </div>
     );
