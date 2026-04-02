@@ -176,9 +176,12 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                     arr.push({
                         id: `finishing-checking-l${lineNum}`,
                         operation: { op_no: `F-CHECK-1`, op_name: 'Tag Attaching Area', machine_type: 'Checking', smv: 0.4, section: 'Finishing' },
-                        position: { x: tableFrontX + 3.1, z: centerZ - 2.2, y: 0 },
+                        position: { x: tableFrontX + 3.4, z: centerZ - 2.2, y: 0 },
                         rotation: { x: 0, y: 0, z: 0 },
-                        modelRotation: Math.PI * 1.5, lane: 'B', section: 'Finishing', centerModel: true
+                        modelRotation: Math.PI * 1.5,
+                        lane: 'B', section: 'Finishing', centerModel: true,
+                        rotateOperatorAxis: true,
+                        hideOperator: true
                     } as any);
 
                     arr.push({
@@ -243,18 +246,18 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                     }
 
                     arr.push({
-                        id: `finishing-cabin-l${lineNum}`,
-                        operation: { op_no: `F-CABIN`, op_name: 'Supervisor Cabin', machine_type: 'Cabin', smv: 0, section: 'Finishing' },
-                        position: { x: machineX + 11.0, z: centerZ + 2.9, y: 0 },
-                        rotation: { x: 0, y: 0, z: 0 },
+                        id: `finishing-spotwash-l${lineNum}`,
+                        operation: { op_no: `F-SWASH`, op_name: 'Spot Wash', machine_type: 'spotwash', smv: 0.5, section: 'Finishing' },
+                        position: { x: machineX + 10.8, z: centerZ + 3.1, y: 0 },
+                        rotation: { x: 0, y: -Math.PI / 2, z: 0 },
                         lane: 'B', section: 'Finishing', centerModel: true
                     } as any);
 
                     arr.push({
-                        id: `finishing-spotwash-l${lineNum}`,
-                        operation: { op_no: `F-SWASH`, op_name: 'Spot Wash', machine_type: 'spotwash', smv: 0.5, section: 'Finishing' },
-                        position: { x: machineX + 10.8, z: centerZ + 2.9, y: 0 },
-                        rotation: { x: 0, y: -Math.PI / 2, z: 0 },
+                        id: `finishing-cabin-l${lineNum}`,
+                        operation: { op_no: `F-CABIN`, op_name: 'Supervisor Cabin', machine_type: 'Cabin', smv: 0, section: 'Finishing' },
+                        position: { x: machineX + 13.2, z: centerZ + 3.1, y: 0 },
+                        rotation: { x: 0, y: 0, z: 0 },
                         lane: 'B', section: 'Finishing', centerModel: true
                     } as any);
 
@@ -285,15 +288,24 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
     const [editTool, setEditTool] = useState<"move" | "rotate" | "delete" | "add">("move");
 
     const displayMachines = useMemo(() => {
-        const storeFinishing = machineLayout.filter(m => m.section === 'Finishing');
+        const storeFinishing = machineLayout.filter(m => 
+            m.section === 'Finishing' || 
+            (m.operation?.section && m.operation.section.toLowerCase().includes('finishing')) ||
+            m.id.startsWith('finishing-')
+        );
         const machinesToUse = storeFinishing.length > 0 ? storeFinishing : finishingMachines;
 
-        // Apply line filter ONLY at the display layer, not the template layer
         if (activeLine === "All Lines") return machinesToUse;
-        // Match line number precisely (e.g. l1) but avoid partial matches (e.g. l1 in l10)
+        
         const lineNum = activeLine.split(' ')[1];
         const lineRegex = new RegExp(`l${lineNum}(\\-|$)`);
-        return machinesToUse.filter(m => lineRegex.test(m.id) || (m as any).lineVal === activeLine);
+        
+        // Match line-specific IDs, OR show all user-added machines (UUID-based) that don't have a line tag
+        return machinesToUse.filter(m => 
+            lineRegex.test(m.id) || 
+            (m as any).lineVal === activeLine ||
+            (!m.id.includes('-l') && !m.id.startsWith('finishing-folding-') && !m.id.startsWith('finishing-other-'))
+        );
     }, [machineLayout, finishingMachines, activeLine]);
 
     const hasInitialized = React.useRef(false);
@@ -510,28 +522,54 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
             </div>
 
             <div className="flex-1 w-full h-full relative">
-                {/* ADD MACHINE SELECTOR OVERLAY - FULL DROPDOWN VERSION */}
+                {/* FLOATING STATUS/DONE OVERLAY (MATCH CUTTING) */}
+                {(isEditMode && (editTool === 'move' || editTool === 'rotate' || editTool === 'delete')) && (
+                    <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-4 bg-slate-950/90 backdrop-blur-2xl px-6 py-3 rounded-2xl border border-violet-500/30 shadow-2xl animate-in slide-in-from-top-4">
+                        <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase text-violet-400 tracking-widest leading-none mb-1">
+                                {editTool === 'move' ? 'Moving' : editTool === 'rotate' ? 'Rotating' : 'Deleting'} Units
+                            </span>
+                            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest leading-none">
+                                {selectedMachines.length > 0 
+                                    ? `${selectedMachines.length} Selected: ${machineLayout.find(m => m.id === selectedMachines[0])?.operation?.op_name || 'Unit'}`
+                                    : 'Select a machine to begin'}
+                            </span>
+                        </div>
+                        <button 
+                            onClick={() => {
+                                setEditTool(null);
+                                setMoveMode(false);
+                                setRotateMode(false);
+                                setDeleteMode(false);
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
+                        >
+                            Done
+                        </button>
+                    </div>
+                )}
+
                 {(isEditMode && editTool === 'add') && (
                     <div className="absolute top-6 left-6 z-[70] w-72 glass-card p-4 rounded-3xl border border-violet-500/30 animate-in fade-in slide-in-from-left-4 backdrop-blur-3xl shadow-2xl bg-slate-950/80">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="w-6 h-6 rounded-lg bg-violet-600 flex items-center justify-center text-[10px] text-white">
-                                <Play className="rotate-270" size={12} />
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-lg bg-violet-600 flex items-center justify-center text-[10px] text-white"><Play className="rotate-270" size={12} /></div>
+                                <h3 className="text-[10px] font-black uppercase text-violet-400 tracking-[0.2em]">Add Finishing Unit</h3>
                             </div>
-                            <h3 className="text-[10px] font-black uppercase text-violet-400 tracking-[0.2em]">Add Production Unit</h3>
+                            <button 
+                                onClick={() => setEditTool(null)}
+                                className="text-muted-foreground hover:text-white text-[10px] font-bold uppercase transition-colors"
+                            >
+                                Done
+                            </button>
                         </div>
-
                         <div className="space-y-3">
-
-                            <div className="flex flex-col gap-1">
-                                <span className="text-[8px] font-bold text-muted-foreground ml-1 uppercase tracking-widest">Select Equipment Category</span>
+                            <div className="flex flex-col gap-1"><span className="text-[8px] font-bold text-muted-foreground ml-1 uppercase tracking-widest">Select Equipment Category</span>
                                 <div className="relative group">
-                                    <select
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-[10px] font-bold text-white appearance-none focus:outline-none focus:border-violet-500/50 transition-colors cursor-pointer"
-                                        value={selectedAddType}
-                                        onChange={(e) => {
-                                            setSelectedAddType(e.target.value);
-                                            setSelectedAddLabel(e.target.options[e.target.selectedIndex].text);
-                                        }}
+                                    <select 
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-[10px] font-bold text-white appearance-none focus:outline-none focus:border-violet-500/50 transition-colors cursor-pointer" 
+                                        value={selectedAddType} 
+                                        onChange={(e) => { setSelectedAddType(e.target.value); setSelectedAddLabel(e.target.options[e.target.selectedIndex].text); }}
                                     >
                                         <optgroup label="Industrial Machines" className="bg-slate-900">
                                             <option value="Iron">Ironing M/C</option>
@@ -543,170 +581,63 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                                             <option value="Thread">Thread Sucking</option>
                                             <option value="Inspection">EOL Inspection</option>
                                         </optgroup>
-                                        <optgroup label="Production Infrastructure" className="bg-slate-900">
+                                        <optgroup label="Infrastructure" className="bg-slate-900">
                                             <option value="Supermarket">Supermarket Rack</option>
-                                            <option value="Helper Table">Presentation Pressing</option>
                                             <option value="Helper Table">Checking Table</option>
                                             <option value="Checking">Tag Attaching Area</option>
                                             <option value="Helper Table">Packing Station</option>
                                         </optgroup>
-                                    </select>
-                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                                    </select><ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                                 </div>
                             </div>
-
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => {
-                                        if (placingMachine) {
-                                            setPlacingMachine(null);
-                                            return;
-                                        }
-
-                                        setPlacingMachine({
-                                            type: selectedAddType,
-                                            section: 'Finishing',
-                                            opName: selectedAddLabel
-                                        });
-                                    }}
-                                    className={cn(
-                                        "flex-1 py-3 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-[0.98]",
-                                        placingMachine
-                                            ? "bg-amber-600 hover:bg-amber-500 shadow-amber-600/20"
-                                            : "bg-violet-600 hover:bg-violet-500 shadow-violet-600/20"
-                                    )}
-                                >
-                                    {placingMachine ? "Cancel Placement" : "Place Equipment"}
-                                </button>
-                                {!placingMachine && (
-                                    <button
-                                        onClick={() => {
-                                            setEditTool('move');
-                                            setMoveMode(true);
-                                            setRotateMode(false);
-                                            setDeleteMode(false);
-                                        }}
-                                        className="px-4 py-3 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/5"
-                                    >
-                                        Done
-                                    </button>
-                                )}
-                            </div>
+                            <button onClick={() => { if (placingMachine) { setPlacingMachine(null); return; } setPlacingMachine({ type: selectedAddType, section: 'Finishing', opName: selectedAddLabel }); }} className={cn("w-full py-3 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-[0.98]", placingMachine ? "bg-amber-600 shadow-amber-600/20" : "bg-violet-600 shadow-violet-600/20")}>{placingMachine ? "Cancel Placement" : "Place Equipment"}</button>
                         </div>
                     </div>
                 )}
 
-                {/* MOVE MACHINE OVERLAY */}
                 {(isEditMode && editTool === 'move') && (
                     <div className="absolute top-6 left-6 z-[70] w-72 glass-card p-5 rounded-3xl border border-violet-500/30 animate-in fade-in slide-in-from-left-4 backdrop-blur-3xl shadow-2xl bg-slate-950/80">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="w-6 h-6 rounded-lg bg-violet-600 flex items-center justify-center text-[10px] text-white">
-                                <Edit2 size={12} />
+                        <div className="flex items-center gap-2 mb-4"><div className="w-6 h-6 rounded-lg bg-violet-600 flex items-center justify-center text-[10px] text-white"><Edit2 size={12} /></div><h3 className="text-[10px] font-black uppercase text-violet-400 tracking-[0.2em]">Move Industrial Units</h3></div>
+                        <div className="flex flex-col gap-2">
+                            <div className="px-3 py-3 bg-white/5 text-muted-foreground rounded-xl text-[10px] font-black uppercase tracking-widest text-center border border-white/5">
+                                {selectedMachines.length > 0
+                                    ? `Moving: ${machineLayout.find(m => m.id === selectedMachines[0])?.operation?.op_name || 'Selected Unit'}${selectedMachines.length > 1 ? ` + ${selectedMachines.length - 1} more` : ''}`
+                                    : 'Select Machines to Move'}
                             </div>
-                            <h3 className="text-[10px] font-black uppercase text-violet-400 tracking-[0.2em]">Move Production Units</h3>
-                        </div>
-
-                        <div className="flex flex-col gap-3">
-                            <div className="flex items-center gap-2">
-                                <div className="flex-1 px-3 py-3 bg-white/5 text-muted-foreground rounded-xl text-[10px] font-black uppercase tracking-widest text-center border border-white/5">
-                                    {selectedMachines.length > 0 ? `Selected Units (${selectedMachines.length})` : 'Select Machines'}
-                                </div>
-
-                                <button
-                                    onClick={() => {
-                                        setIsEditMode(false);
-                                        setEditTool(null);
-                                        setMoveMode(false);
-                                        setDraggingActive(false);
-                                        setMoveGizmoVisible(false);
-                                    }}
-                                    className="px-4 py-3 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/5"
-                                >
-                                    Done
-                                </button>
-                            </div>
+                            {selectedMachines.length > 0 && (
+                                <button onClick={() => useLineStore.getState().setSelectedMachine(null)} className="w-full py-2 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-[9px] font-black uppercase tracking-widest hover:text-white hover:bg-emerald-600/30 transition-all">Done / Deselect</button>
+                            )}
                         </div>
                     </div>
                 )}
 
-                {/* ROTATE MACHINE OVERLAY */}
                 {(isEditMode && editTool === 'rotate') && (
                     <div className="absolute top-6 left-6 z-[70] w-72 glass-card p-5 rounded-3xl border border-violet-500/30 animate-in fade-in slide-in-from-left-4 backdrop-blur-3xl shadow-2xl bg-slate-950/80">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="w-6 h-6 rounded-lg bg-violet-600 flex items-center justify-center text-[10px] text-white">
-                                <Play className="rotate-90" size={12} />
+                        <div className="flex items-center gap-2 mb-4"><div className="w-6 h-6 rounded-lg bg-violet-600 flex items-center justify-center text-[10px] text-white"><Play className="rotate-90" size={12} /></div><h3 className="text-[10px] font-black uppercase text-violet-400 tracking-[0.2em]">Rotate Equipment</h3></div>
+                        <div className="flex flex-col gap-3">
+                            <div className="px-3 py-2 bg-white/5 text-muted-foreground rounded-xl text-[9px] font-black uppercase tracking-widest text-center">
+                                {selectedMachines.length > 0
+                                    ? `Rotate: ${machineLayout.find(m => m.id === selectedMachines[0])?.operation?.op_name || 'Selected'}`
+                                    : 'Select Machine'}
                             </div>
-                            <h3 className="text-[10px] font-black uppercase text-violet-400 tracking-[0.2em]">Rotate Production Units</h3>
-                        </div>
-
-                        <div className="space-y-4">
-
-                            <div className="flex items-center gap-2">
-                                {selectedMachines.length > 0 ? (
-                                    <button
-                                        onClick={() => rotateSelectedMachines(Math.PI / 2)}
-                                        className="flex-1 py-3 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-violet-600/20 active:scale-[0.98]"
-                                    >
-                                        Rotate 90° ({selectedMachines.length})
-                                    </button>
-                                ) : (
-                                    <div className="flex-1 py-3 bg-white/5 text-muted-foreground rounded-xl text-[10px] font-black uppercase tracking-widest text-center border border-white/5">
-                                        Select Units
-                                    </div>
-                                )}
-                                <button
-                                    onClick={() => {
-                                        setEditTool('move');
-                                        setMoveMode(true);
-                                        setRotateMode(false);
-                                        setDeleteMode(false);
-                                    }}
-                                    className="px-4 py-3 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/5"
-                                >
-                                    Done
-                                </button>
-                            </div>
+                            <button onClick={() => rotateSelectedMachines(Math.PI / 2)} disabled={selectedMachines.length === 0} className={cn("w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-[0.98]", selectedMachines.length > 0 ? "bg-violet-600 text-white shadow-violet-600/20" : "bg-white/5 text-muted-foreground")}>Rotate 90°</button>
+                            {selectedMachines.length > 0 && (
+                                <button onClick={() => useLineStore.getState().setSelectedMachine(null)} className="w-full py-2 text-muted-foreground text-[8px] font-black uppercase tracking-widest hover:text-white transition-all">Done</button>
+                            )}
                         </div>
                     </div>
                 )}
 
-                {/* DELETE MACHINE OVERLAY */}
                 {(isEditMode && editTool === 'delete') && (
                     <div className="absolute top-6 left-6 z-[70] w-72 glass-card p-5 rounded-3xl border border-red-500/30 animate-in fade-in slide-in-from-left-4 backdrop-blur-3xl shadow-2xl bg-slate-950/80">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="w-6 h-6 rounded-lg bg-red-600 flex items-center justify-center text-[10px] text-white">
-                                <CheckCircle size={12} />
+                        <div className="flex items-center gap-2 mb-4"><div className="w-6 h-6 rounded-lg bg-red-600 flex items-center justify-center text-[10px] text-white"><CheckCircle size={12} /></div><h3 className="text-[10px] font-black uppercase text-red-400 tracking-[0.2em]">Delete Equipment</h3></div>
+                        <div className="flex flex-col gap-3">
+                            <div className="px-3 py-2 bg-red-500/5 text-red-400/80 rounded-xl text-[9px] font-black uppercase tracking-widest text-center border border-red-500/10">
+                                {selectedMachines.length > 0
+                                    ? `Delete: ${machineLayout.find(m => m.id === selectedMachines[0])?.operation?.op_name || 'Selection'}`
+                                    : 'Select Machine'}
                             </div>
-                            <h3 className="text-[10px] font-black uppercase text-red-400 tracking-[0.2em]">Delete Production Units</h3>
-                        </div>
-
-                        <div className="space-y-4">
-
-                            <div className="flex items-center gap-2">
-                                {selectedMachines.length > 0 ? (
-                                    <button
-                                        onClick={deleteSelectedMachines}
-                                        className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-600/20 active:scale-[0.98]"
-                                    >
-                                        Delete {selectedMachines.length} Unit{selectedMachines.length > 1 ? 's' : ''}
-                                    </button>
-                                ) : (
-                                    <div className="flex-1 py-3 bg-white/5 text-muted-foreground rounded-xl text-[10px] font-black uppercase tracking-widest text-center border border-white/5">
-                                        Select Units
-                                    </div>
-                                )}
-                                <button
-                                    onClick={() => {
-                                        setEditTool('move');
-                                        setMoveMode(true);
-                                        setRotateMode(false);
-                                        setDeleteMode(false);
-                                    }}
-                                    className="px-4 py-3 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/5"
-                                >
-                                    Done
-                                </button>
-                            </div>
+                            <button onClick={deleteSelectedMachines} disabled={selectedMachines.length === 0} className={cn("w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-[0.98]", selectedMachines.length > 0 ? "bg-red-600 text-white shadow-red-600/20" : "bg-white/5 text-muted-foreground")}>Confirm Delete</button>
                         </div>
                     </div>
                 )}

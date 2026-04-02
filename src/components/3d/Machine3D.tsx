@@ -160,7 +160,7 @@ const getTargetDimensionsMeters = (type: string, data?: any) => {
     l = 4.72 * FT; w = 4 * FT; h = 5 * FT;
   } else if (t.includes('iron') || t.includes('press')) {
     l = 4.0 * FT; w = 3.0 * FT; h = 4.0 * FT;
-  } else if (t.includes('inspection') || t.includes('checking')) {
+  } else if (t.includes('inspection')) {
     l = 5.0 * FT; w = 4.0 * FT; h = 6.5 * FT;
   } else if (t.includes('helper') || t.includes('work table') || t.includes('table') || t.includes('trolley')) {
     l = 4.5 * FT; w = 2.5 * FT; h = 2.2 * FT;
@@ -180,7 +180,7 @@ const getTargetDimensionsMeters = (type: string, data?: any) => {
     l = 6
       * FT; w = 3.0 * FT; h = 5.0 * FT;
   } else if (t.includes('checking')) {
-    l = 4.0 * FT; w = 4 * FT; h = 4.5 * FT;
+    l = 3.0 * FT; w = 4 * FT; h = 4.5 * FT;
   } else if (t.includes('thread')) {
     l = 3 * FT; w = 3.7 * FT; h = 4 * FT;
   } else if (t.includes('folding')) {
@@ -257,7 +257,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
   const mType = (machineData?.operation?.machine_type || 'default').toLowerCase();
   const targetDims = getTargetDimensionsMeters(mType, machineData);
   const modelUrl = getModelUrl(mType);
-  
+
   const initialScale = useMemo(() => {
     if (mType.includes('fusing_custom')) return [1, 1, 1] as [number, number, number];
     return [1, 1, 1] as [number, number, number];
@@ -265,14 +265,14 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
   const [computedScale, setComputedScale] = useState<[number, number, number]>(initialScale);
 
-  const { 
-    selectedMachines, 
-    toggleMachineSelection, 
-    visibleSection, 
-    isMoveMode, 
+  const {
+    selectedMachines,
+    toggleMachineSelection,
+    visibleSection,
+    isMoveMode,
     isDraggingActive,
-    setDraggingActive, 
-    moveSelectedMachines, 
+    setDraggingActive,
+    moveSelectedMachines,
     updateMachinesPositions,
     updateMachineName
   } = useLineStore();
@@ -298,14 +298,14 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
   // Handle centering logic once when model loads
   useLayoutEffect(() => {
-    const isSpecialMachine = mType === 'gerber' || 
-                            mType === 'auto-spreader' || 
-                            mType === 'manual-spreader' || 
-                            mType.includes('fusing_custom') || 
-                            mType.includes('cabin') || 
-                            mType.includes('supervisor') ||
-                            mType === 'human' ||
-                            mType.startsWith('board');
+    const isSpecialMachine = mType === 'gerber' ||
+      mType === 'auto-spreader' ||
+      mType === 'manual-spreader' ||
+      mType.includes('fusing_custom') ||
+      mType.includes('cabin') ||
+      mType.includes('supervisor') ||
+      mType === 'human' ||
+      mType.startsWith('board');
 
     if (isSpecialMachine) {
       setComputedScale([1, 1, 1]); // Reset scaling for precision-built / coded models
@@ -398,35 +398,35 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
     // 1. Precise Tracking for Active Dragging (Absolute Zero Lag)
     if (isSelected && isDraggingActive && (window as any)._activeDragMatrix) {
-       const matrix = (window as any)._activeDragMatrix as THREE.Matrix4;
-       const translation = new THREE.Vector3();
-       const orientation = new THREE.Quaternion();
-       const scl = new THREE.Vector3();
-       matrix.decompose(translation, orientation, scl);
+      const matrix = (window as any)._activeDragMatrix as THREE.Matrix4;
+      const translation = new THREE.Vector3();
+      const orientation = new THREE.Quaternion();
+      const scl = new THREE.Vector3();
+      matrix.decompose(translation, orientation, scl);
 
-       const initialPos = (window as any)._initialPositions?.[machineData.id] || targetPos;
-       
-       rootRef.current.position.x = initialPos.x + translation.x;
-       rootRef.current.position.y = initialPos.y;
-       rootRef.current.position.z = initialPos.z + translation.z;
-       positionInitialized.current = true;
+      const initialPos = (window as any)._initialPositions?.[machineData.id] || targetPos;
+
+      rootRef.current.position.x = initialPos.x + translation.x;
+      rootRef.current.position.y = initialPos.y;
+      rootRef.current.position.z = initialPos.z + translation.z;
+      positionInitialized.current = true;
     } else {
-       // 2. SNAP on first render — never lerp from (0,0,0) to real position
-       //    Only smooth-lerp when store updates position during an edit session
-       if (!positionInitialized.current) {
-         rootRef.current.position.set(targetPos.x, 0, targetPos.z);
-         positionInitialized.current = true;
-       } else if (isDraggingActive) {
-         // Smooth lerp ONLY when user is actively dragging (edit mode)
-         // Clamp to [0,1] to prevent overshoot when frames drop
-         const lerpFactor = Math.min(delta * 20, 1.0);
-         rootRef.current.position.x = THREE.MathUtils.lerp(rootRef.current.position.x, targetPos.x, lerpFactor);
-         rootRef.current.position.y = 0;
-         rootRef.current.position.z = THREE.MathUtils.lerp(rootRef.current.position.z, targetPos.z, lerpFactor);
-       } else {
-         // Snap to exact position when not dragging — eliminates all drift
-         rootRef.current.position.set(targetPos.x, 0, targetPos.z);
-       }
+      // 2. SNAP on first render — never lerp from (0,0,0) to real position
+      //    Only smooth-lerp when store updates position during an edit session
+      if (!positionInitialized.current) {
+        rootRef.current.position.set(targetPos.x, 0, targetPos.z);
+        positionInitialized.current = true;
+      } else if (isDraggingActive) {
+        // Smooth lerp ONLY when user is actively dragging (edit mode)
+        // Clamp to [0,1] to prevent overshoot when frames drop
+        const lerpFactor = Math.min(delta * 20, 1.0);
+        rootRef.current.position.x = THREE.MathUtils.lerp(rootRef.current.position.x, targetPos.x, lerpFactor);
+        rootRef.current.position.y = 0;
+        rootRef.current.position.z = THREE.MathUtils.lerp(rootRef.current.position.z, targetPos.z, lerpFactor);
+      } else {
+        // Snap to exact position when not dragging — eliminates all drift
+        rootRef.current.position.set(targetPos.x, 0, targetPos.z);
+      }
     }
 
     // 3. Hover Effect (Smooth Floating Transition)
@@ -460,16 +460,16 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
   // Only show the internal, non-modifiable operator if hideOperator is NOT set.
   // This allows cutting-zone machines to use separate, modifiable human entities.
   const needsOperator = (
-    machineData.showOperator !== undefined 
-      ? machineData.showOperator 
+    machineData.showOperator !== undefined
+      ? machineData.showOperator
       : (
-          mType.includes('snls') || mType.includes('overlock') || mType.includes('fusing') || 
-          mType.includes('iron') || mType.includes('press') || mType.includes('inspection') || 
-          mType.includes('bandknife') || mType.includes('cuttingf') || mType.includes('rotary') ||
-          mType.includes('folding') || mType.includes('macpi') || mType.includes('checking') ||
-          mType.includes('thread') || mType.includes('spotwash') || mType.includes('finishing') ||
-          mType.includes('helper')
-        )
+        mType.includes('snls') || mType.includes('overlock') || mType.includes('fusing') ||
+        mType.includes('iron') || mType.includes('press') || mType.includes('inspection') ||
+        mType.includes('bandknife') || mType.includes('cuttingf') || mType.includes('rotary') ||
+        mType.includes('folding') || mType.includes('macpi') || mType.includes('checking') ||
+        mType.includes('thread') || mType.includes('spotwash') || mType.includes('finishing') ||
+        mType.includes('helper')
+      )
   ) && !machineData.hideOperator && mType !== 'human' && !mType.includes('supermarket') && !mType.includes('cabin');
 
   const displayPos = relativePosition || machineData.position || { x: 0, y: 0, z: 0 };
@@ -622,9 +622,9 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
         const state = useLineStore.getState();
         const labelMachineId = state.labelMachineId;
         const isModifying = state.isMoveMode || state.isRotateMode || state.isDeleteMode || state.isDraggingActive || state.placingMachine;
-        
+
         const shouldShow = (labelMachineId === machineData.id || (hovered && !isOverview)) && !isModifying;
-        
+
         const section = machineData?.section || "";
         const mTypeLower = (machineData?.operation?.machine_type || "default").toLowerCase();
         const opNameLabel = (machineData?.operation?.op_name || "").toLowerCase();
@@ -632,7 +632,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
         // 1. Resolve Display Name
         let name = machineData.operation?.op_name;
         const isGeneric = !name || name === "Unknown" || name === "default" || name === machineData.operation?.machine_type;
-        
+
         if (isGeneric) {
           if (mTypeLower === 'gerber') name = opNameLabel.includes('table') ? "Spreading Table" : "Autocutter";
           else if (mTypeLower === 'auto-spreader') name = "Autospreader";
@@ -651,7 +651,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
         const isAssembly = section.toLowerCase().includes('assembly');
         const machineLayout = useLineStore.getState().machineLayout;
-        const totalCount = machineLayout.filter(m => 
+        const totalCount = machineLayout.filter(m =>
           (m.operation?.op_name || "").trim().toLowerCase() === (machineData.operation?.op_name || "").toLowerCase() &&
           (isAssembly ? (m.section || "").toLowerCase().includes('assembly') : (m.section || "") === section)
         ).length;
@@ -683,7 +683,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
                       {mTypeLower.replace('_custom', '').replace('-', ' ')}
                     </span>
                   </div>
-                  
+
                   <div style={{ fontSize: '14px', fontWeight: 700, color: '#ffffff', lineHeight: 1.4, marginBottom: '8px' }}>
                     {isEditingName ? (
                       <input
@@ -705,7 +705,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
                         {isSelected && (
                           <button onClick={(e) => { e.stopPropagation(); setIsEditingName(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                             </svg>
                           </button>
                         )}
@@ -749,7 +749,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
           const isInspection = mType.includes('inspection');
 
           // Standard offset for someone standing/sitting at a machine (industrial man-allowance)
-          const isFusing = mType.includes('fusing') || mType.includes('rotary'); 
+          const isFusing = mType.includes('fusing') || mType.includes('rotary');
           const isSpreading = mType.includes('gerber') || mType.includes('auto-spreader');
 
           // For Fusing, the operator stands on the aisle side (Positive Z if rotation is 0)
@@ -771,6 +771,16 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
             if (isRotated90) { extraLocalZ = 0.4; } else { extraLocalX = 0.4; }
           } else if (isSpreading) {
             extraLocalZ = machineHalfW + 0.3; // Offset for spreading table workers
+          } else if (mType.includes('checking')) {
+            // For checking, stand at the edge of whichever side is designated as the front
+            // Adjusted "just forward" based on physical floor scan
+            if (machineData.rotateOperatorAxis) {
+                extraLocalX = (targetDims.length / 2) + 0.2; // Moving "Forward"
+                extraLocalZ = 0; // Centered
+            } else {
+                extraLocalZ = (targetDims.width / 2) + 0.2;
+                extraLocalX = 0;
+            }
           }
 
           if (machineData.operatorOnFarSide) {
@@ -785,13 +795,13 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
           // Compute final internal rotation for the human
           let humanRotation = machineData.operatorOnFarSide ? Math.PI : 0;
-          
+
           // Use either the explicit rotationOffset OR the automatic axis rotation, but avoid doubling them 
           // if they represent the same visual intent (facing the machine).
           if (machineData.rotationOffset !== undefined) {
-             humanRotation += machineData.rotationOffset;
+            humanRotation += machineData.rotationOffset;
           } else if (machineData.rotateOperatorAxis) {
-             humanRotation += Math.PI / 2;
+            humanRotation += Math.PI / 2;
           }
 
           return (
@@ -826,7 +836,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
               const operatorOffsetZ = isRotated90 ? -0.25 : 0;
               const moveZ = Math.cos(machineData.rotation.y) * operatorOffsetZ;
               const extraLocalZ = mType.includes('inspection') ? 0.25 : 0;
-              const isStanding = mType.includes('inspection') || mType.includes('iron') || mType.includes('press') || mType.includes('fusing') || mType.includes('rotary') || mType.includes('helper') || mType.includes('table');
+              const isStanding = mType.includes('inspection') || mType.includes('iron') || mType.includes('press') || mType.includes('fusing') || mType.includes('rotary') || mType.includes('helper') || mType.includes('table') || mType.includes('checking');
               const baseHumanDepth = isStanding ? 0.45 : 0.65; // Slightly shallower depth for better look
               humanMaxZ = moveZ + extraLocalZ + baseHumanDepth;
             }
