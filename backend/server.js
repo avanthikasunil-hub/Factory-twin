@@ -10,6 +10,7 @@ const url = require("url");
 const path = require("path");
 
 const app = express();
+const fs = require("fs");
 app.use(cors());
 app.use(express.json());
 
@@ -137,8 +138,8 @@ function extractBuyerFromHeader(sheetData) {
 const COLUMN_ALIASES = {
   op_no: ['op no', 'op_no', 'op. no.', 'operation number', 'op id', 'id', 'sl', 'sl.', 's.l', 'no', 'seq', 'opseq', 'op seq', 'a', 'A'],
   op_name: [
-    'operation', 'op name', 'op_name', 'operation name', 'op description', 'description',
-    'op_desc', 'operation_name', 'particulars', 'process', 'process name', 'opname', 'b', 'B'
+    'operation', 'operations', 'op name', 'op_name', 'operation name', 'op description', 'description',
+    'op_desc', 'operation_name', 'particulars', 'process', 'process name', 'opname', 'task', 'task name', 'element', 'b', 'B', 'c', 'C'
   ],
   machine_type: [
     'machine', 'mc type', 'm/c type', 'machine type', 'mc_type', 'm/c', 'mc', 'machine_type',
@@ -590,6 +591,56 @@ app.get("/styles-by-oc", async (req, res) => {
   });
   res.json(Array.from(styles));
 });
+
+// --- Layout Persistence ---
+const LAYOUT_DIR = path.join(__dirname, "data");
+const CUTTING_LAYOUT_FILE = path.join(LAYOUT_DIR, "cutting_layout.json");
+const SEWING_LAYOUT_FILE = path.join(LAYOUT_DIR, "sewing_layout.json");
+const WAREHOUSE_LAYOUT_FILE = path.join(LAYOUT_DIR, "warehouse_layout.json");
+
+// Ensure the data directory exists
+if (!fs.existsSync(LAYOUT_DIR)) {
+  fs.mkdirSync(LAYOUT_DIR, { recursive: true });
+}
+
+// Helpers for generic read/write
+const readLayout = (file, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  if (fs.existsSync(file)) {
+    try {
+      const data = fs.readFileSync(file, "utf-8");
+      return res.json(JSON.parse(data));
+    } catch (e) {
+      return res.json([]);
+    }
+  }
+  res.json([]);
+};
+
+const writeLayout = (file, req, res, name) => {
+  const layout = req.body;
+  try {
+    fs.writeFileSync(file, JSON.stringify(layout, null, 2));
+    console.log(`[${name}] Layout saved: ${layout.length} items → ${file}`);
+    res.json({ success: true, count: layout.length });
+  } catch (err) {
+    console.error(`[${name}] Save layout error:`, err);
+    res.status(500).json({ error: "Failed to write layout file" });
+  }
+};
+
+// Cutting Routes
+app.get("/api/cutting/get-layout", (req, res) => readLayout(CUTTING_LAYOUT_FILE, res));
+app.post("/api/cutting/save-layout", (req, res) => writeLayout(CUTTING_LAYOUT_FILE, req, res, "Cutting"));
+
+// Sewing Routes
+app.get("/api/sewing/get-layout", (req, res) => readLayout(SEWING_LAYOUT_FILE, res));
+app.post("/api/sewing/save-layout", (req, res) => writeLayout(SEWING_LAYOUT_FILE, req, res, "Sewing"));
+
+// Warehouse Routes
+app.get("/api/warehouse/get-layout", (req, res) => readLayout(WAREHOUSE_LAYOUT_FILE, res));
+app.post("/api/warehouse/save-layout", (req, res) => writeLayout(WAREHOUSE_LAYOUT_FILE, req, res, "Warehouse"));
+
 
 app.use(express.static(path.join(__dirname, "../dist")));
 

@@ -1,13 +1,16 @@
-import React, { Suspense, useMemo, useState, useRef } from "react";
+import React, { Suspense, useMemo, useState, useRef, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import {
   OrbitControls,
   Environment,
   useTexture,
   useCursor,
+  PivotControls
 } from "@react-three/drei";
 import * as THREE from "three";
 import styled from "styled-components";
+import { Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const Wrapper = styled.div`
   width: 100%;
@@ -734,8 +737,119 @@ const QRScannerStation = ({ position, rotation = [0, 0, 0], scale = [1, 1, 1] }:
   );
 };
 
+/* ───── 3.5. DRAGGABLE WRAPPER ───── */
+const DraggableWarehouseItem = ({ item, isSelected, editTool, onSelect, onMove, onRotate, onDelete, children }: any) => {
+  return (
+    <group 
+      position={item.position} 
+      rotation={item.rotation || [0,0,0]} 
+      onClick={(e) => { 
+        e.stopPropagation(); 
+        if (editTool === 'delete') onDelete(item.id); 
+        else onSelect(item.id); 
+      }}
+    >
+      {isSelected && (editTool === 'move' || editTool === 'rotate') ? (
+        <PivotControls
+          disableRotations={editTool !== 'rotate'}
+          disableAxes={editTool !== 'move'}
+          disableSliders={true}
+          scale={7}
+          depthTest={false}
+          autoTransform={false}
+          onDrag={(l, deltaL, w, deltaW) => {
+             const position = new THREE.Vector3();
+             const quaternion = new THREE.Quaternion();
+             const scale = new THREE.Vector3();
+             w.decompose(position, quaternion, scale);
+             const euler = new THREE.Euler().setFromQuaternion(quaternion);
+             if (editTool === 'move') {
+               onMove(item.id, [position.x, 0, position.z]);
+             } else if (editTool === 'rotate') {
+               onRotate(item.id, [0, euler.y, 0]);
+             }
+          }}
+        >
+          {children}
+        </PivotControls>
+      ) : children}
+    </group>
+  );
+};
+
 /* ───── 4. MAIN VIEW ───── */
 export const WarehouseView = () => {
+  const [isLayoutMode, setIsLayoutMode] = useState(false);
+  const [editTool, setEditTool] = useState<"move" | "rotate" | "delete" | "add">("move");
+  const [selectedAddType, setSelectedAddType] = useState("rack");
+  const [selectedAddLabel, setSelectedAddLabel] = useState("Rack");
+  const [placingItem, setPlacingItem] = useState(false);
+  const [addedItems, setAddedItems] = useState<any[]>([]);
+  const [selectedItem, setSelectedItem] = useState<string | null>(null);
+
+  // Local Undo/Redo tracking for Warehouse
+  const [history, setHistory] = useState<any[][]>([[]]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  const pushHistory = (newItems: any[]) => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(newItems);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  };
+
+  useEffect(() => {
+    fetch("http://localhost:4000/api/warehouse/get-layout")
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data) && data.length > 0) {
+          setAddedItems(data);
+          setHistory([data]);
+        }
+      })
+      .catch(e => console.error("Could not load warehouse layout:", e));
+  }, []);
+
+  const undo = () => { if (historyIndex > 0) { setHistoryIndex(historyIndex - 1); setAddedItems(history[historyIndex - 1]); setSelectedItem(null); } };
+  const redo = () => { if (historyIndex < history.length - 1) { setHistoryIndex(historyIndex + 1); setAddedItems(history[historyIndex + 1]); setSelectedItem(null); } };
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
+
+  const handlePointerDownFloor = (e: any) => {
+    if (isLayoutMode && placingItem && editTool === 'add') {
+      e.stopPropagation();
+      const newItems = [...addedItems, {
+        id: `added-${Date.now()}`,
+        type: selectedAddType,
+        position: [e.point.x, 0, e.point.z],
+        rotation: [0, 0, 0]
+      }];
+      setAddedItems(newItems);
+      pushHistory(newItems);
+    } else if (isLayoutMode) {
+      setSelectedItem(null);
+    }
+  };
+
+  const handleMove = (id: string, pos: [number, number, number]) => {
+    const newItems = addedItems.map(i => i.id === id ? { ...i, position: pos } : i);
+    setAddedItems(newItems);
+    pushHistory(newItems);
+  };
+
+  const handleRotate = (id: string, rot: [number, number, number]) => {
+    const newItems = addedItems.map(i => i.id === id ? { ...i, rotation: rot } : i);
+    setAddedItems(newItems);
+    pushHistory(newItems);
+  };
+
+  const handleDelete = (id: string) => {
+    const newItems = addedItems.filter(i => i.id !== id);
+    setAddedItems(newItems);
+    pushHistory(newItems);
+    if (selectedItem === id) setSelectedItem(null);
+  };
+
   const racks = useMemo(() => {
     const arr: any[] = [];
     Object.entries(ZONE_LAYOUT).forEach(([zone, cfg]) =>
@@ -744,8 +858,149 @@ export const WarehouseView = () => {
     return arr;
   }, []);
 
+  const handleSave = async () => {
+    try {
+      const res = await fetch("http://localhost:4000/api/warehouse/save-layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(addedItems),
+      });
+      alert("✅ Warehouse layout saved permanently!");
+    } catch {
+      alert("❌ Could not reach server. Make sure the backend is running.");
+    }
+  };
+
   return (
     <Wrapper>
+      {/* ── TOOLBAR (top-right) MIRRORING CUTTING VIEW ── */}
+      <div className="absolute top-6 right-6 z-[60] flex items-center gap-3">
+        {isLayoutMode && (
+          <div className="flex items-center gap-1 bg-slate-950/80 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl animate-in slide-in-from-right-4">
+            <div className="flex items-center gap-1 px-2 border-r border-white/10 mr-1">
+              <button onClick={undo} disabled={!canUndo} className={cn("p-2 rounded-xl transition-all", canUndo ? "text-white hover:bg-white/10" : "text-white/20 cursor-not-allowed")}>
+                <Undo2 size={14} />
+              </button>
+              <button onClick={redo} disabled={!canRedo} className={cn("p-2 rounded-xl transition-all", canRedo ? "text-white hover:bg-white/10" : "text-white/20 cursor-not-allowed")}>
+                <Redo2 size={14} />
+              </button>
+            </div>
+
+            {[
+              { id: 'add', icon: <Play className="rotate-270" size={14} />, label: 'Add' },
+              { id: 'move', icon: <Edit2 size={14} />, label: 'Move' },
+              { id: 'rotate', icon: <Play className="rotate-90" size={14} />, label: 'Rotate' },
+              { id: 'delete', icon: <CheckCircle className="text-red-500" size={14} />, label: 'Del' }
+            ].map((tool: any) => (
+              <button
+                key={tool.id}
+                onClick={() => setEditTool(tool.id)}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                  editTool === tool.id ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20" : "text-slate-400 hover:bg-white/5 hover:text-white"
+                )}
+              >
+                {tool.icon}
+                {tool.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={() => { setIsLayoutMode(!isLayoutMode); if (isLayoutMode) setPlacingItem(false); }}
+          className={cn(
+            "flex items-center gap-2 px-6 py-2.5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all shadow-2xl border",
+            isLayoutMode ? "bg-amber-600 text-white border-amber-500 shadow-amber-600/30" : "bg-slate-900/80 backdrop-blur-md text-white hover:bg-violet-600 border-white/10 hover:border-violet-500"
+          )}
+        >
+          <Edit2 size={14} />
+          {isLayoutMode ? "Exit Edit" : "Modify Layout"}
+        </button>
+
+        {isLayoutMode && (
+          <button
+            onClick={handleSave}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-emerald-600 text-white shadow-2xl shadow-emerald-600/30 hover:bg-emerald-500 transition-colors text-[11px] font-black uppercase tracking-widest border border-emerald-500"
+            title="Save Layout Permanently"
+          >
+            <Save size={14} /> Save
+          </button>
+        )}
+      </div>
+
+      {/* ── ADD PANEL ── */}
+      {isLayoutMode && editTool === 'add' && (
+        <div className="absolute top-24 right-6 z-[60] w-72 bg-slate-950/90 backdrop-blur-2xl p-5 rounded-3xl border border-white/10 shadow-2xl animate-in fade-in slide-in-from-top-4">
+          <h3 className="text-[10px] font-black uppercase text-violet-400 tracking-[0.2em] mb-4 flex items-center gap-2">
+            <Play size={12} className="rotate-270" /> Add Warehouse Item
+          </h3>
+          <div className="space-y-4">
+            <div className="relative group">
+              <select
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-[10px] font-bold text-white appearance-none focus:outline-none focus:border-violet-500 transition-colors cursor-pointer"
+                value={selectedAddType}
+                onChange={(e) => {
+                  setSelectedAddType(e.target.value);
+                  setSelectedAddLabel(e.target.options[e.target.selectedIndex].text);
+                }}
+              >
+                <option value="rack">Rack</option>
+                <option value="agv">AGV</option>
+                <option value="work-table">Work Table</option>
+                <option value="monitoring-tv">Monitoring TV</option>
+                <option value="human">Human Operator</option>
+                <option value="scanner-station">QR Scanner Station</option>
+                <option value="inspection-machine">Inspection Machine</option>
+                <option value="pallet">Pallet</option>
+              </select>
+              <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            </div>
+            <button
+              onClick={() => setPlacingItem(!placingItem)}
+              className={cn(
+                "w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                placingItem ? "bg-amber-600 text-white shadow-lg" : "bg-violet-600 text-white shadow-lg hover:bg-violet-500"
+              )}
+            >
+              {placingItem ? "Cancel Placement" : "Place Item"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── SELECTION STATUS FOOTER ── */}
+      {isLayoutMode && selectedItem && (
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[60] bg-slate-950/90 backdrop-blur-2xl px-8 py-4 rounded-3xl border border-violet-500/30 shadow-2xl flex items-center gap-6 animate-in slide-in-from-bottom-4">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-black uppercase text-violet-400 tracking-widest leading-none mb-1">Active Selection</span>
+            <span className="text-white font-bold text-sm">1 Item Selected</span>
+          </div>
+          <div className="h-8 w-px bg-white/10" />
+          <div className="flex items-center gap-2">
+            {editTool === "rotate" && (
+              <button 
+                onClick={() => {
+                  const item = addedItems.find(i => i.id === selectedItem);
+                  if (item) handleRotate(selectedItem, [item.rotation[0], item.rotation[1] + Math.PI / 2, item.rotation[2]]);
+                }}
+                className="bg-violet-600 hover:bg-violet-500 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+              >
+                Rotate 90°
+              </button>
+            )}
+            {editTool === "delete" && (
+              <button onClick={() => handleDelete(selectedItem)} className="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+                Delete Selected
+              </button>
+            )}
+            <button onClick={() => setSelectedItem(null)} className="text-slate-400 hover:text-white text-[10px] font-black uppercase tracking-widest px-4 py-2">
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       <Canvas shadows camera={{ position: [55, 55, 55], fov: 45 }} gl={{ antialias: true }}>
         <Suspense fallback={null}>
           <ambientLight intensity={0.8} />
@@ -754,7 +1009,11 @@ export const WarehouseView = () => {
           <OrbitControls makeDefault dampingFactor={0.1} enableDamping maxPolarAngle={Math.PI / 2.1} />
 
           {/* Floor */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 10]}>
+          <mesh 
+            rotation={[-Math.PI / 2, 0, 0]} 
+            position={[0, -0.05, 10]}
+            onClick={handlePointerDownFloor}
+          >
             <planeGeometry args={[180, 180]} />
             <meshStandardMaterial color="#fdf5e6" opacity={0.6} transparent />
           </mesh>
@@ -826,6 +1085,46 @@ export const WarehouseView = () => {
               />
             ))}
           </group>
+
+          {/* User Added Items */}
+          {addedItems.map((item) => {
+            let content = null;
+            if (item.type === "rack") {
+              // Supermarket/Rack logic mapping internally
+              content = <DoubleRack position={[0,0,0]} label="RACK" rollColor="#1e40af" />;
+            } else if (item.type === "supermarket") { // legacy check for already saved options
+              content = <DoubleRack position={[0,0,0]} label="RACK" rollColor="#1e40af" />;
+            } else if (item.type === "agv") {
+              content = <AccurateAGV position={[0,0,0]} rotation={[0, 0, 0]} scale={[2, 2, 2]} />;
+            } else if (item.type === "work-table") {
+              content = <IndustrialWorkTable position={[0,0,0]} rotation={[0, 0, 0]} scale={[2.5, 2.5, 2.5]} />;
+            } else if (item.type === "monitoring-tv") {
+              content = <MonitoringTV position={[0,0,0]} rotation={[0, 0, 0]} scale={[1.4, 1.4, 1.4]} />;
+            } else if (item.type === "human") {
+              content = <StandingOperator position={[0,0,0]} rotation={[0, 0, 0]} />;
+            } else if (item.type === "scanner-station") {
+              content = <QRScannerStation position={[0,0,0]} rotation={[0, 0, 0]} scale={[1.2, 1.2, 1.2]} />;
+            } else if (item.type === "inspection-machine") {
+              content = <InspectionMachine position={[0,0,0]} rotation={[0, 0, 0]} scale={[2, 2, 2]} />;
+            } else if (item.type === "pallet") {
+              content = <FabricRollPallet position={[0,0,0]} rotation={[0, 0, 0]} rollColor="#f97316" />;
+            }
+            
+            return (
+              <DraggableWarehouseItem
+                key={item.id}
+                item={item}
+                isSelected={selectedItem === item.id}
+                editTool={isLayoutMode ? editTool : null}
+                onSelect={(id: string) => setSelectedItem(id)}
+                onMove={handleMove}
+                onRotate={handleRotate}
+                onDelete={handleDelete}
+              >
+                {content}
+              </DraggableWarehouseItem>
+            );
+          })}
 
         </Suspense>
       </Canvas>

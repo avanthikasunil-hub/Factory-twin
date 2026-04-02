@@ -1,0 +1,1202 @@
+[
+  {
+    "id": "gerber-1",
+    "operation": {
+      "op_no": "CUT-01",
+      "op_name": "Auto Cutter",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Cutting Zone 3"
+    },
+    "position": {
+      "x": 231.04144,
+      "y": 0,
+      "z": 6.672072000000001
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "tableLength": 17,
+    "tableWidth": 7.1,
+    "operatorOnFarSide": true
+  },
+  {
+    "id": "gerber-2",
+    "operation": {
+      "op_no": "CUT-02",
+      "op_name": "Auto Cutter",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Zone 1 Extension"
+    },
+    "position": {
+      "x": 224.33584,
+      "y": 0,
+      "z": -1.115568
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Zone 1 Extension",
+    "tableWidth": 7.1,
+    "spreadingLength": 85,
+    "operatorOnFarSide": true
+  },
+  {
+    "id": "gerber-3",
+    "operation": {
+      "op_no": "TAB-01",
+      "op_name": "Spreading Table",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Cutting Zone 2"
+    },
+    "position": {
+      "x": 224.33584000000002,
+      "y": 0,
+      "z": 2.7096720000000003
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 2",
+    "tableLength": 17,
+    "tableWidth": 7.1,
+    "spreadingLength": 85,
+    "tableOnly": true,
+    "hasManualPosition": true
+  },
+  {
+    "id": "gerber-4",
+    "operation": {
+      "op_no": "TAB-02",
+      "op_name": "Relay Table",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Cutting Zone 2"
+    },
+    "position": {
+      "x": 231.04144,
+      "y": 0,
+      "z": 2.7096720000000003
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 2",
+    "tableLength": 17,
+    "tableWidth": 7.1,
+    "spreadingLength": 33.9,
+    "tableOnly": true
+  },
+  {
+    "id": "gerber-5",
+    "operation": {
+      "op_no": "TAB-03",
+      "op_name": "Spreading Table (Medium)",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Cutting Zone 1"
+    },
+    "position": {
+      "x": 231.98632,
+      "y": 0,
+      "z": -1.115568
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 1",
+    "tableLength": 17,
+    "tableWidth": 7.1,
+    "spreadingLength": 33.9,
+    "tableOnly": true
+  },
+  {
+    "id": "gerber-6",
+    "operation": {
+      "op_no": "TAB-04",
+      "op_name": "Recutting Table",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Cutting Zone 1"
+    },
+    "position": {
+      "x": 236.19256000000001,
+      "y": 0,
+      "z": -1.115568
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 1",
+    "tableLength": 17,
+    "tableWidth": 7.1,
+    "spreadingLength": 11.3,
+    "tableOnly": true
+  },
+  {
+    "id": "gerber-7",
+    "operation": {
+      "op_no": "TAB-05",
+      "op_name": "Relay and Pinning",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Cutting Zone 2"
+    },
+    "position": {
+      "x": 226.8352,
+      "y": 0,
+      "z": 2.7096720000000003
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 2",
+    "tableLength": 17,
+    "tableWidth": 7,
+    "spreadingLength": 11.3,
+    "tableOnly": true
+  },
+  {
+    "id": "gerber-8",
+    "operation": {
+      "op_no": "TAB-06",
+      "op_name": "Bundling Table",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 239.51488,
+      "y": 0,
+      "z": -5.117592
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableLength": 17,
+    "tableWidth": 3.2,
+    "spreadingLength": 12.2,
+    "tableOnly": true
+  },
+  {
+    "id": "supermarket-zone0-1",
+    "operation": {
+      "op_no": "SM-01",
+      "op_name": "Supermarket",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 245.21464,
+      "y": 0,
+      "z": -3.62712
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableLength": 6,
+    "tableWidth": 2,
+    "tableHeight": 7
+  },
+  {
+    "id": "supermarket-zone0-2",
+    "operation": {
+      "op_no": "SM-02",
+      "op_name": "Supermarket",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 246.73864,
+      "y": 0,
+      "z": -4.08432
+    },
+    "rotation": {
+      "x": 0,
+      "y": -1.5707963267948966,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableLength": 6,
+    "tableWidth": 2,
+    "tableHeight": 7
+  },
+  {
+    "id": "gerber-9",
+    "operation": {
+      "op_no": "TAB-07",
+      "op_name": "Bundling Table",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 233.63224,
+      "y": 0,
+      "z": -5.117592
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableLength": 17,
+    "tableWidth": 3.2,
+    "spreadingLength": 12.2,
+    "tableOnly": true
+  },
+  {
+    "id": "supermarket-zone0-3",
+    "operation": {
+      "op_no": "SM-03",
+      "op_name": "Supermarket",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 239.332,
+      "y": 0,
+      "z": -3.62712
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableLength": 6,
+    "tableWidth": 2,
+    "tableHeight": 7
+  },
+  {
+    "id": "supermarket-zone0-4",
+    "operation": {
+      "op_no": "SM-04",
+      "op_name": "Supermarket",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 240.856,
+      "y": 0,
+      "z": -4.08432
+    },
+    "rotation": {
+      "x": 0,
+      "y": -1.5707963267948966,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableLength": 6,
+    "tableWidth": 2,
+    "tableHeight": 7
+  },
+  {
+    "id": "mc-zone0-0",
+    "operation": {
+      "op_no": "MC-1",
+      "op_name": "SNLS",
+      "machine_type": "snls",
+      "smv": 0.5,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 234.54664,
+      "y": 0,
+      "z": -4.953
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "B",
+    "section": "Cutting Zone 0",
+    "tableWidth": 2.5,
+    "tableLength": 4,
+    "tableHeight": 4,
+    "hideIronBox": false
+  },
+  {
+    "id": "mc-zone0-1",
+    "operation": {
+      "op_no": "MC-2",
+      "op_name": "SNLS",
+      "machine_type": "snls",
+      "smv": 0.5,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 233.32744,
+      "y": 0,
+      "z": -4.953
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "B",
+    "section": "Cutting Zone 0",
+    "tableWidth": 2.5,
+    "tableLength": 4,
+    "tableHeight": 4,
+    "hideIronBox": false
+  },
+  {
+    "id": "mc-zone0-2",
+    "operation": {
+      "op_no": "MC-3",
+      "op_name": "SNLS",
+      "machine_type": "snls",
+      "smv": 0.5,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 232.10824,
+      "y": 0,
+      "z": -4.953
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "B",
+    "section": "Cutting Zone 0",
+    "tableWidth": 2.5,
+    "tableLength": 4,
+    "tableHeight": 4,
+    "hideIronBox": false
+  },
+  {
+    "id": "mc-zone0-3",
+    "operation": {
+      "op_no": "MC-4",
+      "op_name": "SNLS",
+      "machine_type": "snls",
+      "smv": 0.5,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 230.88904,
+      "y": 0,
+      "z": -4.953
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "B",
+    "section": "Cutting Zone 0",
+    "tableWidth": 2.5,
+    "tableLength": 4,
+    "tableHeight": 4,
+    "hideIronBox": false
+  },
+  {
+    "id": "mc-zone0-4",
+    "operation": {
+      "op_no": "MC-5",
+      "op_name": "SNLS",
+      "machine_type": "snls",
+      "smv": 0.5,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 229.66984,
+      "y": 0,
+      "z": -4.953
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "B",
+    "section": "Cutting Zone 0",
+    "tableWidth": 2.5,
+    "tableLength": 4,
+    "tableHeight": 4,
+    "hideIronBox": false
+  },
+  {
+    "id": "mc-zone0-5",
+    "operation": {
+      "op_no": "MC-6",
+      "op_name": "SNLS",
+      "machine_type": "snls",
+      "smv": 0.5,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 234.54664,
+      "y": 0,
+      "z": -4.191
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableWidth": 2.5,
+    "tableLength": 4,
+    "tableHeight": 4,
+    "hideIronBox": false
+  },
+  {
+    "id": "mc-zone0-6",
+    "operation": {
+      "op_no": "MC-7",
+      "op_name": "SNLS",
+      "machine_type": "snls",
+      "smv": 0.5,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 233.32744,
+      "y": 0,
+      "z": -4.191
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableWidth": 2.5,
+    "tableLength": 4,
+    "tableHeight": 4,
+    "hideIronBox": false
+  },
+  {
+    "id": "mc-zone0-7",
+    "operation": {
+      "op_no": "MC-8",
+      "op_name": "SNLS",
+      "machine_type": "snls",
+      "smv": 0.5,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 232.10824,
+      "y": 0,
+      "z": -4.191
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableWidth": 2.5,
+    "tableLength": 4,
+    "tableHeight": 4,
+    "hideIronBox": false
+  },
+  {
+    "id": "mc-zone0-8",
+    "operation": {
+      "op_no": "MC-9",
+      "op_name": "SNLS",
+      "machine_type": "snls",
+      "smv": 0.5,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 230.88904,
+      "y": 0,
+      "z": -4.191
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableWidth": 2.5,
+    "tableLength": 4,
+    "tableHeight": 4,
+    "hideIronBox": false
+  },
+  {
+    "id": "mc-zone0-9",
+    "operation": {
+      "op_no": "MC-10",
+      "op_name": "Iron Press",
+      "machine_type": "iron",
+      "smv": 0.5,
+      "section": "Cutting Zone 0"
+    },
+    "position": {
+      "x": 229.66984,
+      "y": 0,
+      "z": -3.5814
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 0",
+    "tableWidth": 2.5,
+    "tableLength": 4,
+    "tableHeight": 4,
+    "hideIronBox": true
+  },
+  {
+    "id": "gerber-11",
+    "operation": {
+      "op_no": "TAB-09",
+      "op_name": "Bundling Table",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Zone 0 Extension"
+    },
+    "position": {
+      "x": 219.465136,
+      "y": 0,
+      "z": -5.117592
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Zone 0 Extension",
+    "tableLength": 17,
+    "tableWidth": 3.2,
+    "spreadingLength": 12.2,
+    "tableOnly": true
+  },
+  {
+    "id": "supermarket-zone0-5",
+    "operation": {
+      "op_no": "SM-05",
+      "op_name": "Supermarket",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Zone 0 Extension"
+    },
+    "position": {
+      "x": 225.164896,
+      "y": 0,
+      "z": -3.62712
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Zone 0 Extension",
+    "tableLength": 6,
+    "tableWidth": 2,
+    "tableHeight": 7
+  },
+  {
+    "id": "supermarket-zone0-6",
+    "operation": {
+      "op_no": "SM-06",
+      "op_name": "Supermarket",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Zone 0 Extension"
+    },
+    "position": {
+      "x": 226.688896,
+      "y": 0,
+      "z": -4.08432
+    },
+    "rotation": {
+      "x": 0,
+      "y": -1.5707963267948966,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Zone 0 Extension",
+    "tableLength": 6,
+    "tableWidth": 2,
+    "tableHeight": 7
+  },
+  {
+    "id": "gerber-12",
+    "operation": {
+      "op_no": "TAB-10",
+      "op_name": "Bundling Table",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Zone 0 Extension"
+    },
+    "position": {
+      "x": 213.765376,
+      "y": 0,
+      "z": -5.117592
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Zone 0 Extension",
+    "tableLength": 17,
+    "tableWidth": 3.2,
+    "spreadingLength": 12.2,
+    "tableOnly": true
+  },
+  {
+    "id": "supermarket-zone0-7",
+    "operation": {
+      "op_no": "SM-07",
+      "op_name": "Supermarket",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Zone 0 Extension"
+    },
+    "position": {
+      "x": 219.465136,
+      "y": 0,
+      "z": -3.62712
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Zone 0 Extension",
+    "tableLength": 6,
+    "tableWidth": 2,
+    "tableHeight": 7
+  },
+  {
+    "id": "supermarket-zone0-8",
+    "operation": {
+      "op_no": "SM-08",
+      "op_name": "Supermarket",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Zone 0 Extension"
+    },
+    "position": {
+      "x": 220.989136,
+      "y": 0,
+      "z": -4.08432
+    },
+    "rotation": {
+      "x": 0,
+      "y": -1.5707963267948966,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Zone 0 Extension",
+    "tableLength": 6,
+    "tableWidth": 2,
+    "tableHeight": 7
+  },
+  {
+    "id": "gerber-13",
+    "operation": {
+      "op_no": "TAB-11",
+      "op_name": "Bundling Table",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Zone 0 Extension"
+    },
+    "position": {
+      "x": 208.248496,
+      "y": 0,
+      "z": -5.117592
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Zone 0 Extension",
+    "tableLength": 17,
+    "tableWidth": 3.2,
+    "spreadingLength": 12.2,
+    "tableOnly": true
+  },
+  {
+    "id": "supermarket-zone0-9",
+    "operation": {
+      "op_no": "SM-09",
+      "op_name": "Supermarket",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Zone 0 Extension"
+    },
+    "position": {
+      "x": 213.94825600000001,
+      "y": 0,
+      "z": -3.62712
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Zone 0 Extension",
+    "tableLength": 6,
+    "tableWidth": 2,
+    "tableHeight": 7
+  },
+  {
+    "id": "supermarket-zone0-10",
+    "operation": {
+      "op_no": "SM-10",
+      "op_name": "Supermarket",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Zone 0 Extension"
+    },
+    "position": {
+      "x": 215.47225600000002,
+      "y": 0,
+      "z": -4.08432
+    },
+    "rotation": {
+      "x": 0,
+      "y": -1.5707963267948966,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Zone 0 Extension",
+    "tableLength": 6,
+    "tableWidth": 2,
+    "tableHeight": 7
+  },
+  {
+    "id": "bandknife-2",
+    "operation": {
+      "op_no": "BK-02",
+      "op_name": "Bandknife",
+      "machine_type": "bandknife",
+      "smv": 0,
+      "section": "Cutting Zone 3"
+    },
+    "position": {
+      "x": 226.10368,
+      "y": 0,
+      "z": 8.034528000000002
+    },
+    "rotation": {
+      "x": 0,
+      "y": 1.5707963267948966,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true
+  },
+  {
+    "id": "bandknife-3",
+    "operation": {
+      "op_no": "BK-03",
+      "op_name": "Bandknife",
+      "machine_type": "bandknife",
+      "smv": 0,
+      "section": "Cutting Zone 3"
+    },
+    "position": {
+      "x": 224.12248,
+      "y": 0,
+      "z": 8.034528000000002
+    },
+    "rotation": {
+      "x": 0,
+      "y": 1.5707963267948966,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true
+  },
+  {
+    "id": "bandknife-4",
+    "operation": {
+      "op_no": "BK-04",
+      "op_name": "Bandknife",
+      "machine_type": "bandknife",
+      "smv": 0,
+      "section": "Cutting Zone 3"
+    },
+    "position": {
+      "x": 222.14128,
+      "y": 0,
+      "z": 8.034528000000002
+    },
+    "rotation": {
+      "x": 0,
+      "y": 1.5707963267948966,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true
+  },
+  {
+    "id": "bandknife-5",
+    "operation": {
+      "op_no": "BK-05",
+      "op_name": "Bandknife",
+      "machine_type": "bandknife",
+      "smv": 0,
+      "section": "Cutting Zone 3"
+    },
+    "position": {
+      "x": 220.16008,
+      "y": 0,
+      "z": 8.034528000000002
+    },
+    "rotation": {
+      "x": 0,
+      "y": 1.5707963267948966,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true
+  },
+  {
+    "id": "spreading-table-1",
+    "operation": {
+      "op_no": "SPT-01",
+      "op_name": "Recutting Table",
+      "machine_type": "gerber",
+      "section": "Cutting Zone 3"
+    },
+    "tableOnly": true,
+    "tableLength": 17,
+    "tableWidth": 10,
+    "spreadingLength": 17,
+    "position": {
+      "x": 221.452432,
+      "y": 0,
+      "z": 8.034528000000002
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true
+  },
+  {
+    "id": "fusing-custom-1",
+    "operation": {
+      "op_no": "FM-01",
+      "op_name": "Fusing Machine",
+      "machine_type": "fusing_custom",
+      "section": "Cutting Zone 3"
+    },
+    "tableLength": 24.4,
+    "tableWidth": 5.7,
+    "tableHeight": 5,
+    "position": {
+      "x": 200.81747199999998,
+      "y": 0,
+      "z": 8.034528000000002
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true,
+    "tableOnly": true
+  },
+  {
+    "id": "fusing-custom-2",
+    "operation": {
+      "op_no": "FM-02",
+      "op_name": "Fusing Machine",
+      "machine_type": "fusing_custom",
+      "section": "Cutting Zone 3"
+    },
+    "tableLength": 24.4,
+    "tableWidth": 5.7,
+    "tableHeight": 5,
+    "position": {
+      "x": 191.246752,
+      "y": 0,
+      "z": 8.034528000000002
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true,
+    "tableOnly": true
+  },
+  {
+    "id": "straight-knife-1",
+    "operation": {
+      "op_no": "KNIFE-01",
+      "op_name": "Straight Knife",
+      "machine_type": "straightknife",
+      "smv": 0.5,
+      "section": "Cutting Zone 2"
+    },
+    "position": {
+      "x": 219.61144000000002,
+      "y": 1.6764000000000001,
+      "z": 2.7096720000000003
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 2",
+    "tableLength": 1,
+    "tableWidth": 1,
+    "tableHeight": 2,
+    "centerModel": true,
+    "hideZone": true
+  },
+  {
+    "id": "manual-spreader-1",
+    "operation": {
+      "op_no": "MSPR-01",
+      "op_name": "Manual Spreader",
+      "machine_type": "manual-spreader",
+      "smv": 0,
+      "section": "Cutting Zone 1"
+    },
+    "position": {
+      "x": 243.99544,
+      "y": 0,
+      "z": -1.115568
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 1",
+    "tableWidth": 7.1,
+    "fabricLength": 25,
+    "fabricColor": "#1e3a8a"
+  },
+  {
+    "id": "manual-spreader-2",
+    "operation": {
+      "op_no": "MSPR-02",
+      "op_name": "Manual Spreader",
+      "machine_type": "manual-spreader",
+      "smv": 0,
+      "section": "Cutting Zone 2"
+    },
+    "position": {
+      "x": 197.01285026681418,
+      "y": 0,
+      "z": 2.7096720000000003
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 2",
+    "tableWidth": 7.1,
+    "fabricLength": 25,
+    "fabricColor": "#991b1b",
+    "hasManualPosition": true
+  },
+  {
+    "id": "4cc44286-7834-437f-9a79-7a06c13e0a22",
+    "operation": {
+      "op_no": "NEW-4cc4",
+      "op_name": "Spreading Table Medium (33.9x7.1ft)",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Cutting Zone 3"
+    },
+    "position": {
+      "x": 246.58279533429993,
+      "y": 0,
+      "z": 6.644565734852896
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true,
+    "hideOperator": false,
+    "tableOnly": true,
+    "tableLength": 17,
+    "tableWidth": 7.1,
+    "spreadingLength": 33.9
+  },
+  {
+    "id": "af71e2cf-50f7-4501-b0cf-12990a251815",
+    "operation": {
+      "op_no": "NEW-af71",
+      "op_name": "Manual Spreader",
+      "machine_type": "manual-spreader",
+      "smv": 0,
+      "section": "Cutting Zone 3"
+    },
+    "position": {
+      "x": 243.09438122609762,
+      "y": 0,
+      "z": 2.72792420491259
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true,
+    "hideOperator": false,
+    "hasManualPosition": true
+  },
+  {
+    "id": "51388fea-3f36-4e5c-bb31-116c04fe1c15",
+    "operation": {
+      "op_no": "NEW-5138",
+      "op_name": "Narrow Spreading Table (12.2x3.2ft)",
+      "machine_type": "gerber",
+      "smv": 0,
+      "section": "Cutting Zone 3"
+    },
+    "position": {
+      "x": 210.57808626558995,
+      "y": 0,
+      "z": -4.965257199170189
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true,
+    "hideOperator": false,
+    "tableOnly": true,
+    "tableLength": 17,
+    "tableWidth": 3.2,
+    "spreadingLength": 12.2
+  },
+  {
+    "id": "e92484b3-c361-43fd-8f20-580256d0e2d8",
+    "operation": {
+      "op_no": "NEW-e924",
+      "op_name": "Supermarket Rack",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Cutting Zone 3"
+    },
+    "position": {
+      "x": 207.28320454422396,
+      "y": 0,
+      "z": -3.670183568728288
+    },
+    "rotation": {
+      "x": 0,
+      "y": 3.141592653589793,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true,
+    "hideOperator": false,
+    "hasManualPosition": true
+  },
+  {
+    "id": "c6ec698e-7f4b-4163-9d10-03c5975ef48d",
+    "operation": {
+      "op_no": "NEW-c6ec",
+      "op_name": "Supermarket Rack",
+      "machine_type": "supermarket",
+      "smv": 0,
+      "section": "Cutting Zone 3"
+    },
+    "position": {
+      "x": 209.05938956887226,
+      "y": 0,
+      "z": -4.314549418995835
+    },
+    "rotation": {
+      "x": 0,
+      "y": 10.995574287564276,
+      "z": 0
+    },
+    "lane": "A",
+    "section": "Cutting Zone 3",
+    "centerModel": true,
+    "hideOperator": false,
+    "hasManualPosition": true
+  }
+]

@@ -14,6 +14,13 @@ export interface Operation {
   no_of_machines?: number;
   seqIndex?: number;      // v165: Original index in OB sequence for staging logic
   isPreparatory?: boolean; // v165: Explicit flag for manual staging
+  // Legacy/Fallback fields from raw data
+  operation?: string;
+  operation_description?: string;
+  description?: string;
+  name?: string;
+  b?: string | number;
+  B?: string | number;
 }
 export type ColumnAliases = {
   op_no: string[];
@@ -56,6 +63,18 @@ export interface MachinePosition {
   tableLength?: number;
   tableWidth?: number;
   tableOnly?: boolean;
+  showOperator?: boolean;
+  hideOperator?: boolean;
+  spreadingLength?: number;
+  tableHeight?: number;
+  operatorOnFarSide?: boolean;
+  rotateOperatorAxis?: boolean;
+  rotationOffset?: number;
+  hideIronBox?: boolean;
+  fabricLength?: number;
+  fabricColor?: string;
+  opName?: string;
+  showIronBox?: boolean;
 }
 
 export interface SectionLayout {

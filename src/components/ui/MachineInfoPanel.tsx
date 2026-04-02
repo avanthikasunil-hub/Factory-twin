@@ -45,6 +45,7 @@ export const MachineInfoPanel = () => {
   // Local state for adding a new machine within this section
   const [newOpName, setNewOpName] = useState('');
   const [newType, setNewType] = useState('SNLS');
+  const [newSMV, setNewSMV] = useState('0.50');
   const [showAddForm, setShowAddForm] = useState(false);
 
   useEffect(() => {
@@ -64,9 +65,13 @@ export const MachineInfoPanel = () => {
     const exactSection = selectedMachine.section || operation.section || "";
     const opName = (operation.op_name || "").trim().toLowerCase();
 
+    const isAssembly = exactSection.toLowerCase().includes('assembly');
     opMachineCount = machineLayout.filter(m =>
-      (m.operation.op_name || "").trim().toLowerCase() === opName &&
-      (m.section || m.operation.section || "") === exactSection
+      (m.operation?.op_name || "").trim().toLowerCase() === opName &&
+      (isAssembly 
+        ? (m.section || "").toLowerCase().includes('assembly')
+        : (m.section || m.operation?.section || "") === exactSection
+      )
     ).length;
 
     // Fallback to 1 if none found
@@ -262,7 +267,7 @@ export const MachineInfoPanel = () => {
                 </div>
                 <div className="flex-1">
                   <label className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
-                    No. of Machines
+                    Total Required
                   </label>
                   <div className="flex items-baseline gap-2 mt-0.5">
                     <span className="text-xl font-black text-foreground">{opMachineCount}</span>
@@ -360,6 +365,20 @@ export const MachineInfoPanel = () => {
                           </SelectContent>
                         </Select>
                       </div>
+                      
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] text-muted-foreground uppercase font-bold px-1 flex items-center gap-1.5">
+                          <Activity className="w-3 h-3" /> Operation Time (SMV)
+                        </label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.50"
+                          className="h-8 text-sm"
+                          value={newSMV}
+                          onChange={(e) => setNewSMV(e.target.value)}
+                        />
+                      </div>
 
                       <Button
                         className="w-full h-9 flex items-center gap-2 mt-2 font-bold"
@@ -370,9 +389,11 @@ export const MachineInfoPanel = () => {
                             operation.section || "Assembly", 
                             newOpName, 
                             selectedMachine.position.x, 
-                            operation.seqIndex
+                            operation.seqIndex,
+                            parseFloat(newSMV) || 0.1
                           );
                           setNewOpName(''); // Reset
+                          setNewSMV('0.50'); // Reset
                           setShowAddForm(false);
                         }}
                       >

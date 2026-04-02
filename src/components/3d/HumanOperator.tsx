@@ -99,6 +99,7 @@ const HumanOperator = ({ id, rotation, isStanding, isInspection }) => {
             <sphereGeometry args={[0.02, 16, 16]} />
             <meshStandardMaterial color={skinColor} roughness={0.6} />
           </mesh>
+          {/* Industrial Safety Cap - RESTORED by user request */}
           <mesh position={[0, 0.02, -0.04]} rotation={[-0.3, 0, 0]}>
             <sphereGeometry args={[0.135, 32, 32, 0, Math.PI * 2, 0, Math.PI / 1.6]} />
             <meshStandardMaterial color="#38bdf8" roughness={0.9} />

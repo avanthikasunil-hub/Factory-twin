@@ -1,4 +1,4 @@
-import { Suspense, useRef, useMemo, useState } from 'react';
+import { Suspense, useRef, useMemo, useState, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Text, PivotControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -101,23 +101,43 @@ export const Scene3D = ({
     isMoveGizmoVisible,
   } = useLineStore();
 
-  const [selectionOffset, setSelectionOffset] = useState({ x: 0, z: 0 });
+  const [gizmoAnchor, setGizmoAnchor] = useState<{ x: number, z: number } | null>(null);
 
-  const machineLayout = machinesOverride || storeMachineLayout;
+  const machineLayout = useMemo(() => {
+    if (!machinesOverride) return storeMachineLayout;
+    // Prefer store-based versions for any machine IDs that match, ensuring edits (names, rotations, etc) persist
+    return machinesOverride.map(mc => {
+      const storeMc = storeMachineLayout.find(sm => sm.id === mc.id);
+      return storeMc || mc;
+    });
+  }, [machinesOverride, storeMachineLayout]);
+
   const sectionLayout = sectionsOverride || storeSectionLayout;
 
-  const groupPivotRef = useRef<THREE.Group>(null);
-  const lastPivotPos = useRef<THREE.Vector3 | null>(null);
+  // Initialize/Sync gizmo anchor whenever selection changes and we're NOT dragging
+  useEffect(() => {
+    // We re-home the handle to the primary selection whenever NOT dragging
+    if (!isDraggingActive && isMoveMode && selectedMachines.length > 0) {
+      const leader = machineLayout.find(m => m.id === selectedMachines[0]);
+      if (leader) {
+        setGizmoAnchor({ x: leader.position.x, z: leader.position.z });
+      }
+    } else if (selectedMachines.length === 0) {
+      setGizmoAnchor(null);
+    }
+  }, [isMoveMode, selectedMachines, isDraggingActive, machineLayout]);
 
-  // Stable drag-centre — computed once when drag starts, not every frame
+  // Stable drag-centre — computed only when selection changes or move mode toggled.
+  // We lock the anchor while dragging to prevent coordinate drift, but update it once 
+  // the drag-drop is complete so the arrows follow the new machine position.
   const dragCenter = useMemo(() => {
-    if ((!isDraggingActive && !isMoveMode) || selectedMachines.length === 0) return null;
+    if (!isMoveMode || selectedMachines.length === 0) return null;
     const selectedData = machineLayout.filter(m => selectedMachines.includes(m.id));
     if (selectedData.length === 0) return null;
     const avgX = selectedData.reduce((sum, m) => sum + m.position.x, 0) / selectedData.length;
     const avgZ = selectedData.reduce((sum, m) => sum + m.position.z, 0) / selectedData.length;
-    return { x: avgX, z: avgZ, items: selectedData };
-  }, [isDraggingActive, isMoveMode, selectedMachines, machineLayout]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { x: avgX, z: avgZ };
+  }, [isMoveMode, selectedMachines, isDraggingActive ? null : machineLayout]); // Re-center ONLY when NOT dragging
 
   // Camera look-at target: geometric centre of the whole floor plan
   const sceneCenter = useMemo((): [number, number, number] => {
@@ -196,90 +216,6 @@ export const Scene3D = ({
                 {/* ── Yellow border ── */}
                 <WideBorder length={section.length} width={section.width} color="#facc15" />
 
-                {/* ── Labels ── */}
-                {isAssembly ? (
-                  /* Assembly zones get TWO labels — one per lane */
-                  (() => {
-                    const [frontLabel, backLabel] = getAssemblyLaneLabels(section);
-                    return (
-                      <>
-                        {/* Front lane label (negative-Z side of the zone) */}
-                        <Text
-                          position={[0, 0.02, -(section.width / 2 + 0.9)]}
-                          rotation={[-Math.PI / 2, 0, 0]}
-                          fontSize={0.8}
-                          color="white"
-                          anchorX="center"
-                          anchorY="middle"
-                          fontWeight="black"
-                          fillOpacity={0.6}
-                        >
-                          {frontLabel}
-                        </Text>
-                        {/* Back lane label (positive-Z side of the zone) */}
-                        <Text
-                          position={[0, 0.02, section.width / 2 + 0.9]}
-                          rotation={[-Math.PI / 2, 0, 0]}
-                          fontSize={0.8}
-                          color="white"
-                          anchorX="center"
-                          anchorY="middle"
-                          fontWeight="black"
-                          fillOpacity={0.6}
-                        >
-                          {backLabel}
-                        </Text>
-                      </>
-                    );
-                  })()
-                ) : label ? (
-                  /* All other labelled sections: single label on the outer edge */
-                  <Text
-                    position={[0, 0.02, labelZOffset]}
-                    rotation={[-Math.PI / 2, 0, 0]}
-                    fontSize={0.8}
-                    color="white"
-                    anchorX="center"
-                    anchorY="middle"
-                    fontWeight="black"
-                    fillOpacity={0.6}
-                  >
-                    {label}
-                  </Text>
-                ) : null}
-
-                {/* ── Line-start marker (shown on the Cuff section only) ── */}
-                {section.name.toLowerCase().includes('cuff') && (
-                  <group position={[-section.length / 2 - 6, 0.02, 3]}>
-                    <Text
-                      rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
-                      fontSize={1.8}
-                      color="white"
-                      fontWeight="black"
-                      anchorX="center"
-                      fillOpacity={0.4}
-                    >
-                      {/* e.g. "Line 2" extracted from "Line 2 Cuff" */}
-                      {section.name.match(/^(Line\s+\d+)/i)?.[1] ?? ''}
-                    </Text>
-                  </group>
-                )}
-
-                {/* ── Line-end marker (shown on the Assembly CD section only) ── */}
-                {section.name.toLowerCase().includes('assembly cd') && (
-                  <group position={[section.length / 2 + 6, 0.02, -3]}>
-                    <Text
-                      rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
-                      fontSize={1.8}
-                      color="white"
-                      fontWeight="black"
-                      fillOpacity={0.4}
-                    >
-                      {section.name.match(/^(Line\s+\d+)/i)?.[1] ?? ''}
-                    </Text>
-                  </group>
-                )}
-
               </group>
             );
           })}
@@ -289,18 +225,12 @@ export const Scene3D = ({
             <group>
               {machineLayout.map((machine) => {
                 const isSelected = selectedMachines.includes(machine.id);
-                const offset = (isSelected && isMoveMode) ? selectionOffset : undefined;
                 return (
                   <Suspense key={`suspense-${machine.id}`} fallback={null}>
                     <Machine3D 
                         key={machine.id} 
                         machineData={machine} 
                         isOverview={isOverview} 
-                        relativePosition={offset ? { 
-                            x: machine.position.x + offset.x, 
-                            y: machine.position.y, 
-                            z: machine.position.z + offset.z 
-                        } : undefined}
                     />
                   </Suspense>
                 );
@@ -308,53 +238,110 @@ export const Scene3D = ({
             </group>
           )}
 
-          {/* ── Multi-machine drag proxy ── */}
+
+
+          {/* ── Dynamic Grounded Movement Handle ── */}
           {showMachines &&
-            selectedMachines.length > 0 &&
             isMoveMode &&
-            dragCenter && (
-              <PivotControls
-                key={`pivot-${selectedMachines.join('-')}`} 
-                anchor={[dragCenter.x, 0.2, dragCenter.z + 1.25]}
-                activeAxes={[true, false, true]}
-                depthTest={false}
-                scale={75}
-                fixed={true} 
-                onDragStart={() => {
-                  setDraggingActive(true);
-                  setSelectionOffset({ x: 0, z: 0 });
-                }}
-                onDrag={(matrix) => {
-                  const translation = new THREE.Vector3();
-                  const rotation = new THREE.Quaternion();
-                  const scale = new THREE.Vector3();
-                  matrix.decompose(translation, rotation, scale);
-                  setSelectionOffset({ x: translation.x, z: translation.z });
-                }}
-                onDragEnd={() => {
-                  moveSelectedMachines(selectionOffset.x, selectionOffset.z);
-                  updateMachinesPositions(selectedMachines);
-                  setSelectionOffset({ x: 0, z: 0 });
-                  setDraggingActive(false);
-                }}
-              >
-                  {/* Invisible child to ensure control presence */}
-                  <mesh visible={false}><boxGeometry args={[0.1, 0.1, 0.1]} /></mesh>
-              </PivotControls>
+            gizmoAnchor && (
+              <group position={[gizmoAnchor.x, 0, gizmoAnchor.z]} key={`gizmo-wrap-${gizmoAnchor.x}-${gizmoAnchor.z}`}>
+                <PivotControls
+                  anchor={[0, 0, 0]} // Centered on the group
+                  activeAxes={[true, true, true]}
+                  depthTest={false}
+                  scale={60}
+                  fixed={true} 
+                  onDragStart={() => {
+                    setDraggingActive(true);
+                    (window as any)._lastX = 0;
+                    (window as any)._lastZ = 0;
+
+                    // Capture current positions so we have a 'stable origin' for absolute zero-lag move
+                    const startPositions: Record<string, any> = {};
+                    machineLayout.filter(m => selectedMachines.includes(m.id)).forEach(m => {
+                       startPositions[m.id] = { ...m.position };
+                    });
+                    (window as any)._initialPositions = startPositions;
+                  }}
+                  onDrag={(matrix) => {
+                    const translation = new THREE.Vector3();
+                    const rotation = new THREE.Quaternion();
+                    const scale = new THREE.Vector3();
+                    matrix.decompose(translation, rotation, scale);
+                    
+                    // Store the matrix globally for the high-fps render loop in Machine3D
+                    (window as any)._activeDragMatrix = matrix.clone();
+                    
+                    const dx = translation.x - ((window as any)._lastX || 0);
+                    const dz = translation.z - ((window as any)._lastZ || 0);
+                    
+                    // Silent store update (low priority)
+                    moveSelectedMachines(dx, dz);
+                    
+                    (window as any)._lastX = translation.x;
+                    (window as any)._lastZ = translation.z;
+                  }}
+                  onDragEnd={() => {
+                    updateMachinesPositions(selectedMachines);
+                    setDraggingActive(false);
+                    (window as any)._activeDragMatrix = null;
+                    (window as any)._initialPositions = null;
+                  }}
+                >
+                    <mesh visible={false}><boxGeometry args={[0.01, 0.01, 0.01]} /></mesh>
+                </PivotControls>
+              </group>
             )}
 
           {/* ── Manual Placement Ghost ── */}
           {placingMachine && (
-            <PlacementGhost 
+            <PlacementGhostResolved 
               config={placingMachine} 
               onPlace={(pos) => {
                 const id = THREE.MathUtils.generateUUID();
+                const mTypeRaw = (placingMachine.type || '').toLowerCase();
+                let actualMachineType = mTypeRaw;
+                let dims: any = {};
+
+                switch (mTypeRaw) {
+                    case 'recutting_table':
+                        actualMachineType = 'gerber';
+                        dims = { tableOnly: true, tableLength: 17, tableWidth: 7.1, spreadingLength: 11.3 };
+                        break;
+                    case 'recutting_table_big':
+                        actualMachineType = 'gerber';
+                        dims = { tableOnly: true, tableLength: 17, tableWidth: 10, spreadingLength: 17 };
+                        break;
+                    case 'spreading_table_medium':
+                        actualMachineType = 'gerber';
+                        dims = { tableOnly: true, tableLength: 17, tableWidth: 7.1, spreadingLength: 33.9 };
+                        break;
+                    case 'narrow_spreading':
+                        actualMachineType = 'gerber';
+                        dims = { tableOnly: true, tableLength: 17, tableWidth: 3.2, spreadingLength: 12.2 };
+                        break;
+                    case 'relay_table':
+                        actualMachineType = 'gerber';
+                        dims = { tableOnly: true, tableLength: 17, tableWidth: 7.1, spreadingLength: 85 };
+                        break;
+                    case 'relay_pinning':
+                        actualMachineType = 'gerber';
+                        dims = { tableOnly: true, tableLength: 17, tableWidth: 7.1, spreadingLength: 11.3 };
+                        break;
+                    case 'fusing_custom':
+                        actualMachineType = 'fusing_custom';
+                        dims = { tableOnly: true, tableLength: 24.4, tableWidth: 5.7, tableHeight: 5, spreadingLength: 24.4 };
+                        break;
+                }
+
+                const needsAutoOperator = actualMachineType.includes('bandknife') || actualMachineType.includes('rotary') || actualMachineType.includes('fusing') || actualMachineType.includes('cuttingf') || actualMachineType.includes('snls') || actualMachineType.includes('iron');
+
                 const newMachine: MachinePosition = {
                     id,
                     operation: {
                         op_no: `NEW-${id.substring(0, 4)}`,
                         op_name: placingMachine.opName,
-                        machine_type: placingMachine.type,
+                        machine_type: actualMachineType,
                         smv: 0,
                         section: placingMachine.section,
                     },
@@ -362,14 +349,56 @@ export const Scene3D = ({
                     rotation: { x: 0, y: 0, z: 0 },
                     lane: 'A',
                     section: placingMachine.section,
-                    centerModel: true
-                };
+                    centerModel: true,
+                    // If we are spawning a separate human, hide the internal one
+                    hideOperator: needsAutoOperator,
+                    ...dims
+                } as any;
                 
+                const newMachines = [newMachine];
+
+                if (needsAutoOperator) {
+                    const humanId = THREE.MathUtils.generateUUID();
+                    const isFusing = actualMachineType.includes('rotary') || actualMachineType.includes('fusing');
+                    const isSNLS = actualMachineType.includes('snls') || actualMachineType.includes('iron');
+                    const offsetZ = isFusing ? 1.0 : (isSNLS ? 1.4 : 1.2);
+                    
+                    newMachines.push({
+                        id: humanId,
+                        operation: {
+                            op_no: `OP-${humanId.substring(0, 4)}`,
+                            op_name: 'Human Operator',
+                            machine_type: 'human',
+                            smv: 0,
+                            section: placingMachine.section,
+                        },
+                        position: { x: pos.x, y: 0, z: pos.z + offsetZ },
+                        rotation: { x: 0, y: 0, z: 0 },
+                        lane: 'A',
+                        section: placingMachine.section,
+                        centerModel: true,
+                        hideOperator: true // Humans don't have operators
+                    });
+                }
+
                 // We bypass the standard re-layout for manual placement in Finishing
                 const currentLayout = useLineStore.getState().machineLayout;
-                useLineStore.getState().setMachineLayout([...currentLayout, newMachine]);
+                useLineStore.getState().setMachineLayout([...currentLayout, ...newMachines]);
                 setPlacingMachine(null);
               }}
+              resolvedType={(() => {
+                const mTypeRaw2 = (placingMachine.type || '').toLowerCase();
+                switch (mTypeRaw2) {
+                  case 'recutting_table': return { type: 'gerber', dims: { tableOnly: true, tableLength: 17, tableWidth: 7.1, spreadingLength: 11.3 } };
+                  case 'recutting_table_big': return { type: 'gerber', dims: { tableOnly: true, tableLength: 17, tableWidth: 10, spreadingLength: 17 } };
+                  case 'spreading_table_medium': return { type: 'gerber', dims: { tableOnly: true, tableLength: 17, tableWidth: 7.1, spreadingLength: 33.9 } };
+                  case 'narrow_spreading': return { type: 'gerber', dims: { tableOnly: true, tableLength: 17, tableWidth: 3.2, spreadingLength: 12.2 } };
+                  case 'relay_table': return { type: 'gerber', dims: { tableOnly: true, tableLength: 17, tableWidth: 7.1, spreadingLength: 85 } };
+                  case 'relay_pinning': return { type: 'gerber', dims: { tableOnly: true, tableLength: 17, tableWidth: 7.1, spreadingLength: 11.3 } };
+                  case 'fusing_custom': return { type: 'fusing_custom', dims: { tableOnly: true, tableLength: 24.4, tableWidth: 5.7, tableHeight: 5, spreadingLength: 24.4 } };
+                  default: return { type: mTypeRaw2, dims: {} };
+                }
+              })()}
             />
           )}
 
@@ -418,12 +447,14 @@ const WideBorder = ({
 
 /* ─── Placement Ghost Component ────────────────────────────────────────── */
 
-const PlacementGhost = ({ 
+const PlacementGhostResolved = ({ 
     config, 
-    onPlace 
+    onPlace,
+    resolvedType
 }: { 
     config: { type: string, section: string, opName: string },
-    onPlace: (pos: { x: number, y: number, z: number }) => void
+    onPlace: (pos: { x: number, y: number, z: number }) => void,
+    resolvedType: { type: string, dims: any }
 }) => {
     const [ghostPos, setGhostPos] = useState<{ x: number, y: number, z: number } | null>(null);
 
@@ -453,7 +484,7 @@ const PlacementGhost = ({
                             operation: {
                                 op_no: 'GHOST',
                                 op_name: config.opName,
-                                machine_type: config.type,
+                                machine_type: resolvedType.type,
                                 smv: 0,
                                 section: config.section
                             },
@@ -461,8 +492,9 @@ const PlacementGhost = ({
                             rotation: { x: 0, y: 0, z: 0 },
                             lane: 'A',
                             section: config.section,
-                            centerModel: true
-                        }} 
+                            centerModel: true,
+                            ...resolvedType.dims
+                        } as any} 
                     />
                     {/* Visual indicator of placement mode */}
                     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>

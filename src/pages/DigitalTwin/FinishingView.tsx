@@ -289,19 +289,33 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
 
         // Apply line filter ONLY at the display layer, not the template layer
         if (activeLine === "All Lines") return machinesToUse;
-        return machinesToUse.filter(m => {
-            const name = (m.operation.op_no || "").toString();
-            // Match line number if encoded in ID or OpNo, otherwise fallback to index-based line derivation
-            return m.id.includes(`l${activeLine.split(' ')[1]}-`) || (m as any).lineVal === activeLine;
-        });
+        // Match line number precisely (e.g. l1) but avoid partial matches (e.g. l1 in l10)
+        const lineNum = activeLine.split(' ')[1];
+        const lineRegex = new RegExp(`l${lineNum}(\\-|$)`);
+        return machinesToUse.filter(m => lineRegex.test(m.id) || (m as any).lineVal === activeLine);
     }, [machineLayout, finishingMachines, activeLine]);
 
-    // Sync store with default finishing machines when entering edit mode if empty
+    const hasInitialized = React.useRef(false);
+
+    // ONE-TIME stable init: populate the store with finishing machines.
+    // Uses an empty dep array so it ONLY runs on mount. The ref guards
+    // against double-invocation in StrictMode.
     useEffect(() => {
-        if (isEditMode && machineLayout.filter(m => m.section === 'Finishing').length === 0) {
-            setMachineLayout([...machineLayout, ...finishingMachines]);
-        }
-    }, [isEditMode, finishingMachines, setMachineLayout]); // eslint-disable-line react-hooks/exhaustive-deps
+        if (hasInitialized.current) return;
+        hasInitialized.current = true;
+
+        // Use a timeout of 0 to let the component fully mount before reading store state
+        const timer = setTimeout(() => {
+            const currentLayout = useLineStore.getState().machineLayout;
+            const alreadyHasFinishing = currentLayout.some(m => m.section === 'Finishing');
+            if (!alreadyHasFinishing) {
+                const otherMachines = currentLayout.filter(m => m.section !== 'Finishing');
+                setMachineLayout([...otherMachines, ...finishingMachines]);
+            }
+        }, 0);
+
+        return () => clearTimeout(timer);
+    }, []); // ✅ Empty deps: safe, refs guard against double-run
 
     const finalCamera = useMemo(() => {
         if (activeLine === "All Lines") return { pos: cameraConfig.pos, fov: cameraConfig.fov };

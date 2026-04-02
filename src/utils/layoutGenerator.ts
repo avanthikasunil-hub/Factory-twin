@@ -18,6 +18,7 @@ export const INSPECTION_GAP = 1.0 * 0.3048; // 1ft gap between last machine and 
 // Rotations (Radians)
 export const ROT_FACE_FRONT = -Math.PI / 2;
 export const ROT_FACE_BACK = Math.PI / 2;
+export const ROT_ROTARY_FUSING = -Math.PI / 2; // Exactly -90 degrees
 
 export const FT = 0.3048;
 
@@ -41,10 +42,10 @@ export const LINE_PRESETS: Record<'A' | 'B', Record<string, SectionPreset>> = {
         'assembly 2': { length: 56.02, width: 10.2098, group: 'CD' }
     },
     B: {
-        cuff: { length: 30.94, width: 9.025, group: 'AB' },
-        sleeve: { length: 24.55, width: 9.025, group: 'AB' },
+        cuff: { length: 30.9, width: 9.025, group: 'AB' },
+        sleeve: { length: 25.00, width: 9.025, group: 'AB' },
         back: { length: 43.69, width: 9.025, group: 'AB' },
-        collar: { length: 56.70, width: 9.000, group: 'CD' },
+        collar: { length: 58.70, width: 9.000, group: 'CD' },
         front: { length: 43.80, width: 9.000, group: 'CD' },
         'assembly 1': { length: 56.03, width: 9.025, group: 'AB' },
         'assembly 2': { length: 56.02, width: 9.000, group: 'CD' }
@@ -53,27 +54,34 @@ export const LINE_PRESETS: Record<'A' | 'B', Record<string, SectionPreset>> = {
 
 export function getLayoutSpecs(lineNo: string = "Line 1") {
     const num = parseInt(lineNo.replace(/\D/g, '')) || 1;
-    const presetKey = num >= 6 ? 'B' : 'A';
-    const p = LINE_PRESETS[presetKey];
+    // Yorker Request: Preset B is for Line 6 AND Lines 7-9. Lines 1-5 use Preset A.
+    const presetKey = (num >= 6) ? 'B' : 'A';
+    const p = JSON.parse(JSON.stringify(LINE_PRESETS[presetKey])); // Clone to avoid mutating global
+    const pA = JSON.parse(JSON.stringify(LINE_PRESETS['A']));
+
+    // Yorker Request v195: Assembly L=46 in Line 1-6, L=56 in Line 7-9
+    const assLen = num >= 7 ? 56 : 46;
+    p['assembly 1'].length = assLen;
+    p['assembly 2'].length = assLen;
+    pA['assembly 1'].length = assLen;
+    pA['assembly 2'].length = assLen;
 
     const S = FT;
 
-    const pA = LINE_PRESETS['A'];
-
-    // Fixed End Points based on Preset A starting at 0.2719
+    // Fixed End Points always based on Preset A for visual consistency on the floor
     const cuffEnd = (0.2719 + pA.cuff.length) * S;
-    const sleeveEnd = (0.2719 + pA.cuff.length + 2.9319 + pA.sleeve.length) * S;
-    const backEnd = (0.2719 + pA.cuff.length + 2.9319 + pA.sleeve.length + 4.0 + pA.back.length) * S;
+    const sleeveEnd = (cuffEnd + 2.9319 * S + pA.sleeve.length * S);
+    const backEnd = (sleeveEnd + 4.0 * S + pA.back.length * S);
 
     const collarEnd = (0.2719 + pA.collar.length) * S;
-    const frontEnd = (0.2719 + pA.collar.length + 4.0 + pA.front.length) * S;
+    const frontEnd = (collarEnd + 4.0 * S + pA.front.length * S);
 
     // Assembly starts are forced to align with the AB back end + 4.11m gap
-    const assemblyStart = (0.2719 + pA.cuff.length + 2.9319 + pA.sleeve.length + 4.0 + pA.back.length + 4.11) * S;
+    const assemblyStart = (backEnd + 4.11 * S);
 
     const sections = {
         cuff: { start: cuffEnd - (p.cuff.length * S), end: cuffEnd },
-        sleeve: { start: cuffEnd, end: sleeveEnd }, // No gap: Start at cuffEnd, end at sleeveEnd
+        sleeve: { start: cuffEnd, end: sleeveEnd }, 
         back: { start: backEnd - (p.back.length * S), end: backEnd },
         collar: { start: collarEnd - (p.collar.length * S), end: collarEnd },
         front: { start: frontEnd - (p.front.length * S), end: frontEnd },
@@ -224,6 +232,7 @@ export const generateLayout = (
     const balancedOps = [...balancedPrep, ...balancedAssembly];
 
     const { zonesAB, zonesCD, partBounds, specs } = getLayoutSpecs(lineNo);
+    const S = FT;
 
     const sectionsMap = new Map<string, typeof balancedOps>();
     const sectionOrder: string[] = [];
@@ -284,6 +293,7 @@ export const generateLayout = (
         else if (lane === 'D') { z = LANE_Z_D; ry = Math.PI; }
 
         if (op.machine_type.toLowerCase().includes('inspection')) ry = ROT_FACE_FRONT;
+        if (op.machine_type.toLowerCase().includes('rotary')) ry = ROT_ROTARY_FUSING;
         if (forcedRot !== undefined) ry = forcedRot;
         if (secLower.includes('assembly') && op.op_no === 'A-13') ry += Math.PI / 2;
 
@@ -334,7 +344,8 @@ export const generateLayout = (
             lane,
             section: sectionName || op.section,
             machineIndex: mIdx - 1,
-            centerModel: centerModel || op.machine_type.toLowerCase().includes('table')
+            centerModel: centerModel || op.machine_type.toLowerCase().includes('table'),
+            showOperator: true // Every machine should have an operator
         });
     };
 
@@ -399,97 +410,92 @@ export const generateLayout = (
         const targetSpecsEarly = matchedTag ? specs.sections[matchedTag as keyof typeof specs.sections] : null;
         const zoneBounds = targetSpecsEarly || (matchedTag ? PART_BOUNDS[matchedTag] : { start: 0, end: 500 });
 
-        // Use the zone's specified start, but push it forward if the previous section overflowed into this space.
-        let alternatingX = Math.max(zoneBounds.start, isAB ? Math.max(cursors.A, cursors.B) : Math.max(cursors.C, cursors.D));
+        // v195: Move machines back to follow natural sequence, avoiding forced forward drift.
+        let alternatingX = isAB ? Math.max(cursors.A, cursors.B) : Math.max(cursors.C, cursors.D);
+        if (alternatingX < 0.3 * S) alternatingX = 0.2719 * S; // Initial start for first section
 
         const isAssemblySec = secLower.includes('assembly');
         if (isAssemblySec) {
             const startX_AssemblyAB = specs.assemblyAB.start;
             const startX_AssemblyCD = specs.assemblyCD.start;
+            const ASSEMBLY_GAP = 0.05;
 
-            // ── ASSEMBLY ALLOCATION ────────────────────────────────────────
-            // ALL 3 lines (A1/A2/A3) are identical — every op type appears in each line.
-            // Per-op distribution:
-            //   - perLineCount = max(1, floor(op.count / 3))  → placed in A1, A2, A3
-            //   - overflow     = op.count - perLineCount * 3   → placed in A4 AFTER helpers
-            //
-            // NOTE: X-axis stepping uses dims.length (machine footprint along X),
-            //       NOT dims.width (which is the Z-axis depth). Using width was causing
-            //       the first machine on Lane B to fall outside the zone boundary.
+            // 1. Initialize cursors for A1, A2, A3 at the transition point
+            const laneCursors = { 
+                B: startX_AssemblyAB + (ops[0] ? getMachineZoneDims(ops[0].operation.machine_type).length / 2 : 2 * FT), 
+                A: startX_AssemblyAB + (ops[0] ? getMachineZoneDims(ops[0].operation.machine_type).length / 2 : 2 * FT), 
+                D: startX_AssemblyCD + (ops[0] ? getMachineZoneDims(ops[0].operation.machine_type).length / 2 : 2 * FT), 
+                C: startX_AssemblyCD + (ops[0] ? getMachineZoneDims(ops[0].operation.machine_type).length / 2 : 2 * FT)
+            };
+            const laneSections: Record<string, string> = { B: 'Assembly 1', A: 'Assembly 2', D: 'Assembly 3', C: 'Assembly 4' };
 
-            const ASSEMBLY_GAP = 0.05; // tight gap between machines (matches original spacing)
-
-            // Start cursors with a small inset so the first machine's centre is inside the zone
-            const firstMachineDims = ops[0] ? getMachineZoneDims(ops[0].operation.machine_type) : { length: 4 * FT, width: 2.5 * FT };
-            let currentX_AB = startX_AssemblyAB + firstMachineDims.length / 2;
-            let currentX_CD = startX_AssemblyCD + firstMachineDims.length / 2;
-
-            // Overflow accumulator — ops that overflow from the 3 identical lines
-            const overflowMachines: Array<{ operation: Operation; dims: ReturnType<typeof getMachineZoneDims> }> = [];
-
-            for (const item of ops) {
+            const a4Ops = ops.slice(0, 3).reverse(); 
+            a4Ops.forEach((item) => {
                 const { operation, count } = item;
                 const dims = getMachineZoneDims(operation.machine_type);
-
-                // How many go into each of the 3 identical lines (min 1 so every op appears)
-                const perLineCount = Math.max(1, Math.floor(count / 3));
-                // Leftover that don't fit evenly into 3 lines → A4
-                const opOverflow   = count - perLineCount * 3;
-
-                // Step along X uses dims.length (the machine's X footprint), not dims.width
                 const step = dims.length + ASSEMBLY_GAP;
 
-                // Place perLineCount machines of this op in A1, A2, A3 (identical)
-                for (let k = 0; k < perLineCount; k++) {
-                    // A1 – Lane B
-                    addMachine(operation, 'B', currentX_AB, sectionCounters[secName], -Math.PI / 2, "Assembly 1", true);
-                    // A2 – Lane A
-                    addMachine(operation, 'A', currentX_AB, sectionCounters[secName], Math.PI / 2,  "Assembly 2", true);
-                    // A3 – Lane D
-                    addMachine(operation, 'D', currentX_CD, sectionCounters[secName], Math.PI / 2,  "Assembly 3", true);
-
-                    sectionCounters[secName]++;
-                    currentX_AB += step;
-                    currentX_CD += step;
+                for (let k = 0; k < count; k++) {
+                    const xPos = laneCursors.C;
+                    addMachine(operation, 'C', xPos, sectionCounters[laneSections.C]++, Math.PI / 2, laneSections.C, true);
+                    laneCursors.C += step;
                 }
+            });
 
-                // Accumulate overflow for A4
-                for (let ov = 0; ov < opOverflow; ov++) {
-                    overflowMachines.push({ operation, dims });
-                }
-            }
-
-            // ── Assembly 4 (Lane C) ──────────────────────────────────────
-            // 2 helper tables (reduced from 5)
-            const hOp  = createDummyOp("Helper Table", "Assembly 4", "H-C");
-            hOp.machine_type = "Helper Table";
+            // v190: Place Assembly 4 (Lane C) Helpers at the VERY END
             const hDims = getMachineZoneDims("Helper Table");
-            let hX = startX_AssemblyCD + hDims.length / 2; // start with inset too
-
             for (let i = 0; i < 2; i++) {
-                addMachine(hOp, 'C', hX, i, 0, "Assembly 4", true); // Set to 0 to align vertical with lane d
-                hX += hDims.length + ASSEMBLY_GAP;
+                addMachine(
+                    { op_no: 'H-C', op_name: 'Helper Table', machine_type: 'Helper Table', smv: 0, section: 'Assembly 4' },
+                    'C',
+                    laneCursors.C + hDims.length / 2,
+                    i + 1,
+                    0,
+                    "Assembly 4",
+                    true
+                );
+                laneCursors.C += hDims.length + ASSEMBLY_GAP;
             }
 
-            // Then place overflow machines AFTER the helpers
-            if (overflowMachines.length > 0) {
-                for (const { operation, dims } of overflowMachines) {
-                    addMachine(operation, 'C', hX, sectionCounters[secName], Math.PI / 2, "Assembly 4", true);
-                    sectionCounters[secName]++;
-                    hX += dims.length + ASSEMBLY_GAP;
+            // 4. Main Assembly (A1, A2, A3) Sequence: Op 4 -> Op 5 -> ...
+            const mainOps = ops.slice(3);
+            mainOps.forEach((item) => {
+                const { operation, count } = item;
+                const dims = getMachineZoneDims(operation.machine_type);
+                const step = dims.length + ASSEMBLY_GAP;
+
+                for (let k = 0; k < count; k++) {
+                    // Greedy choice among A1, A2, A3
+                    let bestLane: 'B' | 'A' | 'D' = 'B';
+                    if (laneCursors.A < laneCursors[bestLane]) bestLane = 'A';
+                    if (laneCursors.D < laneCursors[bestLane]) bestLane = 'D';
+
+                    const xPos = laneCursors[bestLane];
+                    addMachine(
+                        operation, 
+                        bestLane, 
+                        xPos, 
+                        sectionCounters[laneSections[bestLane]]++, 
+                        (bestLane === 'A' || bestLane === 'D') ? Math.PI / 2 : -Math.PI / 2, 
+                        laneSections[bestLane], 
+                        true
+                    );
+                    laneCursors[bestLane] += step;
                 }
-            }
+            });
 
             // v150 Fix: Assembly boundary check
+            const currentX_AB = Math.max(laneCursors.A, laneCursors.B);
+            const currentX_CD = Math.max(laneCursors.D, laneCursors.C);
             const isAssABOverflow = currentX_AB > specs.assemblyAB.end;
-            const isAssCDOverflow = Math.max(currentX_CD, hX) > specs.assemblyCD.end;
+            const isAssCDOverflow = currentX_CD > specs.assemblyCD.end;
             if (isAssABOverflow || isAssCDOverflow) {
                 warnings.unshift(`${secName}: Assembly machines going out of zone`);
             }
 
             cursors.A = currentX_AB; cursors.B = currentX_AB;
             cursors.D = currentX_CD;
-            cursors.C = hX;
+            cursors.C = laneCursors.C;
 
             sectionLayouts.push({
                 id: uuidv4(), name: "Assembly AB", position: { x: startX_AssemblyAB, y: 0, z: LANE_Z_CENTER_AB },
@@ -585,13 +591,14 @@ export const generateLayout = (
 
         const isAssembly = secLower.includes('assembly') || secLower.includes('lane') || secLower.includes('line') || secLower.includes('joining');
 
-        let secColor = isAB ? '#3b82f6' : '#ec4899';
-        if (secLower.includes('cuff')) secColor = '#3b82f6';
-        else if (secLower.includes('sleeve')) secColor = '#4ade80';
-        else if (secLower.includes('back')) secColor = '#8b5cf6';
-        else if (secLower.includes('collar')) secColor = '#ec4899';
-        else if (secLower.includes('front')) secColor = '#fbbf24';
-        else if (isAssembly) secColor = isAB ? '#f06b43' : '#14b8a6';
+        const isLine6 = lineNo.includes('Line 6');
+        let secColor = isLine6 ? '#db2777' : (isAB ? '#3b82f6' : '#ec4899');
+        if (secLower.includes('cuff')) secColor = isLine6 ? '#db2777' : '#3b82f6';
+        else if (secLower.includes('sleeve')) secColor = isLine6 ? '#db2777' : '#4ade80';
+        else if (secLower.includes('back')) secColor = isLine6 ? '#db2777' : '#8b5cf6';
+        else if (secLower.includes('collar')) secColor = isLine6 ? '#db2777' : '#ec4899';
+        else if (secLower.includes('front')) secColor = isLine6 ? '#db2777' : '#fbbf24';
+        else if (isAssembly) secColor = isLine6 ? '#db2777' : (isAB ? '#f06b43' : '#14b8a6');
 
         const boxLength = targetSpecs ? targetSpecs.end - targetSpecs.start : 500;
 
@@ -733,8 +740,11 @@ export const generateLayout = (
         let inspectionOps = ops.filter(o => o.operation.machine_type.toLowerCase().includes('inspection'));
         
         // v115 Fix: Fallback ONLY if there is no inspection that BELONGS to this section
+        const lineValNum = parseInt(lineNo.replace(/\D/g, '')) || 0;
+        const isFloor1 = lineValNum <= 6;
+
         const hasOwnInspection = inspectionOps.some(o => (o.operation.section || '').toLowerCase() === secLower);
-        if (!hasOwnInspection && matchedTag && !secLower.includes('assembly')) {
+        if (isFloor1 && !hasOwnInspection && matchedTag && !secLower.includes('assembly')) {
             inspectionOps.push({ operation: createDummyOp(`${secName} Inspection`, secName), count: 1 });
         }
 
@@ -848,59 +858,64 @@ export const generateLayout = (
             else { cursors.C = Math.max(cursors.C, lCX); cursors.D = Math.max(cursors.D, rCX); }
         }
 
-        // --- COLLAR: 3-supermarket U-shape (Custom Position) ---
-        if (secLower.includes('collar') && specs.collar) {
-            const targetSpecsLocal = specs.collar;
-            const anchorX = targetSpecsLocal.end;
-            const collarCenterZ = isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD;
-
-            // S2: Base of the U (Vertical pillar on the right edge)
-            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 0.9 * FT, undefined, - Math.PI / 2, secName, true);
-            const sm2 = layout[layout.length - 1]; if (sm2) { sm2.position.z = collarCenterZ - 1.5 * FT; sm2.id = `super2-${secName}`; }
-
-            // S1: Top Arm (Horizontal bar extending left)
-            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 5.2 * FT, undefined, Math.PI, secName, true);
-            const sm1 = layout[layout.length - 1]; if (sm1) { sm1.position.z = collarCenterZ + 3.5 * FT; sm1.id = `super1-${secName}`; }
-
-            // S3: Bottom Arm (Horizontal bar extending left)
-            addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 9.6 * FT, undefined, Math.PI / 2, secName, true);
-            const sm3 = layout[layout.length - 1]; if (sm3) { sm3.position.z = collarCenterZ - 1.5 * FT; sm3.id = `super3-${secName}`; }
-
-            const eX = targetSpecsLocal.end;
-            cursors.C = Math.max(cursors.C, eX);
-            cursors.D = Math.max(cursors.D, eX);
-        }
-
-        if ((secLower.includes('front') || secLower.includes('back')) && (specs.front || specs.back)) {
-            const sDims = getMachineZoneDims('supermarket');
-            const targetSpecs = secLower.includes('front') ? specs.front : specs.back;
-            if (targetSpecs) {
-                const absEnd = targetSpecs.end;
-                addMachine(
-                    createDummyOp('Supermarket', secName),
-                    (isAB ? 'A' : 'C'),
-                    absEnd - sDims.width / 2 - 0.2,
-                    undefined,
-                    undefined,
-                    secName,
-                    true
-                );
-                const superM = layout[layout.length - 1];
-                if (superM) {
-                    superM.rotation.y = ROT_FACE_FRONT + Math.PI;
-                    superM.id = `super-${secName}`;
-                }
-                const eX = absEnd;
-                if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
-                else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
-            }
-        }
-
         // --- SPACE MONITORING ---
         const AB_LIMIT = partBounds.back.end;
         const CD_LIMIT = partBounds.front.end;
         const monitoringLimitX = isAB ? AB_LIMIT : CD_LIMIT;
         const currentPos = isAB ? Math.max(cursors.A, cursors.B) : Math.max(cursors.C, cursors.D);
+
+        // --- SECTION OVERFLOW & SUPERMARKETS ---
+        // Support units (Supermarkets/Inspections) are only added for Line 1-6 as requested.
+        const isFloor1_Support = lineValNum <= 6;
+
+        if (isFloor1_Support) {
+            if (secLower.includes('collar') && specs.collar) {
+                const targetSpecsLocal = specs.collar;
+                const anchorX = targetSpecsLocal.end;
+                const collarCenterZ = isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD;
+
+                // S2: Base of the U (Vertical pillar on the right edge)
+                addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 0.9 * FT, undefined, - Math.PI / 2, secName, true);
+                const sm2 = layout[layout.length - 1]; if (sm2) { sm2.position.z = collarCenterZ - 1.5 * FT; sm2.id = `super2-${secName}`; }
+
+                // S1: Top Arm (Horizontal bar extending left)
+                addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 5.2 * FT, undefined, Math.PI, secName, true);
+                const sm1 = layout[layout.length - 1]; if (sm1) { sm1.position.z = collarCenterZ + 3.5 * FT; sm1.id = `super1-${secName}`; }
+
+                // S3: Bottom Arm (Horizontal bar extending left)
+                addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 9.6 * FT, undefined, Math.PI / 2, secName, true);
+                const sm3 = layout[layout.length - 1]; if (sm3) { sm3.position.z = collarCenterZ - 1.5 * FT; sm3.id = `super3-${secName}`; }
+
+                const eX = targetSpecsLocal.end;
+                cursors.C = Math.max(cursors.C, eX);
+                cursors.D = Math.max(cursors.D, eX);
+            }
+
+            if ((secLower.includes('front') || secLower.includes('back')) && (specs.front || specs.back)) {
+                const sDims = getMachineZoneDims('supermarket');
+                const targetSpecs = secLower.includes('front') ? specs.front : specs.back;
+                if (targetSpecs) {
+                    const absEnd = targetSpecs.end;
+                    addMachine(
+                        createDummyOp('Supermarket', secName),
+                        (isAB ? 'A' : 'C'),
+                        absEnd - sDims.width / 2 - 0.2,
+                        undefined,
+                        undefined,
+                        secName,
+                        true
+                    );
+                    const superM = layout[layout.length - 1];
+                    if (superM) {
+                        superM.rotation.y = ROT_FACE_FRONT + Math.PI;
+                        superM.id = `super-${secName}`;
+                    }
+                    const eX = absEnd;
+                    if (isAB) { cursors.A = Math.max(cursors.A, eX); cursors.B = Math.max(cursors.B, eX); }
+                    else { cursors.C = Math.max(cursors.C, eX); cursors.D = Math.max(cursors.D, eX); }
+                }
+            }
+        }
 
         const monitoringTag = Object.keys(specs).find(tag => secLower.includes(tag));
 

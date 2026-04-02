@@ -1,5 +1,6 @@
-import { useRef, useState, useMemo, useLayoutEffect } from 'react';
+import React, { useRef, useMemo, useState, useLayoutEffect, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Text, useGLTF, Html, Line, PivotControls } from '@react-three/drei';
 import * as THREE from 'three';
 import type { MachinePosition } from '@/types';
@@ -11,8 +12,9 @@ import { SpotWashBox } from './SpotWashBox';
 import { GarmentConveyor } from './GarmentConveyor';
 import { GerberParagon } from './GerberParagon';
 import AutoSpreader from './AutoSpreader';
+import ManualSpreader from './ManualSpreader';
 import { FusingMachine } from './FusingMachine';
-import { FT } from '@/pages/VirtualLine/layoutGenerator';
+import { FT } from '../../utils/layoutGenerator';
 
 
 interface Machine3DProps {
@@ -42,6 +44,7 @@ const MODEL_MAP: Record<string, string> = {
   wrap: 'wrapping.glb',
 
   // Specifics
+  'straightknife': 'straightknife.glb',
   turning: 'turning mc.glb',
   pointing: 'pointing mc.glb',
   contour: 'contourmc.glb', // User Requested: contourmc.glb
@@ -77,16 +80,25 @@ const MODEL_MAP: Record<string, string> = {
   table: 'helpers table.glb',
   checking: 'checking table.glb',
   fusing: 'fusing mc.glb',
-  rotary: 'fusing mc.glb',
+  rotary: 'rotaryfusing.glb',
   blocking: 'blocking mc.glb',
   folding: 'folding.glb',
   macpi: 'macpi.glb',
   finishing: 'finishing.glb',
   bandknife: 'bandknife.glb',
+  'cuttingf': 'cuttingf.glb',
 
   // Default override
   default: 'last machine.glb'
 };
+
+// Pre-load all primary models in the background to ensure instantly smooth transitions
+// when switching to Sewing or Finishing views (avoids main thread stall on first render).
+if (typeof window !== 'undefined') {
+  Array.from(new Set(Object.values(MODEL_MAP))).forEach(modelFile => {
+    useGLTF.preload(`/models/${modelFile}`);
+  });
+}
 
 const getModelUrl = (type: string) => {
   if (!type) return `/models/${MODEL_MAP['default']}`;
@@ -113,9 +125,17 @@ const getModelUrl = (type: string) => {
 
 const getTargetDimensionsMeters = (type: string, data?: any) => {
   const t = type.toLowerCase();
-  const FT = 0.3048;
+  const FT = 0.3048; // Forced rebuild touch
 
   // 1. Direct override from layout properties (Priority)
+  if (data?.spreadingLength && (t === 'gerber' || t === 'auto-spreader' || t === 'manual-spreader' || data?.tableOnly)) {
+    return {
+      length: data.spreadingLength * FT,
+      width: (data.tableWidth || 7.1) * FT,
+      height: (data.tableHeight || 3) * FT
+    };
+  }
+
   if (data?.tableLength) {
     return {
       length: data.tableLength * FT,
@@ -145,9 +165,13 @@ const getTargetDimensionsMeters = (type: string, data?: any) => {
   } else if (t.includes('helper') || t.includes('work table') || t.includes('table') || t.includes('trolley')) {
     l = 4.5 * FT; w = 2.5 * FT; h = 2.2 * FT;
   } else if (t.includes('fusing') || t.includes('rotary')) {
-    l = 4 * FT; w = 3.0 * FT; h = 4.0 * FT;
+    l = 3 * FT; w = 4.0 * FT; h = 5.0 * FT;
+  } else if (t.includes('cuttingf')) {
+    l = 4 * FT; w = 2.5 * FT; h = 4.0 * FT;
   } else if (t.includes('blocking')) {
     l = 4 * FT; w = 2.5 * FT; h = 4.0 * FT;
+  } else if (t.includes('straightknife')) {
+    l = 1.0 * FT; w = 1.0 * FT; h = 2.0 * FT;
   } else if (t.includes('supermarket')) {
     l = 6.0 * FT; w = 2.5 * FT; h = 7.0 * FT;
   } else if (t.includes('wrapping') || t.includes('wrap')) {
@@ -168,7 +192,7 @@ const getTargetDimensionsMeters = (type: string, data?: any) => {
   } else if (t.includes('spotwash')) {
     l = 4 * FT; w = 2.5 * FT; h = 5 * FT; // Restore Original Dimensions
   } else if (t.includes('bandknife')) {
-    l = 7 * FT; w = 4 * FT; h = 6.5 * FT;
+    l = 7 * FT; w = 4 * FT; h = 5.5 * FT;
   } else if (t.includes('fusing_custom')) {
     l = 24.4 * FT; w = 5.7 * FT; h = 6 * FT; // Updated to exactly 24.4ft L, 5.7ft W, and 5ft H
   }
@@ -230,154 +254,67 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
   const [hovered, setHovered] = useState(false);
   const [clicked, setClicked] = useState(false);
   const [modelBounds, setModelBounds] = useState({ sizeX: 0, sizeZ: 0, centerX: 0, centerZ: 0 });
-  const targetDims = useMemo(() => getTargetDimensionsMeters(machineData.operation.machine_type, machineData), [machineData.operation.machine_type, machineData]);
+  const mType = (machineData?.operation?.machine_type || 'default').toLowerCase();
+  const targetDims = getTargetDimensionsMeters(mType, machineData);
+  const modelUrl = getModelUrl(mType);
+  
   const initialScale = useMemo(() => {
-    if (machineData.operation.machine_type.toLowerCase().includes('fusing_custom')) {
-      return [1, 1, 1] as [number, number, number]; // Let the component handle its own internal feet-to-meters scaling
-    }
+    if (mType.includes('fusing_custom')) return [1, 1, 1] as [number, number, number];
     return [1, 1, 1] as [number, number, number];
-  }, [machineData.operation.machine_type]);
+  }, [mType]);
 
   const [computedScale, setComputedScale] = useState<[number, number, number]>(initialScale);
 
-  const { selectedMachines, toggleMachineSelection, visibleSection, isMoveMode, isDeleteMode, deleteMachine, setPlacingMachine, setDraggingActive, moveSelectedMachines, updateMachinesPositions } = useLineStore();
-  const isSelected = selectedMachines.includes(machineData.id);
+  const { 
+    selectedMachines, 
+    toggleMachineSelection, 
+    visibleSection, 
+    isMoveMode, 
+    isDraggingActive,
+    setDraggingActive, 
+    moveSelectedMachines, 
+    updateMachinesPositions,
+    updateMachineName
+  } = useLineStore();
 
-  const isVisible = isOverview || !visibleSection || (machineData.section && machineData.section.toLowerCase() === visibleSection.toLowerCase());
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState(machineData.operation?.op_name || "");
 
-  // Unused Position Logic (Mapping state)
-  const isUnused = machineData.operation.op_no === '---';
+  // Sync internal tempName with real prop name when machineData changes (e.g. from the store)
+  useEffect(() => {
+    setTempName(machineData.operation?.op_name || "");
+  }, [machineData.operation?.op_name]);
 
-  const modelUrl = getModelUrl(machineData.operation.machine_type);
-  const { scene: gltfScene } = useGLTF(modelUrl, true);
+  const { scene: gltfScene } = useGLTF(modelUrl || '/models/last machine.glb', true);
   const clonedScene = useMemo(() => (gltfScene ? gltfScene.clone() : null), [gltfScene]);
 
-  if (!isVisible) return null;
-
-  const mType = machineData.operation.machine_type.toLowerCase();
-
-  if (mType === 'gerber') {
-    return (
-      <group
-        position={[machineData.position.x, machineData.position.y || 0, machineData.position.z]}
-        rotation={[machineData.rotation.x, (machineData.rotation.y || 0) + (machineData.modelRotation || 0), machineData.rotation.z]}
-      >
-        <GerberParagon
-          tableLength={machineData.tableLength || 17.0}
-          tableWidth={machineData.tableWidth || 7.1}
-          tableOnly={machineData.tableOnly || false}
-          spreadingLength={(machineData as any).spreadingLength || 33.9}
-          operatorOnFarSide={(machineData as any).operatorOnFarSide || false}
-        />
-      </group>
-    );
-  }
-
-  if (mType === 'auto-spreader') {
-    return (
-      <group
-        position={[machineData.position.x, machineData.position.y || 0, machineData.position.z]}
-        rotation={[machineData.rotation.x, (machineData.rotation.y || 0) + (machineData.modelRotation || 0), machineData.rotation.z]}
-      >
-        <AutoSpreader
-          tableWidth={machineData.tableWidth || 7.1}
-          status="spreading"
-        />
-      </group>
-    );
-  }
+  const isSelected = machineData?.id ? selectedMachines.includes(machineData.id) : false;
+  const isVisible = isOverview || !visibleSection || (machineData?.section && machineData.section.toLowerCase() === visibleSection.toLowerCase());
+  const isUnused = machineData?.operation?.op_no === '---';
 
 
-  // Board check after hooks
-  if (machineData.operation.machine_type.toLowerCase().startsWith('board')) {
-    return (
-      <group
-        position={[machineData.position.x, machineData.position.y, machineData.position.z]}
-        rotation={[machineData.rotation.x, machineData.rotation.y, machineData.rotation.z]}
-      >
-        <mesh position={[0, -1.2, 0]}>
-          <cylinderGeometry args={[0.05, 0.05, 2.5]} />
-          <meshStandardMaterial color="#333" />
-        </mesh>
-        <mesh position={[0, 0, 0]}>
-          <boxGeometry args={[1.5, 0.5, 0.1]} />
-          <meshStandardMaterial color="#ffffff" />
-        </mesh>
-      </group>
-    );
-  }
+  // Special machine rendering will be handled after Hooks section
 
-  // Pathway check after hooks
-  if (machineData.operation.machine_type.toLowerCase() === 'pathway') {
-    return (
-      <group
-        position={[machineData.position.x, 0.01, 0]} // Centered on Z=0, slightly above floor
-        rotation={[0, 0, 0]}
-      >
-        <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[2, 30]} />
-          <meshStandardMaterial color="#666666" transparent opacity={0.4} />
-        </mesh>
-        {/* Borders */}
-        <mesh position={[1, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[0.1, 30]} />
-          <meshStandardMaterial color="#fbbf24" />
-        </mesh>
-        <mesh position={[-1, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[0.1, 30]} />
-          <meshStandardMaterial color="#fbbf24" />
-        </mesh>
-      </group>
-    );
-  }
-
-  // Cabin check after hooks
-  if (machineData.operation.machine_type.toLowerCase().includes('cabin') || machineData.operation.machine_type.toLowerCase().includes('supervisor')) {
-    return (
-      <group
-        position={[machineData.position.x, machineData.position.y, machineData.position.z]}
-        rotation={[machineData.rotation.x, machineData.rotation.y, machineData.rotation.z]}
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleMachineSelection(machineData.id);
-        }}
-      >
-        <Cabin3D width={targetDims.length} height={targetDims.height} depth={targetDims.width} />
-      </group>
-    );
-  }
-
-  // Unused Position or Empty check
-  if (isUnused || modelUrl === 'empty') {
-    return (
-      <group position={[machineData.position.x, 0.05, machineData.position.z]} rotation={[0, machineData.rotation.y, 0]}>
-        <Line
-          points={[
-            [-targetDims.length / 2, -targetDims.width / 2, 0],
-            [targetDims.length / 2, -targetDims.width / 2, 0],
-            [targetDims.length / 2, targetDims.width / 2, 0],
-            [-targetDims.length / 2, targetDims.width / 2, 0],
-            [-targetDims.length / 2, -targetDims.width / 2, 0],
-          ]}
-          rotation={[-Math.PI / 2, 0, 0]}
-          color="#333"
-          lineWidth={1}
-          dashed
-          dashSize={0.2}
-          gapSize={0.1}
-        />
-      </group>
-    );
-  }
 
   // Handle centering logic once when model loads
   useLayoutEffect(() => {
-    if (machineData.operation.machine_type.toLowerCase().includes('fusing_custom')) {
-      setComputedScale([1, 1, 1]); // Reset scaling for precision-built models
+    const isSpecialMachine = mType === 'gerber' || 
+                            mType === 'auto-spreader' || 
+                            mType === 'manual-spreader' || 
+                            mType.includes('fusing_custom') || 
+                            mType.includes('cabin') || 
+                            mType.includes('supervisor') ||
+                            mType === 'human' ||
+                            mType.startsWith('board');
+
+    if (isSpecialMachine) {
+      setComputedScale([1, 1, 1]); // Reset scaling for precision-built / coded models
+      setModelBounds({ sizeX: 0, sizeZ: 0, centerX: 0, centerZ: 0 });
       return;
     }
 
     if (gltfScene && clonedScene) {
+      gltfScene.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(gltfScene);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
@@ -385,38 +322,41 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
       setModelBounds({ sizeX: size.x, sizeZ: size.z, centerX: center.x, centerZ: center.z });
 
       // Use targetDims.length for X and targetDims.width for Z
-      const type = machineData.operation.machine_type.toLowerCase();
-      const isFusingLocally = type.includes('fusing') || type.includes('rotary');
+      const type = mType;
+      const isFusingLocally = type.includes('fusing') || type.includes('rotary') || type.includes('cuttingf');
 
       const isInspectionLocally = type.includes('inspection') || type.includes('checking');
       const scaleFactor = type.includes('turning') ? 1.4 : 1.0;
 
-      const scaleX = size.x > 0.001 ? (isFusingLocally ? (targetDims.length * scaleFactor) / size.z : (targetDims.length * scaleFactor) / size.x) : 1;
+      // Scaling logic - Swap length and width for rotary fusing to match internal rotation
+      const isRotaryFusing = mType.includes('rotary') && !mType.includes('fusing_custom');
+      const scaleX = size.x > 0.001 ? ((isRotaryFusing ? targetDims.width : targetDims.length) * scaleFactor) / size.x : 1;
       const scaleY = size.y > 0.001 ? (targetDims.height * scaleFactor) / size.y : 1;
-      const scaleZ = size.z > 0.001 ? (isFusingLocally ? (targetDims.width * scaleFactor) / size.x : (targetDims.width * scaleFactor) / size.z) : 1;
+      const scaleZ = size.z > 0.001 ? ((isRotaryFusing ? targetDims.length : targetDims.width) * scaleFactor) / size.z : 1;
 
       setComputedScale([scaleX, scaleY, scaleZ]);
 
       if (machineData.centerModel) {
-        if (isFusingLocally) {
-          // Rotate 180 from previous (PI/2 -> -PI/2) to ensure front faces operator
-          clonedScene.rotation.y = -Math.PI / 2;
-          // Centering shift for -90 deg rotation
-          clonedScene.position.x = -center.z;
-          clonedScene.position.z = center.x;
-        } else {
-          clonedScene.position.x = -center.x;
-          clonedScene.position.z = -center.z;
-        }
-        // Snap to floor
-        const baseY = -box.min.y;
-        clonedScene.position.y = isFusingLocally ? 0 : baseY;
+        // Enforce 0 internal rotation for layout consistency (90 deg from previous system)
+        clonedScene.rotation.y = mType.includes('fusing_custom') ? -Math.PI / 2 : 0;
+
+        clonedScene.position.x = -center.x;
+        clonedScene.position.z = -center.z;
       }
 
-      // Independent Model Rotation override
-      if (machineData.modelRotation !== undefined) {
-        clonedScene.rotation.y += machineData.modelRotation;
+      // Internal rotation for specific models - applied BEFORE grounding for accurate bounding box
+      if (mType.includes('rotary') && !mType.includes('fusing_custom')) {
+        clonedScene.rotation.y = -Math.PI / 2; // Rotate the GLB -90 degrees internally
       }
+
+      // Standard grounding - Snap internal position based on CLONED scene to be most accurate
+      const finalBox = new THREE.Box3().setFromObject(clonedScene);
+      const baseY = -finalBox.min.y;
+      clonedScene.position.y = baseY;
+
+      // Ensure the outer group itself starts at 0 height
+      if (rootRef.current) rootRef.current.position.y = 0;
+      if (meshRef.current) meshRef.current.position.y = 0;
 
       // Change all mesh colors in the model to off-white
       clonedScene.traverse((child) => {
@@ -424,7 +364,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
           const mesh = child as THREE.Mesh;
           if (mesh.material) {
             // Apply specific colors based on machine type
-            const isFolding = machineData.operation.machine_type.toLowerCase().includes('folding');
+            const isFolding = mType.includes('folding');
             const targetColor = isFolding ? '#faf9f6' : '#ffffff'; // Off-white for folding, pure white for others
 
             if (Array.isArray(mesh.material)) {
@@ -448,36 +388,57 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
     }
   }, [gltfScene, clonedScene, machineData.centerModel, machineData.operation.machine_type, targetDims.length, targetDims.width, targetDims.height]);
 
-  useFrame((state, delta) => {
+  // Buttery-smooth movement logic (High-FPS Render Loop)
+  const positionInitialized = useRef(false);
+
+  useFrame((_, delta) => {
     if (!rootRef.current || !meshRef.current) return;
 
-    // Smoothly animate position to store position (simulation feel)
     const targetPos = relativePosition || machineData.position;
 
-    // If we are being dragged in a proxy group, snapping is better for the moving group, 
-    // but for "others" lerping is essential.
-    if (relativePosition) {
-      rootRef.current.position.set(targetPos.x, targetPos.y, targetPos.z);
+    // 1. Precise Tracking for Active Dragging (Absolute Zero Lag)
+    if (isSelected && isDraggingActive && (window as any)._activeDragMatrix) {
+       const matrix = (window as any)._activeDragMatrix as THREE.Matrix4;
+       const translation = new THREE.Vector3();
+       const orientation = new THREE.Quaternion();
+       const scl = new THREE.Vector3();
+       matrix.decompose(translation, orientation, scl);
+
+       const initialPos = (window as any)._initialPositions?.[machineData.id] || targetPos;
+       
+       rootRef.current.position.x = initialPos.x + translation.x;
+       rootRef.current.position.y = initialPos.y;
+       rootRef.current.position.z = initialPos.z + translation.z;
+       positionInitialized.current = true;
     } else {
-      rootRef.current.position.x = THREE.MathUtils.lerp(rootRef.current.position.x, targetPos.x, delta * 15);
-      rootRef.current.position.y = THREE.MathUtils.lerp(rootRef.current.position.y, targetPos.y, delta * 15);
-      rootRef.current.position.z = THREE.MathUtils.lerp(rootRef.current.position.z, targetPos.z, delta * 15);
+       // 2. SNAP on first render — never lerp from (0,0,0) to real position
+       //    Only smooth-lerp when store updates position during an edit session
+       if (!positionInitialized.current) {
+         rootRef.current.position.set(targetPos.x, 0, targetPos.z);
+         positionInitialized.current = true;
+       } else if (isDraggingActive) {
+         // Smooth lerp ONLY when user is actively dragging (edit mode)
+         // Clamp to [0,1] to prevent overshoot when frames drop
+         const lerpFactor = Math.min(delta * 20, 1.0);
+         rootRef.current.position.x = THREE.MathUtils.lerp(rootRef.current.position.x, targetPos.x, lerpFactor);
+         rootRef.current.position.y = 0;
+         rootRef.current.position.z = THREE.MathUtils.lerp(rootRef.current.position.z, targetPos.z, lerpFactor);
+       } else {
+         // Snap to exact position when not dragging — eliminates all drift
+         rootRef.current.position.set(targetPos.x, 0, targetPos.z);
+       }
     }
 
-    // Scale animation
+    // 3. Hover Effect (Smooth Floating Transition)
+    const hoverY = (hovered && !isSelected) ? 0.06 : 0;
+    meshRef.current.position.y = THREE.MathUtils.lerp(meshRef.current.position.y, hoverY, Math.min(delta * 6, 1.0));
+
+    // 4. Interaction Feedback (Scale)
     const clickScale = clicked ? 0.9 : 1;
     meshRef.current.scale.set(
       computedScale[0] * clickScale,
       computedScale[1] * clickScale,
       computedScale[2] * clickScale
-    );
-
-    // Hover effect
-    const hoverY = (hovered && !isSelected) ? 0.1 : 0;
-    meshRef.current.position.y = THREE.MathUtils.lerp(
-      meshRef.current.position.y,
-      hoverY,
-      delta * 5
     );
   });
 
@@ -496,20 +457,74 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
   const zoneLengthX = targetDims.length;
   const zoneWidthZ = targetDims.width;
 
-  const op = machineData.operation || { op_name: 'N/A', machine_type: 'default' };
-  const needsOperator = !mType.includes('supermarket') && !mType.includes('trolley') && !mType.includes('pathway') && !mType.startsWith('board') && !mType.includes('cabin') && !mType.includes('supervisor');
+  // Only show the internal, non-modifiable operator if hideOperator is NOT set.
+  // This allows cutting-zone machines to use separate, modifiable human entities.
+  const needsOperator = (
+    machineData.showOperator !== undefined 
+      ? machineData.showOperator 
+      : (
+          mType.includes('snls') || mType.includes('overlock') || mType.includes('fusing') || 
+          mType.includes('iron') || mType.includes('press') || mType.includes('inspection') || 
+          mType.includes('bandknife') || mType.includes('cuttingf') || mType.includes('rotary') ||
+          mType.includes('folding') || mType.includes('macpi') || mType.includes('checking') ||
+          mType.includes('thread') || mType.includes('spotwash') || mType.includes('finishing') ||
+          mType.includes('helper')
+        )
+  ) && !machineData.hideOperator && mType !== 'human' && !mType.includes('supermarket') && !mType.includes('cabin');
 
   const displayPos = relativePosition || machineData.position || { x: 0, y: 0, z: 0 };
 
   // ACCESSORY CHECK - Iron box should appear on Iron machines, or any task involving 'pressing'
-  const opNameLower = (machineData.operation?.op_name || (machineData as any).opName || "").toLowerCase();
-  const hasIronBox = (mType.includes('iron') || opNameLower.includes('pressing') || (machineData as any).showIronBox === true) && (machineData as any).hideIronBox !== true;
+  const opNameLower = (machineData.operation?.op_name || machineData.opName || "").toLowerCase();
+  const hasIronBox = (mType.includes('iron') || opNameLower.includes('pressing') || machineData.showIronBox === true) && machineData.hideIronBox !== true;
+
+  // Decide if we use standard interaction group or specialized early-ish return
+  if (mType === 'pathway') {
+    return (
+      <group position={[displayPos.x, 0.01, 0]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[2, 30]} />
+          <meshStandardMaterial color="#666666" transparent opacity={0.4} />
+        </mesh>
+        <mesh position={[1, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[0.1, 30]} />
+          <meshStandardMaterial color="#fbbf24" />
+        </mesh>
+        <mesh position={[-1, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[0.1, 30]} />
+          <meshStandardMaterial color="#fbbf24" />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (isUnused || modelUrl === 'empty') {
+    return (
+      <group position={[displayPos.x, 0.05, displayPos.z]} rotation={[0, machineData.rotation.y, 0]}>
+        <Line
+          points={[
+            [-targetDims.length / 2, -targetDims.width / 2, 0],
+            [targetDims.length / 2, -targetDims.width / 2, 0],
+            [targetDims.length / 2, targetDims.width / 2, 0],
+            [-targetDims.length / 2, targetDims.width / 2, 0],
+            [-targetDims.length / 2, -targetDims.width / 2, 0],
+          ]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          color="#333"
+          lineWidth={1}
+          dashed
+          dashSize={0.2}
+          gapSize={0.1}
+        />
+      </group>
+    );
+  }
 
   return (
     <group
       ref={rootRef}
       position={[displayPos.x, displayPos.y, displayPos.z]}
-      rotation={[machineData.rotation.x, machineData.rotation.y, machineData.rotation.z]}
+      rotation={[machineData.rotation.x, (machineData.rotation.y || 0) + (machineData.modelRotation || 0), machineData.rotation.z]}
     >
       <group
         ref={meshRef}
@@ -520,23 +535,67 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
         onPointerOver={(e) => {
           e.stopPropagation();
           setHovered(true);
+          useLineStore.getState().setLabelMachineId(machineData.id);
           document.body.style.cursor = 'pointer';
         }}
         onPointerOut={() => {
           setHovered(false);
+          useLineStore.getState().setLabelMachineId(null);
           document.body.style.cursor = 'auto';
         }}
       >
-        {/* 3D Model */}
-        { (mType.includes('fusing') || mType.includes('rotary')) ? (
-          <FusingMachine
-            L={(machineData as any).tableLength || (targetDims.length / FT)}
-            W={(machineData as any).tableWidth || (targetDims.width / FT)}
-            H={(machineData as any).tableHeight || 5.0}
+        {/* Branch: 3D Model Selection */}
+        {mType === 'gerber' ? (
+          <GerberParagon
+            tableLength={machineData.tableLength || 17.0}
+            tableWidth={machineData.tableWidth || 7.1}
+            tableOnly={machineData.tableOnly || false}
+            spreadingLength={machineData.spreadingLength || 0}
+            operatorOnFarSide={machineData.operatorOnFarSide || false}
           />
+        ) : mType === 'auto-spreader' ? (
+          <AutoSpreader
+            tableWidth={machineData.tableWidth || 7.1}
+            status="spreading"
+          />
+        ) : mType === 'manual-spreader' ? (
+          <ManualSpreader
+            tableWidth={machineData.tableWidth || 7.1}
+            fabricLength={machineData.fabricLength}
+            fabricColor={machineData.fabricColor}
+          />
+        ) : mType.startsWith('board') ? (
+          <group>
+            <mesh position={[0, -1.2, 0]}>
+              <cylinderGeometry args={[0.05, 0.05, 2.5]} />
+              <meshStandardMaterial color="#333" />
+            </mesh>
+            <mesh position={[0, 0, 0]}>
+              <boxGeometry args={[1.5, 0.5, 0.1]} />
+              <meshStandardMaterial color="#ffffff" />
+            </mesh>
+          </group>
+        ) : mType.includes('cabin') || mType.includes('supervisor') ? (
+          <Cabin3D width={targetDims.length} height={targetDims.height} depth={targetDims.width} />
+        ) : mType === 'fusing_custom' ? (
+          <FusingMachine
+            L={machineData.tableLength || (targetDims.length / FT)}
+            W={machineData.tableWidth || (targetDims.width / FT)}
+            H={machineData.tableHeight || 5.0}
+          />
+        ) : mType === 'human' ? (
+          <group position={[zoneOffsetX, 0, zoneOffsetZ]}>
+            <HumanOperator
+              id={machineData.id}
+              rotation={0}
+              isStanding={true}
+              isInspection={false}
+            />
+          </group>
         ) : (
-
-          <primitive object={clonedScene} castShadow receiveShadow />
+          <group position={[zoneOffsetX, 0, zoneOffsetZ]}>
+            <primitive object={clonedScene} castShadow receiveShadow />
+          </group>
         )}
 
         {/* Garment Bundles for Supermarket - Hidden in Overview for performance */}
@@ -558,99 +617,152 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
         </mesh>
       )}
 
-      {/* Movement Arrows - Per-machine ('Line Planner' style) */}
-      {isSelected && isMoveMode && (
-        <PivotControls
-          anchor={[0, 0.1, 1.25]}
-          depthTest={false}
-          scale={75}
-          fixed={true}
-          activeAxes={[true, false, true]}
-          onDragStart={() => {
-            setDraggingActive(true);
-            (window as any)._dragLastX = 0;
-            (window as any)._dragLastZ = 0;
-          }}
-          onDrag={(matrix) => {
-            const translation = new THREE.Vector3();
-            const rotation = new THREE.Quaternion();
-            const scale = new THREE.Vector3();
-            matrix.decompose(translation, rotation, scale);
+      {/* Info Label (Exclusive Visibility) */}
+      {(() => {
+        const state = useLineStore.getState();
+        const labelMachineId = state.labelMachineId;
+        const isModifying = state.isMoveMode || state.isRotateMode || state.isDeleteMode || state.isDraggingActive || state.placingMachine;
+        
+        const shouldShow = (labelMachineId === machineData.id || (hovered && !isOverview)) && !isModifying;
+        
+        const section = machineData?.section || "";
+        const mTypeLower = (machineData?.operation?.machine_type || "default").toLowerCase();
+        const opNameLabel = (machineData?.operation?.op_name || "").toLowerCase();
 
-            const dx = translation.x - ((window as any)._dragLastX || 0);
-            const dz = translation.z - ((window as any)._dragLastZ || 0);
+        // 1. Resolve Display Name
+        let name = machineData.operation?.op_name;
+        const isGeneric = !name || name === "Unknown" || name === "default" || name === machineData.operation?.machine_type;
+        
+        if (isGeneric) {
+          if (mTypeLower === 'gerber') name = opNameLabel.includes('table') ? "Spreading Table" : "Autocutter";
+          else if (mTypeLower === 'auto-spreader') name = "Autospreader";
+          else if (mTypeLower === 'manual-spreader') name = "Manual Spreader";
+          else if (mTypeLower.includes('supermarket')) name = "Supermarket";
+          else if (mTypeLower === 'snls') name = "Single Needle Lockstitch";
+          else if (mTypeLower === 'overlock' || mTypeLower === 'ol') name = "Overlock Machine";
+          else if (mTypeLower.includes('iron') || mTypeLower.includes('press')) name = "Iron Press Station";
+          else if (mTypeLower.includes('fusing')) name = "Fusing Machine";
+          else if (mTypeLower.includes('inspection')) name = "QC Station";
+        }
 
-            moveSelectedMachines(dx, dz);
+        if (!name || name === "Unknown") name = (machineData.operation as any)?.op_name || "Equipment";
 
-            (window as any)._dragLastX = translation.x;
-            (window as any)._dragLastZ = translation.z;
-          }}
-          onDragEnd={() => {
-            updateMachinesPositions([machineData.id]);
-            setDraggingActive(false);
-          }}
-        >
-          <mesh visible={false}><boxGeometry args={[0.01, 0.01, 0.01]} /></mesh>
-        </PivotControls>
-      )}
+        const labelHeight = (name.toLowerCase().includes('table') || mTypeLower.includes('table')) ? 1.2 : 2.2;
 
-      {/* Info Label (Visible on Hover) */}
-      {(hovered && !isSelected) && (
-        <Html position={[0, 2.2, 0]} center style={{ pointerEvents: 'none' }}>
-          <div style={{
-            background: 'rgba(10,10,20,0.97)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            borderRadius: '12px',
-            padding: '8px 12px',
-            minWidth: '140px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(16px)',
-            pointerEvents: 'none',
-            fontFamily: 'system-ui, sans-serif',
-          }}>
-            {/* Machine type badge */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
-              <span style={{ fontSize: '9px', fontWeight: 900, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                {machineData.operation.machine_type}
-              </span>
-            </div>
-            {/* Operation name */}
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#ffffff', lineHeight: 1.3, marginBottom: '5px', maxWidth: '180px', wordBreak: 'break-word' }}>
-              {machineData.operation.op_name || machineData.operation.machine_type}
-            </div>
-            {/* Section row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '4px' }}>
-              <span style={{ fontSize: '8px', color: 'rgba(255,255,255,0.4)', fontWeight: 700 }}>{machineData.section}</span>
-            </div>
-          </div>
-        </Html>
-      )}
+        const isAssembly = section.toLowerCase().includes('assembly');
+        const machineLayout = useLineStore.getState().machineLayout;
+        const totalCount = machineLayout.filter(m => 
+          (m.operation?.op_name || "").trim().toLowerCase() === (machineData.operation?.op_name || "").toLowerCase() &&
+          (isAssembly ? (m.section || "").toLowerCase().includes('assembly') : (m.section || "") === section)
+        ).length;
+
+        return (
+          <Html position={[0, labelHeight, 0]} center style={{ pointerEvents: 'none' }}>
+            <AnimatePresence>
+              {shouldShow && (
+                <motion.div
+                  initial={{ opacity: 0, y: 15, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 400 }}
+                  style={{
+                    background: 'rgba(7, 7, 15, 0.95)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '16px',
+                    padding: '12px 16px',
+                    minWidth: '160px',
+                    boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
+                    backdropFilter: 'blur(24px)',
+                    pointerEvents: 'auto',
+                    fontFamily: '"Outfit", system-ui, sans-serif',
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 900, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
+                      {mTypeLower.replace('_custom', '').replace('-', ' ')}
+                    </span>
+                  </div>
+                  
+                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#ffffff', lineHeight: 1.4, marginBottom: '8px' }}>
+                    {isEditingName ? (
+                      <input
+                        autoFocus
+                        value={tempName}
+                        onChange={(e) => setTempName(e.target.value)}
+                        onBlur={() => setIsEditingName(false)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            updateMachineName(machineData.id, tempName, machineData);
+                            setIsEditingName(false);
+                          }
+                        }}
+                        style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', fontSize: '12px', padding: '4px 8px', borderRadius: '6px', width: '100%' }}
+                      />
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>{name}</span>
+                        {isSelected && (
+                          <button onClick={(e) => { e.stopPropagation(); setIsEditingName(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>SECTION</span>
+                      <span style={{ fontSize: '9px', color: '#fff', fontWeight: 700 }}>{section}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>POOL SIZE</span>
+                      <span style={{ fontSize: '10px', color: '#818cf8', fontWeight: 900 }}>{totalCount}</span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </Html>
+        );
+      })()}
+
 
       {/* Human Operator - RESTORED visibility for all modes */}
       {
-        needsOperator && (() => {
+        needsOperator && !machineData.hideOperator && (() => {
           const isRotated90 = Math.abs(machineData.rotation.y % Math.PI) > 0.1;
           const operatorOffsetZ = isRotated90 ? -0.25 : 0;
-          const isStanding = mType.includes('bandknife') || mType.includes('inspection') || mType.includes('iron') || mType.includes('press') || mType.includes('fusing') || mType.includes('rotary') || mType.includes('helper') || mType.includes('table') || mType.includes('folding') || mType.includes('macpi') || mType.includes('checking') || mType.includes('thread') || mType.includes('finishing') || mType.includes('spotwash');
+          const isStanding = (mType.includes('bandknife') || mType.includes('inspection') || mType.includes('iron') || mType.includes('press') || mType.includes('fusing') || mType.includes('rotary') || mType.includes('helper') || mType.includes('table') || mType.includes('folding') || mType.includes('macpi') || mType.includes('checking') || mType.includes('thread') || mType.includes('finishing') || mType.includes('spotwash') || mType.includes('straightknife') || mType.includes('knife')) && !mType.includes('sitting');
           const moveX = Math.sin(machineData.rotation.y) * operatorOffsetZ;
           const moveZ = Math.cos(machineData.rotation.y) * operatorOffsetZ;
 
           let extraLocalZ = 0;
           let extraLocalX = 0;
 
-          // Use table width to offset operator to the side
-          const tableW = (machineData as any).tableWidth || targetDims.length;
-          const machineHalfW = tableW / 2;
+          // Use target dimensions (meters) to accurately offset the operator
+          const machineHalfW = (targetDims.width || 0) / 2;
 
           const isInspection = mType.includes('inspection');
 
           // Standard offset for someone standing/sitting at a machine (industrial man-allowance)
-          const isFusing = false; // Aligned with Iron Press (uses default offset)
+          const isFusing = mType.includes('fusing') || mType.includes('rotary'); 
           const isSpreading = mType.includes('gerber') || mType.includes('auto-spreader');
 
           // For Fusing, the operator stands on the aisle side (Positive Z if rotation is 0)
+          // For Fusing, the operator stands on the aisle side (Positive Z if rotation is 0)
           if (isFusing) {
-            extraLocalZ = machineHalfW + 0.55; // Sit directly at the edge of the 5.7ft wide table
+            // If machine is rotated 90 degrees, we need to adjust the local coordinates 
+            // so the human stays in the same effective world position (the aisle).
+            if (isRotated90) {
+              extraLocalX = -(machineHalfW - 0.6);
+              extraLocalZ = 0;
+            } else {
+              extraLocalZ = machineHalfW - 0.6; // Deep intersection with the loading table
+            }
           } else if (isInspection) {
             extraLocalZ = -0.2; // Very slightly back from inspection, inside yellow zone
           } else if (mType.includes('thread')) {
@@ -660,29 +772,43 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
           } else if (isSpreading) {
             extraLocalZ = machineHalfW + 0.3; // Offset for spreading table workers
           }
-          
-          if ((machineData as any).rotateOperatorAxis) {
+
+          if (machineData.operatorOnFarSide) {
+            extraLocalZ = -extraLocalZ;
+          }
+
+          if (machineData.rotateOperatorAxis) {
             const oldX = extraLocalX;
             extraLocalX = extraLocalZ;
             extraLocalZ = oldX;
           }
 
+          // Compute final internal rotation for the human
+          let humanRotation = machineData.operatorOnFarSide ? Math.PI : 0;
+          
+          // Use either the explicit rotationOffset OR the automatic axis rotation, but avoid doubling them 
+          // if they represent the same visual intent (facing the machine).
+          if (machineData.rotationOffset !== undefined) {
+             humanRotation += machineData.rotationOffset;
+          } else if (machineData.rotateOperatorAxis) {
+             humanRotation += Math.PI / 2;
+          }
+
           return (
             <group>
-              <group 
-                position={[zoneOffsetX + moveX + extraLocalX, 0, zoneOffsetZ + moveZ + extraLocalZ]}
-                rotation={[0, (machineData as any).rotateOperatorAxis ? Math.PI / 2 : 0, 0]}
-              >
-                <HumanOperator 
-                    id={machineData.id} 
-                    rotation={machineData.rotation.y + ((machineData as any).rotationOffset || 0)} 
-                    isStanding={isStanding} 
-                    isInspection={isInspection} 
+              <group
+                position={[zoneOffsetX + moveX + extraLocalX, -machineData.position.y, zoneOffsetZ + moveZ + extraLocalZ]}
+                rotation={[0, humanRotation, 0]}>
+                <HumanOperator
+                  id={machineData.id}
+                  rotation={0} // We handle rotation on the parent group now for clarity
+                  isStanding={isStanding}
+                  isInspection={isInspection}
                 />
               </group>
               {mType.includes('outinspection') && (
                 <group position={[zoneOffsetX - moveX - extraLocalX, 0, zoneOffsetZ - moveZ - extraLocalZ]} rotation={[0, Math.PI, 0]}>
-                  <HumanOperator id={`${machineData.id}-2`} rotation={machineData.rotation.y + Math.PI} isStanding={isStanding} isInspection={isInspection} />
+                  <HumanOperator id={`${machineData.id}-2`} rotation={0} isStanding={isStanding} isInspection={isInspection} />
                 </group>
               )}
             </group>
@@ -692,7 +818,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
 
       {/* Ground Zone Area Border - RESTORED visibility for all modes */}
       {
-        !(machineData as any).tableOnly && (
+        !(machineData as any).tableOnly && !(machineData as any).hideZone && (
           (() => {
             let humanMaxZ = 0;
             if (needsOperator) {
@@ -717,6 +843,7 @@ export const Machine3D = ({ machineData, relativePosition, isOverview }: Machine
                     [zoneLengthX / 2, operatorSideZ, 0],
                     [-zoneLengthX / 2, operatorSideZ, 0],
                     [-zoneLengthX / 2, machineSideZ, 0],
+                    [zoneLengthX / 2, machineSideZ, 0],
                   ]}
                   color={(isSelected && isMoveMode) ? "#3b82f6" : "#ffff00"}
                   lineWidth={(isSelected && isMoveMode) ? 3 : 1.5}

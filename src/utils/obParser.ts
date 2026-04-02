@@ -213,19 +213,22 @@ const isOperationRow = (
 
 // Preparatory operations excluded from the 3D layout
 export const PREPARATORY_OP_NAMES = [
+  'pocket iron with fusing',
+  'pocket hem stitch',
+  'triangle patch ironing',
+  'label attaching',
+  'thread sucking',
+  'piece checking',
+  'body checking',
+  'trimming',
+  'marking',
+  'bundle',
+  'storing',
+  'collar sewing',
   'washing allowance',
-  'washing_allowance',
   'right placket tape iron',
   'gusset iron',
   'press sleeve placket',
-  'press pocket',
-  'right placket self fold iron',
-  'left placket self fold iron',
-  'stitch tape to pocket',
-  'triangle patch ironing',
-  'pocket overlock',
-  'pocket iron with fusing',
-  'pocket hem stitch',
 ];
 
 const parseValue = (val: unknown): number => {
