@@ -372,7 +372,7 @@ export const generateLayout = (
         const iDims = getMachineZoneDims('inspection');
         const sDims = getMachineZoneDims('supermarket');
         let reservedX = iDims.length + 3 * INSPECTION_GAP + 0.01;
-        if (tag === 'front' || tag === 'back') reservedX += sDims.width + 0.1;
+        if (tag === 'front') reservedX += sDims.width + 0.1;
         // Reserve space for 3 collar supermarkets
         if (tag === 'collar') reservedX += sDims.width * 3 + 0.3;
         sectionSpace[tag] = { availableLen: Math.max(0, zoneLen - reservedX), usedLen: 0 };
@@ -513,7 +513,7 @@ export const generateLayout = (
         const targetSpecs = matchedTag ? specs.sections[matchedTag as keyof typeof specs.sections] : null;
         const sectionLimit = targetSpecs?.end || Infinity;
 
-        const hasSupermarket = (matchedTag === 'front' || matchedTag === 'back');
+        const hasSupermarket = (matchedTag === 'front');
         const supermarketStart = sectionLimit - (hasSupermarket ? sDims.width : 0);
 
         // Clear space for 3 supermarkets (U-shape): Deepest arm S3 is at 9.6ft centered (ends at 10.85ft)
@@ -891,9 +891,9 @@ export const generateLayout = (
                 cursors.D = Math.max(cursors.D, eX);
             }
 
-            if ((secLower.includes('front') || secLower.includes('back')) && (specs.front || specs.back)) {
+            if (secLower.includes('front') && specs.front) {
                 const sDims = getMachineZoneDims('supermarket');
-                const targetSpecs = secLower.includes('front') ? specs.front : specs.back;
+                const targetSpecs = specs.front;
                 if (targetSpecs) {
                     const absEnd = targetSpecs.end;
                     addMachine(

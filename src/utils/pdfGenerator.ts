@@ -246,18 +246,24 @@ export const generateLinePDF = (line: LineData) => {
     let labelText = isSpec ? mcShort : `${pfx} ${sectionCounters[groupKey]}: ${mcShort}`;
     if (!isSpec && !type.includes('helper')) sectionCounters[groupKey]++;
 
-    // Machine Type / ID Line - Significantly larger for clear reading
-    doc.setFontSize(3.5); 
+    // 1. Machine Type / ID Line - Shifted higher for clearance
+    doc.setFontSize(3.0); 
     doc.setFont('helvetica', 'bold');
-    doc.text(labelText.toUpperCase(), center.px, center.py - 1.2, { align: 'center', maxWidth: hL * 1.95 });
+    doc.text(labelText.toUpperCase(), center.px, center.py - 1.8, { align: 'center', maxWidth: hL * 1.9 });
     
-    // Operation Name Line - Much larger primary identifier
+    // 2. Operation Name Line - Reduced size slightly to accommodate wrapping without overlap
     if (!isSpec && !type.includes('helper')) {
-      doc.setFontSize(4.2);
+      doc.setFontSize(3.5);
       doc.setFont('helvetica', 'normal');
       const opName = m.operation.op_name || '';
-      const cleanOp = opName.length > 25 ? opName.substring(0, 22) + '...' : opName;
-      doc.text(cleanOp, center.px, center.py + 1.2, { align: 'center', maxWidth: hL * 1.95 });
+      const cleanOp = opName.length > 50 ? opName.substring(0, 47) + '...' : opName;
+      doc.text(cleanOp, center.px, center.py + 0.6, { align: 'center', maxWidth: hL * 1.95 });
+      
+      // 3. SMV Line - Shifted much lower to clear potential wrapped operation lines
+      doc.setFontSize(2.4);
+      doc.setFont('helvetica', 'bold');
+      const smvVal = m.operation.smv || 0;
+      doc.text(`${smvVal.toFixed(2)} MIN`, center.px, center.py + 3.8, { align: 'center' });
     }
   });
 
