@@ -42,11 +42,23 @@ export const MachineInfoPanel = () => {
     moveToPreparatory
   } = useLineStore();
 
-  // Local state for adding a new machine within this section
+   // Local state for adding a new machine within this section
   const [newOpName, setNewOpName] = useState('');
+  const [customOpName, setCustomOpName] = useState('');
   const [newType, setNewType] = useState('SNLS');
   const [newSMV, setNewSMV] = useState('0.50');
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // v199: Dynamic machine types from current layout
+  const availableMachineTypes = useMemo(() => {
+    const types = new Set<string>();
+    machineLayout.forEach(m => {
+      if (m.operation?.machine_type) {
+        types.add(m.operation.machine_type);
+      }
+    });
+    return Array.from(types).sort();
+  }, [machineLayout]);
 
   useEffect(() => {
     setShowAddForm(false);
@@ -303,66 +315,99 @@ export const MachineInfoPanel = () => {
 
                     <div className="space-y-3 p-3 bg-primary/5 rounded-xl border border-primary/10">
                       <div className="space-y-1.5">
-                        <label className="text-[10px] text-muted-foreground uppercase font-bold px-1">Manual Operation Name</label>
-                        <Input
-                          placeholder="Enter Operation Name..."
-                          className="h-8 text-sm"
+                        <label className="text-[10px] text-muted-foreground uppercase font-bold px-1">Select Operation from OB</label>
+                        <Select
                           value={newOpName}
-                          onChange={(e) => setNewOpName(e.target.value)}
-                        />
+                          onValueChange={(val) => {
+                            setNewOpName(val);
+                            if (val !== 'custom') {
+                              const found = operations.find(op => op.op_name === val);
+                              if (found) {
+                                setNewSMV(found.smv.toString());
+                                setNewType(found.machine_type);
+                              }
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue placeholder="Choose an operation..." />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-60 overflow-y-auto">
+                            <SelectItem value="custom" className="font-bold text-primary italic">
+                              + Create Custom Operation
+                            </SelectItem>
+                            <SelectSeparator />
+                            {(() => {
+                              const groups: Record<string, string[]> = {};
+                              operations.forEach(op => {
+                                const sec = op.section || 'Uncategorized';
+                                if (!groups[sec]) groups[sec] = [];
+                                if (!groups[sec].includes(op.op_name)) groups[sec].push(op.op_name);
+                              });
+                              return Object.entries(groups).map(([section, names]) => (
+                                <SelectGroup key={section}>
+                                  <SelectLabel className="text-[10px] font-black uppercase text-muted-foreground/60 px-2 py-1.5 bg-muted/30">
+                                    {section}
+                                  </SelectLabel>
+                                  {names.map(name => (
+                                    <SelectItem key={name} value={name} className="pl-4">
+                                      {name}
+                                    </SelectItem>
+                                  ))}
+                                  <SelectSeparator className="opacity-50" />
+                                </SelectGroup>
+                              ));
+                            })()}
+                          </SelectContent>
+                        </Select>
                       </div>
+
+                      {newOpName === 'custom' && (
+                        <div className="space-y-1.5 animate-in slide-in-from-top-2 p-2 bg-primary/5 rounded-lg border border-dashed border-primary/30">
+                          <label className="text-[10px] text-muted-foreground uppercase font-black px-1 text-primary">Type Custom Operation Name</label>
+                          <Input
+                            placeholder="e.g. Special Neck Stitch"
+                            className="h-8 text-sm bg-background"
+                            autoFocus
+                            value={customOpName}
+                            onChange={(e) => setCustomOpName(e.target.value)}
+                          />
+                        </div>
+                      )}
 
                       <div className="space-y-1.5">
                         <label className="text-[10px] text-muted-foreground uppercase font-bold px-1">Machine Required</label>
                         <Select value={newType} onValueChange={setNewType}>
                           <SelectTrigger className="h-8 text-sm">
                             <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                          <SelectContent>
+                          </SelectTrigger>                           <SelectContent className="max-h-60 overflow-y-auto">
                             <SelectGroup>
-                              <SelectLabel className="text-[10px] opacity-50 font-bold uppercase py-1 px-2">Sewing Machines</SelectLabel>
-                              <SelectItem value="SNLS">Single Needle (SNLS)</SelectItem>
-                              <SelectItem value="DNLS">Double Needle (DNLS)</SelectItem>
-                              <SelectItem value="SNEC">SNEC / Overlock</SelectItem>
-                              <SelectItem value="Overlock">3-Thread Overlock (OL)</SelectItem>
-                              <SelectItem value="FOA">Feed Off Arm (FOA)</SelectItem>
-                              <SelectItem value="Bartack">Bartack M/C</SelectItem>
+                              <SelectLabel className="text-[10px] opacity-50 font-black uppercase py-2 px-2 bg-muted/20">Machines in Layout</SelectLabel>
+                              {availableMachineTypes.length > 0 ? (
+                                availableMachineTypes.map(type => (
+                                  <SelectItem key={type} value={type}>
+                                    {type}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="SNLS">Single Needle (SNLS)</SelectItem>
+                              )}
                             </SelectGroup>
-
+                            
                             <SelectSeparator className="opacity-10" />
-
+                            
                             <SelectGroup>
-                              <SelectLabel className="text-[10px] opacity-50 font-bold uppercase py-1 px-2">Specialty</SelectLabel>
-                              <SelectItem value="Label Attaching">Label Attaching</SelectItem>
-                              <SelectItem value="Button Wrapping">Button Wrapping</SelectItem>
-                              <SelectItem value="Button Making">Button Making</SelectItem>
-                              <SelectItem value="Button Hole">Button Hole (B/H)</SelectItem>
-                              <SelectItem value="Turning">Turning M/C</SelectItem>
-                              <SelectItem value="Pointing">Pointing M/C</SelectItem>
-                              <SelectItem value="Contour">Contour M/C</SelectItem>
-                              <SelectItem value="Notch">Notch M/C</SelectItem>
-                            </SelectGroup>
-
-                            <SelectSeparator className="opacity-10" />
-
-                            <SelectGroup>
-                              <SelectLabel className="text-[10px] opacity-50 font-bold uppercase py-1 px-2">Prep & Finishing</SelectLabel>
-                              <SelectItem value="Ironing">Ironing / Press</SelectItem>
-                              <SelectItem value="Fusing">Fusing M/C</SelectItem>
-                              <SelectItem value="Blocking">Blocking M/C</SelectItem>
-                              <SelectItem value="Rotary">Rotary M/C</SelectItem>
-                            </SelectGroup>
-
-                            <SelectSeparator className="opacity-10" />
-
-                            <SelectGroup>
-                              <SelectLabel className="text-[10px] opacity-50 font-bold uppercase py-1 px-2">Helpers</SelectLabel>
-                              <SelectItem value="Helper Table">Working Table</SelectItem>
-                              <SelectItem value="Trolley">Transport Trolley</SelectItem>
-                              <SelectItem value="Table">Generic Table</SelectItem>
-                              <SelectItem value="Default">General Machine</SelectItem>
+                              <SelectLabel className="text-[10px] opacity-50 font-black uppercase py-2 px-2">Common Basics</SelectLabel>
+                              {['SNLS', 'SNEC', 'Overlock', 'Ironing', 'Helper Table'].map(type => (
+                                !availableMachineTypes.includes(type) && (
+                                  <SelectItem key={type} value={type} className="opacity-60 text-[11px] italic">
+                                    {type} (Standard)
+                                  </SelectItem>
+                                )
+                              ))}
                             </SelectGroup>
                           </SelectContent>
+
                         </Select>
                       </div>
                       
@@ -381,19 +426,22 @@ export const MachineInfoPanel = () => {
                       </div>
 
                       <Button
-                        className="w-full h-9 flex items-center gap-2 mt-2 font-bold"
+                        className="w-full h-9 flex items-center gap-2 mt-2 font-bold shadow-lg"
                         size="sm"
+                        disabled={!newOpName || (newOpName === 'custom' && !customOpName)}
                         onClick={() => {
+                          const finalName = newOpName === 'custom' ? customOpName : newOpName;
                           addMachine(
                             newType, 
                             operation.section || "Assembly", 
-                            newOpName, 
+                            finalName, 
                             selectedMachine.position.x, 
                             operation.seqIndex,
                             parseFloat(newSMV) || 0.1
                           );
-                          setNewOpName(''); // Reset
-                          setNewSMV('0.50'); // Reset
+                          setNewOpName(''); 
+                          setCustomOpName('');
+                          setNewSMV('0.50'); 
                           setShowAddForm(false);
                         }}
                       >

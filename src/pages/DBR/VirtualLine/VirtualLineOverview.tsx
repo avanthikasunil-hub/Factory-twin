@@ -10,13 +10,14 @@ import {
     Layout,
     ArrowUpRight,
     Layers,
-    Clock3
+    Clock3,
+    Package
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { API_BASE_URL } from "../../config";
+import { API_BASE_URL } from "../../../config";
 
 const LINE_DATA = [
     { id: 1, name: "Line 1", floor: "Floor 1", style: "Polo Shirt V2", buyer: "Nike", startDate: "01/03/2024", endDate: "15/03/2024", status: "Active" },
@@ -31,7 +32,7 @@ const LINE_DATA = [
 ];
 
 import { db } from "@/firebase";
-import { collection, query, onSnapshot } from "firebase/firestore";
+import { collection, query, onSnapshot, where, limit, getDocs } from "firebase/firestore";
 
 export default function VirtualLineOverview() {
     const navigate = useNavigate();
@@ -58,14 +59,14 @@ export default function VirtualLineOverview() {
 
                 // 2. Setup Firestore Real-time Listener
                 const q = collection(db, "changeoverData");
-                unsub = onSnapshot(q, (snap) => {
+                unsub = onSnapshot(q, async (snap) => {
                     if (!isMounted) return;
 
                     const firestoreLines = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
                     
                     // Group by line to find the latest
                     const latestByLine: Record<string, any> = {};
-                    firestoreLines.forEach(l => {
+                    firestoreLines.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)).forEach(l => {
                         const ln = l.line || l.summaryData?.line;
                         if (!ln) return;
                         const match = ln.match(/\d+/);
@@ -87,13 +88,16 @@ export default function VirtualLineOverview() {
                         );
 
                         if (foundCloud) {
+                            const style = foundCloud.toStyle || foundCloud.styleCode || foundCloud.summaryData?.toStyle || foundCloud.summaryData?.styleCode || '---';
+                            const con = foundCloud.conNo || foundCloud.summaryData?.conNo || foundCloud.conNumber || foundCloud.summaryData?.conNumber || '---';
+                            const buyer = foundCloud.buyer || foundCloud.summaryData?.buyer || foundCloud.toBuyer || foundCloud.summaryData?.toBuyer || '---';
 
                             merged.push({
                                 line_no: ln,
-                                style_no: foundCloud.style_no || foundCloud.summaryData?.toStyle || foundCloud.toStyle || '---',
-                                con_no: foundCloud.conNo || foundCloud.summaryData?.conNo || '---',
-                                buyer: foundCloud.buyer || foundCloud.summaryData?.buyer || '---',
-                                status: (foundCloud.status === 'partial' || foundCloud.status === 'in_progress') ? 'Changeover' : (foundCloud.status || 'Running'),
+                                style_no: style,
+                                con_no: con,
+                                buyer: buyer,
+                                status: (foundCloud.status === 'partial' || foundCloud.status === 'in_progress' || foundCloud.status === 'Changeover') ? 'Changeover' : (foundCloud.status || 'Running'),
                                 isLive: true
                             });
                         } else if (foundBackend) {
@@ -103,7 +107,66 @@ export default function VirtualLineOverview() {
                         }
                     }
 
-                    setLineStatuses(merged);
+                    // ─── Post-process missing metadata ───
+                    const updatedWithMeta = await Promise.all(merged.map(async (item) => {
+                        if (item.style_no !== '---' || item.con_no !== '---') {
+                            try {
+                                // 1. Try finding by Con No (most reliable for order details)
+                                let searchVal = item.con_no !== '---' ? item.con_no : item.style_no;
+                                let metaQ = query(
+                                    collection(db, "styleOBmetadata"),
+                                    where("conNo", "==", searchVal),
+                                    limit(1)
+                                );
+                                let metaSnap = await getDocs(metaQ);
+                                
+                                // 2. Fallback: Try by Style Code
+                                if (metaSnap.empty && item.style_no !== '---') {
+                                    metaQ = query(
+                                        collection(db, "styleOBmetadata"),
+                                        where("style", "==", item.style_no),
+                                        limit(1)
+                                    );
+                                    metaSnap = await getDocs(metaQ);
+                                }
+
+                                if (!metaSnap.empty) {
+                                    const metaData = metaSnap.docs[0].data();
+                                    
+                                    // Robust Quantity Check (checking top-level and nested)
+                                    const rawQty = 
+                                        metaData.quantity || metaData.orderQty || metaData.totalQty || 
+                                        metaData.orderQuantity || metaData.order_quantity || metaData.qty ||
+                                        metaData.summaryData?.quantity || metaData.summaryData?.orderQty ||
+                                        metaData.metadata?.quantity || metaData.metadata?.orderQty ||
+                                        '---';
+
+                                    const readableStyle = 
+                                        metaData.styleName || metaData.uploadStyle || 
+                                        metaData.summaryData?.styleName || metaData.style || '---';
+
+                                    return {
+                                        ...item,
+                                        style_name: readableStyle,
+                                        con_no: (metaData.conNo && metaData.conNo !== '---') ? metaData.conNo : item.con_no,
+                                        buyer: (metaData.buyer && metaData.buyer !== '---') ? metaData.buyer : (metaData.summaryData?.buyer || item.buyer),
+                                        quantity: rawQty,
+                                        status: item.line_no === "Line 1" ? "Changeover" : "Running"
+                                    };
+                                }
+                            } catch (e) {
+                                console.warn(`[Overview] Failed to fetch metadata for ${item.style_no}`);
+                            }
+                        }
+                        
+                        // Default status override: Only Line 1 is changeover
+                        return {
+                            ...item,
+                            status: item.line_no === "Line 1" ? "Changeover" : (item.status === "Idle" ? "Idle" : "Running")
+                        };
+                    }));
+
+                    setLineStatuses(updatedWithMeta);
                 });
             } catch (err) {
                 console.error("Error syncing status:", err);
@@ -124,64 +187,16 @@ export default function VirtualLineOverview() {
             name: lineName,
             floor,
             style: statusData?.style_no || "---",
+            styleName: statusData?.style_name || "",
             buyer: statusData?.buyer || "---",
             status: statusData?.status || "Idle",
-            con_no: statusData?.con_no || "---"
+            con_no: statusData?.con_no || "---",
+            quantity: statusData?.quantity || "---"
         };
-    }).filter(line => line.status !== 'Idle');
-
-    const activeCount = mergedLineData.length;
-
-    const stats = [
-        { label: "Active Lines", value: `${activeCount} / 9`, icon: Layers, color: "text-blue-600", bg: "bg-blue-50" },
-        { label: "Active Staff", value: activeCount > 0 ? (activeCount * 36).toString() : "0", icon: Users, color: "text-purple-600", bg: "bg-purple-50" },
-        { label: "Plant Efficiency", value: activeCount > 0 ? "78.4%" : "0%", icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
-        { label: "On Time Delivery", value: activeCount > 0 ? "92%" : "---", icon: Clock3, color: "text-orange-600", bg: "bg-orange-50" }
-    ];
+    }).filter(line => line); // Show All lines including Idle
 
     return (
         <div className="space-y-10 p-2 max-w-[1600px] mx-auto pb-20">
-            {/* Compact Header Card */}
-            <div className="relative p-8 py-8 rounded-[2rem] bg-gradient-to-br from-indigo-950 via-slate-900 to-black text-white shadow-xl overflow-hidden">
-                <div className="absolute top-0 right-0 w-[300px] h-[300px] bg-purple-500/10 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2" />
-
-                <div className="relative z-10 flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                        <div className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-[9px] font-black uppercase tracking-[0.3em]">
-                            Live Dashboard
-                        </div>
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    </div>
-                    <div>
-                        <h1 className="text-3xl font-black tracking-tight">Factory Overview</h1>
-                    </div>
-                </div>
-            </div>
-
-            {/* Stats Section */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats.map((stat, i) => (
-                    <motion.div
-                        key={stat.label}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.1 }}
-                    >
-                        <Card className="rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-500 bg-white group cursor-default">
-                            <CardContent className="p-8 flex flex-col gap-6">
-                                <div className={`${stat.bg} w-14 h-14 rounded-2xl flex items-center justify-center transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3`}>
-                                    <stat.icon size={24} className={stat.color} />
-                                </div>
-                                <div className="space-y-1">
-                                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-none">{stat.label}</p>
-                                    <h3 className="text-3xl font-black text-slate-900 tracking-tight">{stat.value}</h3>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </motion.div>
-                ))}
-            </div>
-
             {/* Main Production Table */}
             <div className="space-y-6">
                 <div className="bg-white rounded-[3rem] border border-slate-100 shadow-2xl shadow-slate-200/50 overflow-hidden">
@@ -193,8 +208,7 @@ export default function VirtualLineOverview() {
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Current Style</th>
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Buyer</th>
                                     <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Con No</th>
-                                    <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em]">Status</th>
-                                    <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em] rounded-r-[2rem]">Action</th>
+                                    <th className="px-6 py-9 text-center text-[12px] font-black text-slate-100 uppercase tracking-[0.25em] rounded-r-[2rem]">Status</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -204,8 +218,7 @@ export default function VirtualLineOverview() {
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: i * 0.05 }}
-                                        onClick={() => navigate(`/virtual-line/schedule?line=Line ${line.id}`)}
-                                        className="group cursor-pointer"
+                                        className="group"
                                     >
                                         <td className="px-10 py-8 bg-slate-50/50 rounded-l-[2rem] border-t border-b border-l border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300">
                                             <div className="flex items-center gap-6 justify-center">
@@ -215,7 +228,17 @@ export default function VirtualLineOverview() {
                                             </div>
                                         </td>
                                         <td className="px-8 py-8 bg-slate-50/50 border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
-                                            <span className="text-sm font-bold text-slate-800 leading-tight">"{line.style}"</span>
+                                            <div className="flex flex-col gap-2 items-center">
+                                                <span className="text-sm font-black text-slate-900 leading-tight">
+                                                    {line.styleName && line.styleName !== '---' ? line.styleName : line.style}
+                                                </span>
+                                                {line.quantity && line.quantity !== "---" && (
+                                                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                                                        <Package size={10} className="text-blue-600" />
+                                                        <span className="text-[10px] font-black text-blue-700 uppercase tracking-wider">Order Qty: {Number(line.quantity).toLocaleString()}</span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-8 py-8 bg-slate-50/50 border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
                                             <span className="text-sm font-black text-slate-600 tracking-tight uppercase">{line.buyer}</span>
@@ -223,7 +246,7 @@ export default function VirtualLineOverview() {
                                         <td className="px-8 py-8 bg-slate-50/50 border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
                                             <span className="text-sm font-black text-slate-600 tracking-tight uppercase">{line.con_no}</span>
                                         </td>
-                                        <td className="px-8 py-8 bg-slate-50/50 border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
+                                        <td className="px-8 py-8 bg-slate-50/50 rounded-r-[2rem] border-t border-b border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-center">
                                             <div className={cn(
                                                 "inline-flex items-center gap-2 px-5 py-2 rounded-full border transition-all duration-300",
                                                 line.status === "Running" ? "bg-emerald-50 border-emerald-100 text-emerald-700 shadow-sm shadow-emerald-100" :
@@ -236,19 +259,6 @@ export default function VirtualLineOverview() {
                                                             "text-slate-300"
                                                 )} />
                                                 <span className="text-[10px] font-black uppercase tracking-[0.15em]">{line.status}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-10 py-8 bg-slate-50/50 rounded-r-[2rem] border-t border-b border-r border-transparent group-hover:bg-purple-50/80 group-hover:border-purple-200 transition-all duration-300 text-right">
-                                            <div className="inline-flex items-center gap-3 text-slate-300 group-hover:text-purple-600 transition-all duration-500">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation(); // Avoid triggering the row click (schedule)
-                                                        navigate(`/virtual-line/floor?floor=${line.floor}&line=Line ${line.id}`);
-                                                    }}
-                                                    className="w-10 h-10 rounded-full bg-white border border-slate-100 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white group-hover:border-purple-600 shadow-sm transition-all duration-500 group-hover:rotate-12"
-                                                >
-                                                    <ArrowUpRight size={18} />
-                                                </button>
                                             </div>
                                         </td>
                                     </motion.tr>

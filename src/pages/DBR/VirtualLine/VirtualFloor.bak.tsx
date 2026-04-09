@@ -6,7 +6,7 @@ import { getLayoutSpecs, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD, getMachineZoneDims 
 import { generateCotLayout } from "@/utils/cotLayoutGenerator";
 import { SectionLayout, MachinePosition } from "@/types";
 import { cn } from "@/lib/utils";
-import { API_BASE_URL } from "../../config";
+import { API_BASE_URL } from "../../../config";
 import { Users, Hash, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { db } from "@/firebase";

@@ -100,7 +100,14 @@ if (typeof window !== 'undefined') {
   });
 }
 
-const getModelUrl = (type: string) => {
+const getModelUrl = (type: string, opName?: string) => {
+  const op = opName?.toLowerCase() || '';
+  if (op.includes('press side seam')) {
+    return '/models/sleevepressing.glb';
+  }
+  if (op.includes('press sleeve')) {
+    return '/models/armspressing.glb';
+  }
   if (!type) return `/models/${MODEL_MAP['default']}`;
 
   const t = type.toLowerCase();
@@ -144,6 +151,13 @@ const getTargetDimensionsMeters = (type: string, data?: any) => {
     };
   }
 
+  if (data?.operation?.op_name?.toLowerCase().includes('press side seam')) {
+    return { length: 1.52, width: 1.50, height: 1.92 };
+  }
+  if (data?.operation?.op_name?.toLowerCase().includes('press sleeve')) {
+    return { length: 1.52, width: 1.20, height: 1.92 };
+  }
+
   let l = 4 * FT, w = 2.5 * FT, h = 4 * FT;
 
   if (t.includes('foa') || t.includes('feed off arm')) {
@@ -161,7 +175,7 @@ const getTargetDimensionsMeters = (type: string, data?: any) => {
   } else if (t.includes('iron') || t.includes('press')) {
     l = 4.0 * FT; w = 3.0 * FT; h = 4.0 * FT;
   } else if (t.includes('inspection')) {
-    l = 5.0 * FT; w = 4.0 * FT; h = 6.5 * FT;
+    l = 4.5 * FT; w = 3.5 * FT; h = 6.5 * FT;
   } else if (t.includes('helper') || t.includes('work table') || t.includes('table') || t.includes('trolley')) {
     l = 4.5 * FT; w = 2.5 * FT; h = 2.2 * FT;
   } else if (t.includes('fusing') || t.includes('rotary')) {
@@ -255,8 +269,9 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
   const [clicked, setClicked] = useState(false);
   const [modelBounds, setModelBounds] = useState({ sizeX: 0, sizeZ: 0, centerX: 0, centerZ: 0 });
   const mType = (machineData?.operation?.machine_type || 'default').toLowerCase();
+  const opName = (machineData?.operation?.op_name || '').toLowerCase();
   const targetDims = getTargetDimensionsMeters(mType, machineData);
-  const modelUrl = getModelUrl(mType);
+  const modelUrl = getModelUrl(mType, opName);
 
   const initialScale = useMemo(() => {
     if (mType.includes('fusing_custom')) return [1, 1, 1] as [number, number, number];
@@ -302,12 +317,12 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
 
   // Handle centering logic once when model loads
   useLayoutEffect(() => {
-    const isSpecialMachine = mType.includes('gerber') || 
-      mType.includes('spreader') || 
-      mType.includes('fusing_custom') || 
-      mType.includes('cabin') || 
+    const isSpecialMachine = mType.includes('gerber') ||
+      mType.includes('spreader') ||
+      mType.includes('fusing_custom') ||
+      mType.includes('cabin') ||
       mType.includes('supervisor') ||
-      mType.includes('human') || 
+      mType.includes('human') ||
       mType.includes('conveyor') ||
       mType.includes('garment') ||
       mType.startsWith('board');
@@ -321,7 +336,7 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
     if (gltfScene && clonedScene) {
       // 1. Initial State Sync
       gltfScene.updateMatrixWorld(true);
-      
+
       // 2. Pre-calculation rotation for specific models to ensure grounding logic sees the right footprint
       let isRotaryFusing = mType.includes('rotary') && !mType.includes('fusing_custom');
       if (isRotaryFusing) {
@@ -624,7 +639,7 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
             onDrag={(matrix) => {
               const position = new THREE.Vector3();
               position.setFromMatrixPosition(matrix);
-              
+
               // Visual feedback only during drag for performance
               if (rootRef.current) {
                 rootRef.current.position.x = position.x;
@@ -806,6 +821,8 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
             }
           } else if (isInspection) {
             extraLocalZ = -0.2; // Very slightly back from inspection, inside yellow zone
+          } else if (opNameLower.includes('press side seam') || opNameLower.includes('press sleeve')) {
+            extraLocalZ = machineHalfW - 0.6; // Position 0.6m inside the machine half-width
           } else if (mType.includes('thread')) {
             extraLocalZ = 0.4;
           } else if (mType.includes('bandknife')) {
@@ -816,11 +833,11 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
             // For checking, stand at the edge of whichever side is designated as the front
             // Adjusted "just forward" based on physical floor scan
             if (machineData.rotateOperatorAxis) {
-                extraLocalX = (targetDims.length / 2) + 0.2; // Moving "Forward"
-                extraLocalZ = 0; // Centered
+              extraLocalX = (targetDims.length / 2) + 0.2; // Moving "Forward"
+              extraLocalZ = 0; // Centered
             } else {
-                extraLocalZ = (targetDims.width / 2) + 0.2;
-                extraLocalX = 0;
+              extraLocalZ = (targetDims.width / 2) + 0.2;
+              extraLocalX = 0;
             }
           }
 

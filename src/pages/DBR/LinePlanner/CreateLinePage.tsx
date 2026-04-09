@@ -11,7 +11,7 @@ import { useLineStore } from "@/store/useLineStore";
 import { parseOBExcel } from "@/utils/obParser";
 import { useToast } from "@/hooks/use-toast";
 import type { Operation } from "@/types";
-import { API_BASE_URL } from "../../config";
+import { API_BASE_URL } from "../../../config";
 
 const DEFAULT_LINES = [
   "LINE 1", "LINE 2", "LINE 3", "LINE 4", "LINE 5",
@@ -159,15 +159,16 @@ const CreateLinePage = () => {
         parsedTotalSMV,
         parseFloat(workingHours || "9"),
         sourceSheet,
-        useLineStore.getState().preparatoryOps || []
+        useLineStore.getState().preparatoryOps || [],
+        'dbr'
       );
 
       console.log("[CreateLinePage] Line created successfully", line);
-      saveLine(line);
+      saveLine(line, 'dbr');
       toast({ title: "Line Created Successfully", description: `${lineNo} created.` });
       
       // Delay navigation slightly to allow store state to propagate
-      setTimeout(() => navigate("/line-planner/planner"), 100);
+      setTimeout(() => navigate('/dbr/line-planner/planner'), 100);
     } catch (err) {
       console.error("[CreateLinePage] Error in handleCreateLine:", err);
       toast({ title: "Generation Error", description: "Failed to generate 3D layout. See console for details.", variant: "destructive" });
@@ -181,7 +182,7 @@ const CreateLinePage = () => {
       <AnimatedBackground />
       <div className="relative z-10 min-h-screen p-8">
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4 mb-8">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/line-planner")}><ArrowLeft className="w-5 h-5" /></Button>
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}><ArrowLeft className="w-5 h-5" /></Button>
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-primary/10"><Factory className="w-6 h-6 text-primary" /></div>
             <div>

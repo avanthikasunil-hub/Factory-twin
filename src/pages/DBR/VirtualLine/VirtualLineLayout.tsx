@@ -27,15 +27,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { API_BASE_URL } from "../../config";
+import { API_BASE_URL } from "../../../config";
 
 const NAV_ITEMS = [
-    { id: "overview", label: 'Overview', icon: LayoutDashboard, path: '/virtual-line/overview' },
-    { id: "floor", label: 'Floor View', icon: Map, path: '/virtual-line/floor' },
-    { id: "tracker", label: 'COT Tracker', icon: Activity, path: '/virtual-line/tracker' },
-    { id: "war-room", label: 'War Room', icon: Monitor, path: '/virtual-line/war-room' },
-    { id: "ob", label: 'Style OB', icon: Layers, path: '/virtual-line/ob' },
-    { id: "dashboard", label: 'Dashboard', icon: Layout, path: '/' },
+    { id: "overview", label: 'Overview', icon: LayoutDashboard, path: '/dbr/virtual-line/overview' },
+    { id: "floor", label: 'Floor View', icon: Map, path: '/dbr/virtual-line/floor' },
+    { id: "war-room", label: 'War Room', icon: Monitor, path: '/dbr/virtual-line/war-room' },
+    { id: "ob", label: 'Style OB', icon: Layers, path: '/dbr/virtual-line/ob' },
 ];
 
 // This will be replaced by dynamic data in the component
@@ -225,17 +223,15 @@ export default function VirtualLineLayout() {
                 <div className="p-6 border-t border-white/5">
                     <button
                         className={cn(
-                            "w-full flex items-center gap-4 px-4 py-4 rounded-2xl transition-all duration-300 text-slate-500 hover:bg-white/5 hover:text-slate-200 group relative",
-                            !isSidebarOpen && "justify-center px-0"
+                            "w-full flex items-center justify-center py-4 rounded-2xl transition-all duration-300 text-slate-500 hover:bg-white/5 hover:text-slate-200 group relative"
                         )}
-                        onClick={() => navigate("/")}
+                        onClick={() => navigate(-1)}
                     >
                         <ChevronLeft className="w-5 h-5 shrink-0 transition-transform group-hover:-translate-x-1" />
-                        {isSidebarOpen && <span className="font-bold text-sm tracking-wide">Back to Home</span>}
 
                         {!isSidebarOpen && (
                             <div className="absolute left-full ml-6 px-3 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-xl z-[100] border border-white/10 whitespace-nowrap">
-                                Back to Home
+                                Back
                             </div>
                         )}
                     </button>
@@ -246,7 +242,7 @@ export default function VirtualLineLayout() {
             <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                 <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 relative z-20">
                     <div className="flex items-center gap-4">
-                        {currentPath !== "/virtual-line/overview" && (
+                        {currentPath !== "/dbr/virtual-line/overview" && (
                             <button
                                 onClick={() => navigate(-1)}
                                 className="group flex items-center justify-center w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 text-slate-400 hover:text-purple-600 hover:border-purple-200 hover:bg-purple-50 transition-all duration-300 shadow-sm"
@@ -255,14 +251,14 @@ export default function VirtualLineLayout() {
                             </button>
                         )}
                         <h2 className="text-[13px] font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
-                            {currentPath !== "/virtual-line/overview" && <span className="text-slate-300 font-medium">/</span>}
+                            {currentPath !== "/dbr/virtual-line/overview" && <span className="text-slate-300 font-medium">/</span>}
                             {NAV_ITEMS.find(item => item.path === currentPath)?.label ||
                                 (currentPath.includes('schedule') ? "Line Schedule" : "Virtual Line")}
                         </h2>
 
-                        {(currentPath === "/virtual-line/floor" || (currentPath === "/virtual-line/tracker" && searchParams.get("line"))) && (
+                        {(currentPath === "/dbr/virtual-line/floor" || (currentPath === "/dbr/virtual-line/tracker" && searchParams.get("line"))) && (
                             <div className="flex items-center gap-1 ml-4 bg-slate-100/50 p-1 rounded-2xl border border-slate-200/60 shadow-inner">
-                                {location.pathname === "/virtual-line/floor" ? (
+                                {location.pathname === "/dbr/virtual-line/floor" ? (
                                     <div className="flex items-center gap-1">
                                         {/* Floor Toggle */}
                                         <div className="flex items-center gap-1 bg-white/50 p-1 rounded-2xl border border-slate-200/50 mr-2">

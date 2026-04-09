@@ -25,7 +25,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { API_BASE_URL } from "../../config";
+import { API_BASE_URL } from "../../../config";
 
 // Mock data for the styles in a specific line for the month
 const STYLE_SCHEDULE = [

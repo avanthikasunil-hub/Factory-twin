@@ -47,28 +47,34 @@ export const CameraController = ({
     // 1. Move camera position smoothly if goal is set
     if (goalPos) {
       const targetVec = new THREE.Vector3(...goalPos);
-      pCamera.position.lerp(targetVec, delta * 2.2);
+      // Even faster transition for a "zoom" feel
+      const alpha = 1 - Math.pow(0.0001, delta); 
+      pCamera.position.lerp(targetVec, alpha);
       
-      // Stop lerping when close enough
-      if (pCamera.position.distanceTo(targetVec) < 0.1) {
+      // Stop lerping earlier with slightly larger epsilon to avoid floating point jitter
+      if (pCamera.position.distanceTo(targetVec) < 0.005) {
+        pCamera.position.copy(targetVec);
         setGoalPos(null);
       }
     }
 
     // 2. Adjust FOV smoothly
-    if (pCamera.fov !== cameraFov) {
-        pCamera.fov = THREE.MathUtils.lerp(pCamera.fov, cameraFov, delta * 2.2);
+    if (Math.abs(pCamera.fov - cameraFov) > 0.01) {
+        const alpha = 1 - Math.pow(0.0001, delta);
+        pCamera.fov = THREE.MathUtils.lerp(pCamera.fov, cameraFov, alpha);
         pCamera.updateProjectionMatrix();
     }
 
     // 3. Move orbit target smoothly if goal is set
     if (controlsRef.current && goalTarget) {
       const targetVec = new THREE.Vector3(...goalTarget);
-      controlsRef.current.target.lerp(targetVec, delta * 2.5);
+      const alpha = 1 - Math.pow(0.0001, delta);
+      controlsRef.current.target.lerp(targetVec, alpha);
       controlsRef.current.update();
 
       // Stop lerping when close enough
-      if (controlsRef.current.target.distanceTo(targetVec) < 0.1) {
+      if (controlsRef.current.target.distanceTo(targetVec) < 0.005) {
+        controlsRef.current.target.copy(targetVec);
         setGoalTarget(null);
       }
     }

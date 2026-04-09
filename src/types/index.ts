@@ -111,6 +111,7 @@ export interface LineData {
   efficiency?: number;
   sourceSheet?: string;
   preparatoryOps?: Operation[];
+  factoryId?: 'dbr' | 'kpr';
 }
 
 /**

@@ -47,10 +47,11 @@ interface LineStore {
     totalSMV?: number,
     workingHours?: number,
     sourceSheet?: string,
-    preparatoryOps?: Operation[]
+    preparatoryOps?: Operation[],
+    factoryId?: 'dbr' | 'kpr'
   ) => LineData;
 
-  saveLine: (line: LineData) => void;
+  saveLine: (line: LineData, factoryId?: 'dbr' | 'kpr') => void;
   loadLine: (id: string) => void;
   deleteLine: (id: string) => void;
 
@@ -352,7 +353,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const currentOps = state.operations;
 
     const lineNo = state.currentLine?.lineNo || "Line 1";
-    const { machines, sections, warnings } = generateLayout(currentOps, targetOutput, workingHours, efficiency, lineNo);
+    const factoryId = state.currentLine?.factoryId;
+    const { machines, sections, warnings } = generateLayout(currentOps, targetOutput, workingHours, efficiency, lineNo, factoryId);
 
     const currentLine = state.currentLine;
     const updatedLine = currentLine ? {
@@ -453,7 +455,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         targetOutput, 
         workingHours, 
         efficiency, 
-        lineNo
+        lineNo,
+        currentLine?.factoryId
       );
 
       console.log(`[useLineStore] Layout generated: ${machines.length} machines, ${sections.length} sections, ${warnings?.length || 0} warnings`);
@@ -497,11 +500,11 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   },
 
   // ─── createLine: clear alerts — brand new layout ───
-  createLine: (lineNo, styleNo, coneNo, buyer, operations, efficiency = 90, inputTargetOutput = 1200, inputTotalSMV?: number, inputWorkingHours = 9, sourceSheet = "", preparatoryOps = []) => {
+  createLine: (lineNo, styleNo, coneNo, buyer, operations, efficiency = 90, inputTargetOutput = 1200, inputTotalSMV?: number, inputWorkingHours = 9, sourceSheet = "", preparatoryOps = [], factoryId?: 'dbr' | 'kpr') => {
     (get() as any).takeSnapshot();
     const targetOutput = inputTargetOutput;
     const workingHours = inputWorkingHours;
-    const { machines, sections, warnings } = generateLayout(operations, targetOutput, workingHours, efficiency, lineNo);
+    const { machines, sections, warnings } = generateLayout(operations, targetOutput, workingHours, efficiency, lineNo, factoryId);
 
     const calculatedTotal = operations.reduce((sum, op) => sum + op.smv, 0);
     const totalSMV = inputTotalSMV || calculatedTotal;
@@ -510,7 +513,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       id: uuidv4(), lineNo, styleNo, coneNo, buyer, operations, preparatoryOps,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       machineLayout: machines, sectionLayout: sections, totalSMV,
-      targetOutput, workingHours, efficiency, sourceSheet
+      targetOutput, workingHours, efficiency, sourceSheet,
+      factoryId: factoryId || 'dbr'
     };
 
     set({
@@ -551,12 +555,14 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     if (newOperations.length === 0) return;
 
     const lineNo = currentLine?.lineNo || "Line 1";
+    const factoryId = currentLine?.factoryId;
     const { machines, sections, warnings } = generateLayout(
       newOperations,
       targetOutput,
       workingHours,
       efficiency,
-      lineNo
+      lineNo,
+      factoryId
     );
 
     const newTotalSMV = newOperations.reduce((sum, op) => sum + op.smv, 0);
@@ -586,12 +592,16 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     toast.success(`Layout updated from new OB (${sourceSheet || "default sheet"})`);
   },
 
-  saveLine: (line) => {
+  saveLine: (line, factoryId) => {
     (get() as any).takeSnapshot();
     set((state) => {
       const existingIdx = state.savedLines.findIndex((l) => l.id === line.id);
       let newSavedLines = [...state.savedLines];
-      const updatedLine = { ...line, updatedAt: new Date().toISOString() };
+      const updatedLine = { 
+        ...line, 
+        factoryId: factoryId || line.factoryId || 'dbr', // Preserve existing or default to dbr
+        updatedAt: new Date().toISOString() 
+      };
       if (existingIdx !== -1) {
         newSavedLines[existingIdx] = updatedLine;
       } else {
@@ -808,7 +818,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       return { minX, maxX };
     };
 
-    const specs = getLayoutSpecs(get().currentLine?.lineNo);
+    const specs = getLayoutSpecs(get().currentLine?.lineNo, get().currentLine?.factoryId);
     const sections = specs.sections as Record<string, { start: number; end: number }>;
     const specsAny = specs as any;
 
@@ -1245,28 +1255,42 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     setTimeout(() => (get() as any).checkLayoutAlerts(), 100);
   },
 
-  addMachine: (mType, section, opName, parentX, parentSeqIndex, smvValue) => {
+   addMachine: (mType, section, opName, parentX, parentSeqIndex, smvValue) => {
     (get() as any).takeSnapshot();
     const id = uuidv4();
     const state = get();
     const { currentLine, savedLines, operations } = state;
 
-    // Use parent sequence index if provided, otherwise append to end
-    const targetSeqIndex = parentSeqIndex !== undefined ? parentSeqIndex : (9999 + operations.length);
+    // v198: Smart duplication check. 
+    // If the operation already exists in the OB, we link to the existing one's sequence index
+    // and we DON'T add a duplicate entry to the operations list.
+    const existingOp = operations.find(o => 
+      o.op_name.toLowerCase().trim() === opName.toLowerCase().trim()
+    );
 
-    const op: Operation = {
-      op_no: `NEW-${id.substring(0, 4)}`,
-      op_name: opName || mType,
-      machine_type: mType,
-      smv: smvValue !== undefined ? smvValue : 0.1, 
-      section,
-      seqIndex: targetSeqIndex,
-    };
+    let targetOp: Operation;
+    let updatedOps = [...operations];
+
+    if (existingOp) {
+      targetOp = { ...existingOp };
+      // No need to change updatedOps
+    } else {
+      const targetSeqIndex = parentSeqIndex !== undefined ? parentSeqIndex : (9999 + operations.length);
+      targetOp = {
+        op_no: `NEW-${id.substring(0, 4)}`,
+        op_name: opName || mType,
+        machine_type: mType,
+        smv: smvValue !== undefined ? smvValue : 0.1, 
+        section,
+        seqIndex: targetSeqIndex,
+      };
+      updatedOps.push(targetOp);
+      updatedOps.sort((a, b) => (a.seqIndex || 0) - (b.seqIndex || 0));
+    }
 
     const newMachine: MachinePosition = {
       id,
-      operation: op,
-      // Place it physically next to the parent if provided so _reLayoutSection picks it up sequentially
+      operation: targetOp,
       position: { x: parentX !== undefined ? (parentX + 0.01) : 0, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0 },
       lane: 'A',
@@ -1274,8 +1298,6 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     };
 
     const updatedLayout = [...state.machineLayout, newMachine];
-    const updatedOps = [...operations, op].sort((a, b) => (a.seqIndex || 0) - (b.seqIndex || 0));
-
     const result = (get() as any)._reLayoutSection(updatedLayout, section.toLowerCase());
     
     const updatedLine = currentLine ? { 

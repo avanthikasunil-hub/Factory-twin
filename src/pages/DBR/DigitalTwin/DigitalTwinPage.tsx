@@ -16,7 +16,7 @@ import {
 import { useNavigate, useSearchParams } from "react-router-dom";
 import styled from "styled-components";
 import { getLayoutSpecs, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD, generateLayout, FT } from "@/utils/layoutGenerator";
-import { API_BASE_URL } from "../../config";
+import { API_BASE_URL } from "../../../config";
 import { db } from "@/firebase";
 import { collection, query, where, limit, onSnapshot } from "firebase/firestore";
 import { generateCotLayout } from "@/utils/cotLayoutGenerator";
@@ -121,13 +121,10 @@ export default function DigitalTwinPage() {
   const layoutGeneratedKey = React.useRef("");
 
   useEffect(() => {
-    if (activeTab !== "sewing") return;
-
+    // We generate the background data on mount so it's ready before the user clicks "Sewing"
     const key = `${activeFloor}|${activeLine}`;
-    if (layoutGeneratedKey.current === key) return; // already generated for this combo
-    layoutGeneratedKey.current = key;
-
-    // Fetch OB operations from backend ONCE, then generate layout synchronously
+    if (layoutGeneratedKey.current === key) return;
+    
     const generateSewingLayout = async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/active-layouts`);
@@ -145,27 +142,29 @@ export default function DigitalTwinPage() {
         const zStep = (LANE_Z_CENTER_CD + specs.widthCD / 2 - (LANE_Z_CENTER_AB - specs.widthAB / 2)) + (3.5 * FT);
 
         const allMachines: any[] = [];
-        for (let i = 1; i <= 9; i++) {
+        const floorPrefix = activeFloor === "Floor 1" ? 1 : 7;
+        const floorLimit = activeFloor === "Floor 1" ? 6 : 9;
+
+        for (let i = floorPrefix; i <= floorLimit; i++) {
           const ln = `Line ${i}`;
-          const n = getN(ln)!;
-          if (activeFloor === "Floor 1" && (n < 1 || n > 6)) continue;
-          if (activeFloor === "Floor 2" && (n < 7 || n > 9)) continue;
           if (activeLine !== "All Lines" && ln !== activeLine) continue;
 
           const result = generateLayout(commonOps, 1200, 9, 90, ln);
-          const ri = n <= 6 ? n - 1 : n - 7;
+          const ri = i <= 6 ? i - 1 : i - 7;
           const lineMachines = result.machines.map((m: any) => ({
             ...m,
             position: { ...m.position, z: m.position.z + (ri * zStep) }
           }));
           allMachines.push(...lineMachines);
         }
+        
         setActiveMachines(allMachines);
-      } catch (err) { /* backend may be offline */ }
+        layoutGeneratedKey.current = key;
+      } catch (err) { /* silent fail */ }
     };
 
     generateSewingLayout();
-  }, [activeTab, activeFloor, activeLine]); // safe: never re-runs for the same key
+  }, [activeFloor, activeLine]); // Runs on switch or floor change, independent of activeTab
 
   // ── Firestore-only sync: ONLY updates line statuses, never touches machine positions ──
   useEffect(() => {
@@ -229,9 +228,8 @@ export default function DigitalTwinPage() {
           ))}
         </nav>
         <div className="p-6 border-t border-white/5">
-          <NavItem $active={false} onClick={() => navigate("/")}>
+          <NavItem $active={false} onClick={() => navigate(-1)} className="flex justify-center">
             <Home size={22} />
-            {sidebarOpen && <span className="font-bold text-sm tracking-wide">Back to Home</span>}
           </NavItem>
         </div>
         <button onClick={() => setSidebarOpen(!sidebarOpen)} className="absolute -right-3 top-24 w-6 h-6 bg-violet-600 rounded-full flex items-center justify-center text-white border-2 border-slate-950">
@@ -306,7 +304,24 @@ export default function DigitalTwinPage() {
             </div>
           )}
 
-          <div className="flex-1 h-full bg-[#080a0f]">
+          <div className="flex-1 h-full bg-[#080a0f] relative">
+            {activeTab === "sewing" && activeMachines.length === 0 && (
+              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-3xl">
+                <div className="w-16 h-16 relative mb-8">
+                  <div className="absolute inset-0 rounded-full border-4 border-violet-500/10 border-t-violet-600 animate-spin" />
+                  <div className="absolute inset-4 rounded-full border-4 border-violet-500/10 border-b-violet-400 animate-spin-slow" />
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <h3 className="text-xl font-black text-white uppercase tracking-widest">Compiling Spatial View</h3>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-bold text-violet-400 uppercase tracking-widest animate-pulse">Syncing Production Assets</span>
+                    <span className="w-1 h-1 rounded-full bg-slate-700" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">15,402 Entities</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeTab === "warehouse" ? (
               <WarehouseView />
             ) : activeTab === "sewing" ? (

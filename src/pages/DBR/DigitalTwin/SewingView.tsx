@@ -48,22 +48,18 @@ export const SewingView: React.FC<SewingViewProps> = ({
   const [loadedMachines, setLoadedMachines] = useState<MachinePosition[] | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/sewing/get-layout`)
-      .then(res => res.json())
-      .then(data => {
-        if (data && Array.isArray(data) && data.length > 0) {
-          setLoadedMachines(data);
-          const current = useLineStore.getState().machineLayout;
-          const otherMachines = current.filter((m: any) =>
-            m.section !== "Cuff" && m.section !== "Sleeve" && m.section !== "Back" &&
-            m.section !== "Collar" && m.section !== "Front" && !m.section?.includes("Assembly")
-          );
-          useLineStore.getState().setMachineLayout([...otherMachines, ...data]);
-          storeInitRef.current = true;
-        }
-      })
-      .catch(e => console.error("Failed to load sewing layout:", e));
-  }, []);
+    // We already have processed machines from the parent (DigitalTwinPage),
+    // but we check if we need to sync them to the store for editing.
+    if (!storeInitRef.current && propMachines.length > 0) {
+      storeInitRef.current = true;
+      const current = useLineStore.getState().machineLayout;
+      const otherMachines = current.filter((m: any) =>
+        m.section !== "Cuff" && m.section !== "Sleeve" && m.section !== "Back" &&
+        m.section !== "Collar" && m.section !== "Front" && !m.section?.includes("Assembly")
+      );
+      useLineStore.getState().setMachineLayout([...otherMachines, ...propMachines]);
+    }
+  }, [propMachines]);
 
   const enterEditMode = (value: boolean) => {
     setIsEditMode(value);

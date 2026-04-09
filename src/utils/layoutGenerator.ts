@@ -13,7 +13,7 @@ export const LANE_Z_D = -0.75;
 
 export const MACHINE_SPACING_X = 0;
 export const SECTION_GAP_X = 0;
-export const INSPECTION_GAP = 1.0 * 0.3048; // 1ft gap between last machine and inspection
+export const INSPECTION_GAP = 0.5 * 0.3048; // Reduced 0.5ft gap between last machine and inspection
 
 // Rotations (Radians)
 export const ROT_FACE_FRONT = -Math.PI / 2;
@@ -22,7 +22,7 @@ export const ROT_ROTARY_FUSING = -Math.PI / 2; // Exactly -90 degrees
 
 export const FT = 0.3048;
 
-export const LAYOUT_LOGIC_VERSION = 185;
+export const LAYOUT_LOGIC_VERSION = 199;
 export const FIXED_ASSEMBLY_START = 0;
 
 export interface SectionPreset {
@@ -52,7 +52,7 @@ export const LINE_PRESETS: Record<'A' | 'B', Record<string, SectionPreset>> = {
     }
 };
 
-export function getLayoutSpecs(lineNo: string = "Line 1") {
+export function getLayoutSpecs(lineNo: string = "Line 1", factoryId?: 'dbr' | 'kpr') {
     const num = parseInt(lineNo.replace(/\D/g, '')) || 1;
     // Yorker Request: Preset B is for Line 6 AND Lines 7-9. Lines 1-5 use Preset A.
     const presetKey = (num >= 6) ? 'B' : 'A';
@@ -97,18 +97,54 @@ export function getLayoutSpecs(lineNo: string = "Line 1") {
         sections // For easier indexing
     };
 
-    const zonesAB = [
-        { start: sections.cuff.start, end: sections.cuff.end },
-        { start: sections.sleeve.start, end: sections.sleeve.end },
-        { start: sections.back.start, end: sections.back.end },
-        { start: sections.assemblyAB.start, end: sections.assemblyAB.end }
-    ];
+    if (factoryId === 'kpr') {
+        // v197 KPR Specific Overrides: Single long zones for AB and CD
+        const kprLen = 102.32 * S;
+        const kprW_AB = 9.28 * S;
+        const kprW_CD = 8.9 * S;
+        
+        // AB Group: All components share the full line length
+        sections.cuff = { start: 0, end: kprLen };
+        sections.sleeve = { start: 0, end: kprLen };
+        sections.back = { start: 0, end: kprLen };
+        
+        // CD Group: Both components share the full line length
+        sections.collar = { start: 0, end: kprLen };
+        sections.front = { start: 0, end: kprLen };
+        
+        // Assembly starts at the end of the parts area + 3.5ft gap
+        const kprAssemblyStart = (102.32 + 3.5) * S; 
+        const kprAssemblyLen = 43.9 * S;
+        sections.assemblyAB = { start: kprAssemblyStart, end: kprAssemblyStart + kprAssemblyLen };
+        sections.assemblyCD = { start: kprAssemblyStart, end: kprAssemblyStart + kprAssemblyLen };
 
-    const zonesCD = [
-        { start: sections.collar.start, end: sections.collar.end },
-        { start: sections.front.start, end: sections.front.end },
-        { start: sections.assemblyCD.start, end: sections.assemblyCD.end }
-    ];
+        // Override widths in the specs object returned later
+        (specs as any).widthAB = kprW_AB;
+        (specs as any).widthCD = kprW_CD;
+    }
+
+    const zonesAB = factoryId === 'kpr' 
+        ? [
+            { start: sections.cuff.start, end: sections.cuff.end },
+            { start: sections.assemblyAB.start, end: sections.assemblyAB.end }
+          ]
+        : [
+            { start: sections.cuff.start, end: sections.cuff.end },
+            { start: sections.sleeve.start, end: sections.sleeve.end },
+            { start: sections.back.start, end: sections.back.end },
+            { start: sections.assemblyAB.start, end: sections.assemblyAB.end }
+        ];
+
+    const zonesCD = factoryId === 'kpr'
+        ? [
+            { start: sections.collar.start, end: sections.collar.end },
+            { start: sections.assemblyCD.start, end: sections.assemblyCD.end }
+          ]
+        : [
+            { start: sections.collar.start, end: sections.collar.end },
+            { start: sections.front.start, end: sections.front.end },
+            { start: sections.assemblyCD.start, end: sections.assemblyCD.end }
+        ];
 
     const partBounds = {
         cuff: specs.cuff,
@@ -209,11 +245,24 @@ export const generateLayout = (
     targetOutput: number,
     workingHours: number,
     efficiency: number = 100,
-    lineNo: string = "Line 1"
+    lineNo: string = "Line 1",
+    factoryId?: 'dbr' | 'kpr'
 ): LayoutResult => {
+    console.log(`[LayoutGenerator] Generating layout for Factory: ${factoryId}, Line: ${lineNo}`);
     const layout: MachinePosition[] = [];
     const sectionLayouts: SectionLayout[] = [];
     const warnings: string[] = [];
+    const isKPR = factoryId === 'kpr';
+    const midZ_CD = 0.0; // Keep CD at 0
+    let midZ_AB = LANE_Z_CENTER_AB;
+    if (isKPR) {
+        // Enforce exact 3.5ft gap between CD (Pink) and AB (Blue)
+        // - CD bottom edge = 0.0 - (8.9 / 2)
+        // - AB top edge = CD bottom edge - 3.5 gap
+        // - AB center = AB top edge - (9.28 / 2)
+        midZ_AB = -(8.9 / 2 + 3.5 + 9.28 / 2) * FT;
+    }
+    const KPR_GAP = 0.02; // Reduced from 0.05 for "a bit very bit" tighter spacing
 
     // ─── Parallel Balancing ───
     const assemblyKeywords = ['assembly', 'joining', 'stitching', 'sewing', 'lane', 'line'];
@@ -231,7 +280,7 @@ export const generateLayout = (
 
     const balancedOps = [...balancedPrep, ...balancedAssembly];
 
-    const { zonesAB, zonesCD, partBounds, specs } = getLayoutSpecs(lineNo);
+    const { zonesAB, zonesCD, partBounds, specs } = getLayoutSpecs(lineNo, factoryId);
     const S = FT;
 
     const sectionsMap = new Map<string, typeof balancedOps>();
@@ -284,13 +333,29 @@ export const generateLayout = (
     const abSections = ['cuff', 'sleeve', 'back'];
     const cdSections = ['collar', 'front'];
 
-    const addMachine = (op: Operation, lane: 'A' | 'B' | 'C' | 'D', xPos: number, countIdx?: number, forcedRot?: number, sectionName?: string, centerModel?: boolean) => {
+    const addMachine = (op: Operation, lane: 'A' | 'B' | 'C' | 'D', xPos: number, countIdx?: number, forcedRot?: number, sectionName?: string, centerModel?: boolean, forcedMidZ?: number) => {
         const secLower = sectionName?.toLowerCase() || '';
         let z = 0, ry = 0;
-        if (lane === 'A') { z = LANE_Z_A; ry = 0; }
-        else if (lane === 'B') { z = LANE_Z_B; ry = Math.PI; }
-        else if (lane === 'C') { z = LANE_Z_C; ry = 0; }
-        else if (lane === 'D') { z = LANE_Z_D; ry = Math.PI; }
+        if (factoryId === 'kpr') {
+            const g = 3.5 * FT; // 3.5 feet gap
+            const kprB = -g - g/2; 
+            const kprA = -g/2;     
+            const kprC = g/2;      
+            const kprD = g + g/2;  
+            
+            if (lane === 'A') z = kprA;
+            else if (lane === 'B') z = kprB;
+            else if (lane === 'C') z = kprC;
+            else if (lane === 'D') z = kprD;
+        } else {
+            if (lane === 'A') z = LANE_Z_A;
+            else if (lane === 'B') z = LANE_Z_B;
+            else if (lane === 'C') z = LANE_Z_C;
+            else if (lane === 'D') z = LANE_Z_D;
+        }
+
+        if (lane === 'A' || lane === 'C') ry = 0;
+        else ry = Math.PI;
 
         if (op.machine_type.toLowerCase().includes('inspection')) ry = ROT_FACE_FRONT;
         if (op.machine_type.toLowerCase().includes('rotary')) ry = ROT_ROTARY_FUSING;
@@ -300,7 +365,10 @@ export const generateLayout = (
         const isAssembly = secLower.includes('assembly') || secLower.includes('lane') || secLower.includes('line') || secLower.includes('joining');
         if (secLower.includes('cuff') || secLower.includes('sleeve') || secLower.includes('front') || secLower.includes('back') || secLower.includes('collar') || isAssembly) {
             if (isAssembly) { if (forcedRot === undefined) ry = (lane === 'B' || lane === 'C') ? ROT_FACE_FRONT : ROT_FACE_BACK; }
-            else if (forcedRot === undefined) { ry = (lane === 'A' || lane === 'C') ? 0 : Math.PI; }
+            else if (forcedRot === undefined) { 
+                if (factoryId === 'kpr') ry = ROT_FACE_FRONT;
+                else ry = (lane === 'A' || lane === 'C') ? 0 : Math.PI; 
+            }
 
             const dims = getMachineZoneDims(op.machine_type);
             const needsOp = !op.machine_type.toLowerCase().includes('supermarket') && !op.machine_type.toLowerCase().includes('trolley');
@@ -327,8 +395,15 @@ export const generateLayout = (
             };
 
             const b = computeBounds(ry);
-            const midZ = (lane === 'A' || lane === 'B') ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD;
-            z = (lane === 'A' || lane === 'C') ? midZ - b.minWZ : midZ - b.maxWZ;
+            const midZ = forcedMidZ !== undefined ? forcedMidZ : ( (lane === 'A' || lane === 'B') ? midZ_AB : midZ_CD );
+            
+            // For KPR Assembly, we center the entire machine block (including operator space) 
+            // on the lane to ensure symmetry relative to the zone borders.
+            if (isKPR && secLower.includes('assembly')) {
+                z = midZ - (b.minWZ + b.maxWZ) / 2;
+            } else {
+                z = (lane === 'A' || lane === 'C') ? midZ - b.minWZ : midZ - b.maxWZ;
+            }
         }
 
         if (!sectionCounters[sectionName || op.section]) {
@@ -410,79 +485,137 @@ export const generateLayout = (
         const targetSpecsEarly = matchedTag ? specs.sections[matchedTag as keyof typeof specs.sections] : null;
         const zoneBounds = targetSpecsEarly || (matchedTag ? PART_BOUNDS[matchedTag] : { start: 0, end: 500 });
 
-        // v195: Move machines back to follow natural sequence, avoiding forced forward drift.
-        let alternatingX = isAB ? Math.max(cursors.A, cursors.B) : Math.max(cursors.C, cursors.D);
-        if (alternatingX < 0.3 * S) alternatingX = 0.2719 * S; // Initial start for first section
+        // v195: For DBR, we force sections to start after the previous section's longest lane.
+        // For KPR, we allow lanes to progress independently ("interleaving") to save space.
+        let lCX = isAB ? cursors.A : cursors.C;
+        let rCX = isAB ? cursors.B : cursors.D;
+        
+        if (factoryId !== 'kpr') {
+            const alternatingX = Math.max(lCX, rCX);
+            lCX = alternatingX < 0.3 * S ? 0.2719 * S : alternatingX;
+            rCX = lCX;
+        } else {
+            if (lCX < 0.3 * S) lCX = 0.2719 * S;
+            if (rCX < 0.3 * S) rCX = 0.2719 * S;
+        }
 
         const isAssemblySec = secLower.includes('assembly');
         if (isAssemblySec) {
-            const startX_AssemblyAB = specs.assemblyAB.start;
-            const startX_AssemblyCD = specs.assemblyCD.start;
-            const ASSEMBLY_GAP = 0.05;
+            const KPR_ANCHOR_X = (specs.sections.back.end + 3.5 * FT);
+            const startX_AssemblyAB = isKPR ? KPR_ANCHOR_X : specs.assemblyAB.start;
+            const startX_AssemblyCD = isKPR ? KPR_ANCHOR_X : specs.assemblyCD.start;
+            const ASSEMBLY_GAP = 0.02; // Reduced from 0.05 for tighter spacing
 
-            // 1. Initialize cursors for A1, A2, A3 at the transition point
+            // 1. Initialize cursors for A1, A2, A3 at the transition point (The Edge)
+            // v192: Ensuring these are strictly reset to the start point.
             const laneCursors = { 
-                B: startX_AssemblyAB + (ops[0] ? getMachineZoneDims(ops[0].operation.machine_type).length / 2 : 2 * FT), 
-                A: startX_AssemblyAB + (ops[0] ? getMachineZoneDims(ops[0].operation.machine_type).length / 2 : 2 * FT), 
-                D: startX_AssemblyCD + (ops[0] ? getMachineZoneDims(ops[0].operation.machine_type).length / 2 : 2 * FT), 
-                C: startX_AssemblyCD + (ops[0] ? getMachineZoneDims(ops[0].operation.machine_type).length / 2 : 2 * FT)
+                B: Number(startX_AssemblyAB), 
+                A: Number(startX_AssemblyAB), 
+                D: Number(startX_AssemblyCD), 
+                C: Number(startX_AssemblyCD)
             };
             const laneSections: Record<string, string> = { B: 'Assembly 1', A: 'Assembly 2', D: 'Assembly 3', C: 'Assembly 4' };
 
-            const a4Ops = ops.slice(0, 3).reverse(); 
-            a4Ops.forEach((item) => {
-                const { operation, count } = item;
-                const dims = getMachineZoneDims(operation.machine_type);
-                const step = dims.length + ASSEMBLY_GAP;
+            // 2. KPR Specific: 3 Lanes (A, B, D) only, all facing same direction
+            if (isKPR) {
+                const kprLanes: ('B' | 'A' | 'D')[] = ['B', 'A', 'D'];
+                const kprSections: Record<string, string> = { B: 'Assembly 1', A: 'Assembly 2', D: 'Assembly 3' };
+                
+                ops.forEach((item) => {
+                    const { operation, count } = item;
+                    const dims = getMachineZoneDims(operation.machine_type);
+                    const step = dims.length + ASSEMBLY_GAP;
 
-                for (let k = 0; k < count; k++) {
-                    const xPos = laneCursors.C;
-                    addMachine(operation, 'C', xPos, sectionCounters[laneSections.C]++, Math.PI / 2, laneSections.C, true);
-                    laneCursors.C += step;
-                }
-            });
+                    for (let k = 0; k < count; k++) {
+                        let bestLane = kprLanes[0];
+                        kprLanes.forEach(l => {
+                            if (laneCursors[l] < laneCursors[bestLane]) bestLane = l;
+                        });
 
-            // v190: Place Assembly 4 (Lane C) Helpers at the VERY END
-            const hDims = getMachineZoneDims("Helper Table");
-            for (let i = 0; i < 2; i++) {
-                addMachine(
-                    { op_no: 'H-C', op_name: 'Helper Table', machine_type: 'Helper Table', smv: 0, section: 'Assembly 4' },
-                    'C',
-                    laneCursors.C + hDims.length / 2,
-                    i + 1,
-                    0,
-                    "Assembly 4",
-                    true
-                );
-                laneCursors.C += hDims.length + ASSEMBLY_GAP;
-            }
+                        const xPos = laneCursors[bestLane];
+                        
+                        // Equal spacing calculation for KPR 3-line assembly (Spaced to match CAD)
+                        const kprAssemblyWidth = 21.7 * FT;
+                        const kprAssemblyZ = (midZ_AB + midZ_CD) / 2;
+                        const boxZStart = kprAssemblyZ - kprAssemblyWidth / 2;
+                        
+                        let laneZ = midZ_AB; // Fallback
+                        // Move lines further apart: 20%, 50%, 80% marks
+                        if (bestLane === 'B') laneZ = boxZStart + kprAssemblyWidth * 0.20;
+                        else if (bestLane === 'A') laneZ = boxZStart + kprAssemblyWidth * 0.50;
+                        else if (bestLane === 'D') laneZ = boxZStart + kprAssemblyWidth * 0.80;
 
-            // 4. Main Assembly (A1, A2, A3) Sequence: Op 4 -> Op 5 -> ...
-            const mainOps = ops.slice(3);
-            mainOps.forEach((item) => {
-                const { operation, count } = item;
-                const dims = getMachineZoneDims(operation.machine_type);
-                const step = dims.length + ASSEMBLY_GAP;
+                        const finalSecName = kprSections[bestLane];
+                        addMachine(
+                            operation, 
+                            'A', // Force A to ensure consistent Z offset from laneZ
+                            xPos + dims.length / 2, // Calculate center from edge
+                            sectionCounters[finalSecName]++, 
+                            ROT_FACE_FRONT,
+                            finalSecName, 
+                            true,
+                            laneZ
+                        );
+                        laneCursors[bestLane] += step;
+                    }
+                });
+            } else {
+                // ... Existing DBR 4-lane logic ...
+                const a4Ops = ops.slice(0, 3).reverse(); 
+                a4Ops.forEach((item) => {
+                    const { operation, count } = item;
+                    const dims = getMachineZoneDims(operation.machine_type);
+                    const step = dims.length + ASSEMBLY_GAP;
 
-                for (let k = 0; k < count; k++) {
-                    // Greedy choice among A1, A2, A3
-                    let bestLane: 'B' | 'A' | 'D' = 'B';
-                    if (laneCursors.A < laneCursors[bestLane]) bestLane = 'A';
-                    if (laneCursors.D < laneCursors[bestLane]) bestLane = 'D';
+                    for (let k = 0; k < count; k++) {
+                        const xPos = laneCursors.C;
+                        addMachine(operation, 'C', xPos + dims.length / 2, sectionCounters[laneSections.C]++, Math.PI / 2, laneSections.C, true);
+                        laneCursors.C += step;
+                    }
+                });
 
-                    const xPos = laneCursors[bestLane];
+                // v190: Place Assembly 4 (Lane C) Helpers at the VERY END
+                const hDims = getMachineZoneDims("Helper Table");
+                for (let i = 0; i < 2; i++) {
                     addMachine(
-                        operation, 
-                        bestLane, 
-                        xPos, 
-                        sectionCounters[laneSections[bestLane]]++, 
-                        (bestLane === 'A' || bestLane === 'D') ? Math.PI / 2 : -Math.PI / 2, 
-                        laneSections[bestLane], 
+                        { op_no: 'H-C', op_name: 'Helper Table', machine_type: 'Helper Table', smv: 0, section: 'Assembly 4' },
+                        'C',
+                        laneCursors.C + hDims.length / 2,
+                        i + 1,
+                        0,
+                        "Assembly 4",
                         true
                     );
-                    laneCursors[bestLane] += step;
+                    laneCursors.C += hDims.length + ASSEMBLY_GAP;
                 }
-            });
+
+                // 4. Main Assembly (A1, A2, A3) Sequence: Op 4 -> Op 5 -> ...
+                const mainOps = ops.slice(3);
+                mainOps.forEach((item) => {
+                    const { operation, count } = item;
+                    const dims = getMachineZoneDims(operation.machine_type);
+                    const step = dims.length + ASSEMBLY_GAP;
+
+                    for (let k = 0; k < count; k++) {
+                        // Greedy choice among A1, A2, A3
+                        let bestLane: 'B' | 'A' | 'D' = 'B';
+                        if (laneCursors.A < laneCursors[bestLane]) bestLane = 'A';
+                        if (laneCursors.D < laneCursors[bestLane]) bestLane = 'D';
+
+                        const xPos = laneCursors[bestLane];
+                        addMachine(
+                            operation, 
+                            bestLane, 
+                            xPos + dims.length / 2, 
+                            sectionCounters[laneSections[bestLane]]++, 
+                            (bestLane === 'A' || bestLane === 'D') ? Math.PI / 2 : -Math.PI / 2, 
+                            laneSections[bestLane], 
+                            true
+                        );
+                        laneCursors[bestLane] += step;
+                    }
+                });
+            }
 
             // v150 Fix: Assembly boundary check
             const currentX_AB = Math.max(laneCursors.A, laneCursors.B);
@@ -497,14 +630,16 @@ export const generateLayout = (
             cursors.D = currentX_CD;
             cursors.C = laneCursors.C;
 
-            sectionLayouts.push({
-                id: uuidv4(), name: "Assembly AB", position: { x: startX_AssemblyAB, y: 0, z: LANE_Z_CENTER_AB },
-                length: specs.assemblyAB.end - specs.assemblyAB.start, width: specs.widthAB, color: '#f06b43'
-            });
-            sectionLayouts.push({
-                id: uuidv4(), name: "Assembly CD", position: { x: startX_AssemblyCD, y: 0, z: LANE_Z_CENTER_CD },
-                length: specs.assemblyCD.end - specs.assemblyCD.start, width: specs.widthCD, color: '#14b8a6'
-            });
+            if (!isKPR) {
+                sectionLayouts.push({
+                    id: uuidv4(), name: "Assembly AB", position: { x: startX_AssemblyAB, y: 0, z: midZ_AB },
+                    length: specs.assemblyAB.end - specs.assemblyAB.start, width: specs.widthAB, color: '#f06b43'
+                });
+                sectionLayouts.push({
+                    id: uuidv4(), name: "Assembly CD", position: { x: startX_AssemblyCD, y: 0, z: midZ_CD },
+                    length: specs.assemblyCD.end - specs.assemblyCD.start, width: specs.widthCD, color: '#14b8a6'
+                });
+            }
             continue;
         }
 
@@ -526,7 +661,7 @@ export const generateLayout = (
         const rawZones = isAB ? zonesAB : zonesCD;
         const thisSectionBounds = targetSpecs
             ? { start: targetSpecs.start, end: Math.min(targetSpecs.end, machineZoneEnd) }
-            : { start: alternatingX, end: machineZoneEnd };
+            : { start: Math.min(lCX, rCX), end: machineZoneEnd };
         const zones = rawZones
             .filter(z => z.start < thisSectionBounds.end && z.end > thisSectionBounds.start)
             .map(z => ({
@@ -534,7 +669,6 @@ export const generateLayout = (
                 end: Math.min(z.end, thisSectionBounds.end)
             }));
 
-        let lCX = alternatingX, rCX = alternatingX;
         let alt = 0;
         const lLane = isAB ? 'A' : 'C', rLane = isAB ? 'B' : 'D';
 
@@ -583,11 +717,9 @@ export const generateLayout = (
             }
             delete spillPending['collar'];
 
-            alternatingX = Math.max(alternatingX, Math.max(lCX_O, rCX_O));
+            // No need to reset lCX/rCX to alternatingX here anymore, they already carry the overflow state
         }
 
-        lCX = alternatingX;
-        rCX = alternatingX;
 
         const isAssembly = secLower.includes('assembly') || secLower.includes('lane') || secLower.includes('line') || secLower.includes('joining');
 
@@ -602,9 +734,10 @@ export const generateLayout = (
 
         const boxLength = targetSpecs ? targetSpecs.end - targetSpecs.start : 500;
 
-        if (targetSpecs) {
+        // For KPR, we don't push section layouts here. We compute them dynamically at the end of Phaze 2.
+        if (targetSpecs && factoryId !== 'kpr') {
             const currentSectionLayout = {
-                id: uuidv4(), name: secName, position: { x: targetSpecs.start, y: 0, z: isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD },
+                id: uuidv4(), name: secName, position: { x: targetSpecs.start, y: 0, z: isAB ? midZ_AB : midZ_CD },
                 length: boxLength, width: isAB ? specs.widthAB : specs.widthCD, color: secColor
             };
             sectionLayouts.push(currentSectionLayout);
@@ -684,7 +817,7 @@ export const generateLayout = (
                 for (let k = 0; k < item.count; k++) {
                     // Inspections always go to lLane (A or C) to match standard layout
                     // v155 Greedy Lane Choice: Place in the shorter lane first
-                    const targetLane = isInspection ? lLane : ((lCX <= rCX) ? lLane : rLane);
+                    const targetLane = (isInspection && factoryId !== 'kpr') ? lLane : ((lCX <= rCX) ? lLane : rLane);
                     const cursorVal = (targetLane === lLane) ? lCX : rCX;
                     const nextX = getNextValidX(cursorVal, w, zones);
                     const isCollar = matchedTag === 'collar';
@@ -716,11 +849,11 @@ export const generateLayout = (
                     if (targetLane === lLane) {
                         lCX = finalX;
                         addMachine(item.operation, lLane, lCX + w / 2, sectionCounters[actualSec]++, isInspection ? -Math.PI / 2 : undefined, actualSec, true);
-                        lCX += w + MACHINE_SPACING_X;
+                        lCX += w + (isKPR ? KPR_GAP : MACHINE_SPACING_X);
                     } else {
                         rCX = finalX;
                         addMachine(item.operation, rLane, rCX + w / 2, sectionCounters[actualSec]++, undefined, actualSec, true);
-                        rCX += w + MACHINE_SPACING_X;
+                        rCX += w + (isKPR ? KPR_GAP : MACHINE_SPACING_X);
                     }
                     if (!isInspection) alt++;
                 }
@@ -753,14 +886,14 @@ export const generateLayout = (
         const incomingStations = inspectionOps.filter(o => (o.operation.section || '').toLowerCase() !== secLower);
         for (const inspItem of incomingStations) {
             const w = getMachineZoneDims(inspItem.operation.machine_type).length;
-            const targetLane = lLane;
+            const targetLane = (factoryId === 'kpr') ? (lCX <= rCX ? lLane : rLane) : lLane;
             const cursorVal = (targetLane === lLane) ? lCX : rCX;
             const nextX = getNextValidX(cursorVal, w, zones);
             let finalX = nextX === -1 ? cursorVal : nextX;
             
             addMachine(inspItem.operation, targetLane, finalX + w/2, sectionCounters[secName]++, -Math.PI / 2, secName, true);
-            if (targetLane === lLane) lCX = finalX + w + MACHINE_SPACING_X;
-            else rCX = finalX + w + MACHINE_SPACING_X;
+            if (targetLane === lLane) lCX = finalX + w + (isKPR ? KPR_GAP : MACHINE_SPACING_X);
+            else rCX = finalX + w + (isKPR ? KPR_GAP : MACHINE_SPACING_X);
         }
 
         // Phase B: Production machines
@@ -772,7 +905,7 @@ export const generateLayout = (
 
         for (const inspItem of nativeStations) {
             const w = getMachineZoneDims(inspItem.operation.machine_type).length;
-            const targetLane = lLane;
+            const targetLane = (factoryId === 'kpr') ? (lCX <= rCX ? lLane : rLane) : lLane;
             const cursorVal = (targetLane === lLane) ? lCX : rCX;
             const nextX = getNextValidX(cursorVal, w, zones);
             
@@ -791,8 +924,8 @@ export const generateLayout = (
             finalX += INSPECTION_GAP;
             
             addMachine(inspItem.operation, targetLane, finalX + w/2, sectionCounters[secName]++, -Math.PI / 2, secName, true);
-            if (targetLane === lLane) lCX = finalX + w + MACHINE_SPACING_X;
-            else rCX = finalX + w + MACHINE_SPACING_X;
+            if (targetLane === lLane) lCX = finalX + w + (isKPR ? KPR_GAP : MACHINE_SPACING_X);
+            else rCX = finalX + w + (isKPR ? KPR_GAP : MACHINE_SPACING_X);
         }
 
         if (overflowOps.length > 0 && matchedTag) {
@@ -866,13 +999,13 @@ export const generateLayout = (
 
         // --- SECTION OVERFLOW & SUPERMARKETS ---
         // Support units (Supermarkets/Inspections) are only added for Line 1-6 as requested.
-        const isFloor1_Support = lineValNum <= 6;
+        const isFloor1_Support = lineValNum <= 6 && factoryId !== 'kpr';
 
         if (isFloor1_Support) {
             if (secLower.includes('collar') && specs.collar) {
                 const targetSpecsLocal = specs.collar;
                 const anchorX = targetSpecsLocal.end;
-                const collarCenterZ = isAB ? LANE_Z_CENTER_AB : LANE_Z_CENTER_CD;
+                const collarCenterZ = isAB ? midZ_AB : midZ_CD;
 
                 // S2: Base of the U (Vertical pillar on the right edge)
                 addMachine(createDummyOp('Supermarket', secName), 'C', anchorX - 0.9 * FT, undefined, - Math.PI / 2, secName, true);
@@ -917,11 +1050,13 @@ export const generateLayout = (
             }
         }
 
-        const monitoringTag = Object.keys(specs).find(tag => secLower.includes(tag));
+        // v199: Disable individual section monitoring for KPR. 
+        // KPR uses unified zones, so "section overflow" is only meaningful at the end of the entire Prep area.
+        const monitoringTag = isKPR ? null : Object.keys(specs).find(tag => secLower.includes(tag));
 
         if (monitoringTag) {
             const standardLen = (specs as any)[monitoringTag]?.length * FT || (specs as any)[monitoringTag]?.end - (specs as any)[monitoringTag]?.start || 0;
-            const consumed = currentPos - alternatingX;
+            const consumed = currentPos - (isAB ? cursors.A : cursors.C); 
             if (consumed > standardLen + 0.1) {
                 sectionSpaceViolators.push(secName);
             }
@@ -932,7 +1067,59 @@ export const generateLayout = (
                 const msg = `${culprit} section overflow.`;
                 if (!warnings.includes(msg)) warnings.push(msg);
             });
+            
+            // v199 KPR Boundary Alert: Only if we exceed the absolute terminal edge
+            if (isKPR && currentPos > (102.32 * FT + 0.01)) {
+                 const msg = `Factory line length exceeded (Max: 102.32ft).`;
+                 if (!warnings.includes(msg)) warnings.unshift(msg);
+            }
         }
+    }
+
+    if (factoryId === 'kpr') {
+        const kprLen = 102.32 * FT;
+        const unifiedSections: Record<string, { minX: number, maxX: number, name: string, color: string, z: number, w: number }> = {
+            AB: { minX: Infinity, maxX: -Infinity, name: 'Cuff / Sleeve / Back', color: '#3b82f6', z: midZ_AB, w: specs.widthAB },
+            CD: { minX: Infinity, maxX: -Infinity, name: 'Collar / Front', color: '#ec4899', z: midZ_CD, w: specs.widthCD }
+        };
+        
+        layout.forEach(m => {
+            if (!m.section || m.section.toLowerCase().includes('assembly')) return;
+            const isAB_m = ['A', 'B'].includes(m.lane || '');
+            const grp = isAB_m ? 'AB' : 'CD';
+            
+            const dims = getMachineZoneDims(m.operation.machine_type);
+            unifiedSections[grp].minX = 0; 
+            unifiedSections[grp].maxX = kprLen;
+        });
+
+        Object.values(unifiedSections).forEach(sec => {
+            if (sec.minX === Infinity) return;
+            sectionLayouts.push({
+                id: uuidv4(),
+                name: sec.name,
+                position: { x: 0, y: 0, z: sec.z },
+                length: 102.32 * FT, // Constant 102.32m
+                width: sec.w,
+                color: sec.color
+            });
+        });
+
+        // Assembly Anchor
+        const KPR_ANCHOR_X = (102.32 + 3.5) * FT;
+        const kprAssemblyStart = KPR_ANCHOR_X;
+        const kprAssemblyLen = 43.9 * FT;
+        const kprAssemblyWidth = 21.7 * FT;
+        const kprAssemblyZ = (midZ_AB + midZ_CD) / 2; // Continuous center
+
+        sectionLayouts.push({
+            id: uuidv4(),
+            name: "Assembly Area",
+            position: { x: kprAssemblyStart, y: 0, z: kprAssemblyZ },
+            length: kprAssemblyLen,
+            width: kprAssemblyWidth,
+            color: '#f06b43'
+        });
     }
 
     return { machines: layout, sections: sectionLayouts, warnings };

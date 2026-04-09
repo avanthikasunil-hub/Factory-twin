@@ -626,28 +626,7 @@ const LinePlannerPage = () => {
               </div>
             </div>
 
-            {/* Legend */}
-            <div className="pt-8 border-t border-border/50 text-left pb-10">
-              <h3 className="text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
-                <Info className="w-4 h-4" /> 3D Legend
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { color: 'bg-blue-500', label: 'Single Needle' },
-                  { color: 'bg-purple-500', label: 'Overlock' },
-                  { color: 'bg-orange-500', label: 'Iron/Table' },
-                  { color: 'bg-pink-500', label: 'Special M/C' },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center gap-3 text-[12px] text-muted-foreground font-bold italic">
-                    <div className={`w-3.5 h-3.5 rounded shadow-inner ${item.color}`} />
-                    <span>{item.label}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-8 p-4 rounded-3xl bg-primary/5 text-[11px] text-muted-foreground font-medium leading-relaxed border border-primary/10 italic">
-                Pro-Tip: Use Efficiency to simulate real-world conditions on your current floor layout.
-              </p>
-            </div>
+            {/* Legend removed */}
 
           </div>
         </aside>

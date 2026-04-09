@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, FolderOpen, Factory, Zap, ChevronLeft, Home } from 'lucide-react';
 import { AnimatedBackground } from '@/components/ui/AnimatedBackground';
@@ -9,7 +10,11 @@ import { useLineStore } from '@/store/useLineStore';
  */
 const PlanHomePage = () => {
   const navigate = useNavigate();
-  const { savedLines } = useLineStore();
+  const { savedLines: allLines } = useLineStore();
+
+  const savedLines = useMemo(() => 
+    allLines.filter(l => l.factoryId === 'dbr' || !l.factoryId), 
+    [allLines]);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -48,12 +53,10 @@ const PlanHomePage = () => {
           transition={{ duration: 0.5 }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          onClick={() => navigate('/')}
-          className="absolute top-8 left-8 flex items-center gap-2 px-4 py-2 rounded-full glass-card border border-border/50 hover:border-primary/40 text-muted-foreground hover:text-foreground transition-all duration-300 text-sm font-medium"
+          onClick={() => navigate(-1)}
+          className="absolute top-8 left-8 flex items-center justify-center w-10 h-10 rounded-full glass-card border border-border/50 hover:border-primary/40 text-muted-foreground hover:text-foreground transition-all duration-300"
         >
-          <ChevronLeft className="w-4 h-4" />
-          <Home className="w-4 h-4" />
-          <span>Home</span>
+          <ChevronLeft className="w-5 h-5" />
         </motion.button>
 
         {/* Header */}
@@ -105,7 +108,7 @@ const PlanHomePage = () => {
             variants={itemVariants}
             whileHover={{ scale: 1.02, y: -5 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => navigate('/line-planner/create')}
+            onClick={() => navigate('/dbr/line-planner/create')}
             className="group cursor-pointer"
           >
             <div className="relative glass-card rounded-2xl p-8 h-64 overflow-hidden">
@@ -148,7 +151,7 @@ const PlanHomePage = () => {
             variants={itemVariants}
             whileHover={{ scale: 1.02, y: -5 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => navigate('/line-planner/lines')}
+            onClick={() => navigate('/dbr/line-planner/lines')}
             className="group cursor-pointer"
           >
             <div className="relative glass-card rounded-2xl p-8 h-64 overflow-hidden">

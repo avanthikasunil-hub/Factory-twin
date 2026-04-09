@@ -20,8 +20,8 @@ import {
   doc,
   updateDoc,
 } from "firebase/firestore";
-import { prodDb as db } from "../../firebase";
-import { API_BASE_URL } from "../../config";
+import { prodDb as db } from "../../../firebase";
+import { API_BASE_URL } from "../../../config";
 import {
   generateCotLayout,
   getLayoutSpecs,
@@ -586,6 +586,7 @@ const GLBMachine = ({
   showStatusLights = true,
   isInspectionItem = false,
   allocatedLine = null,
+  section = "General",
 }) => {
   const finalShowLights = showStatusLights && !isInspectionItem;
   const meshRef = useRef();
@@ -826,6 +827,9 @@ const GLBMachine = ({
                 style={{ color: "#fff", fontWeight: "800", fontSize: "9px" }}
               >
                 SMV: {typeof smv === 'number' ? smv.toFixed(2) : (smv || "0.00")}
+              </span>
+              <span style={{ fontSize: "9px", color: "#818cf8", fontWeight: "900", background: "rgba(129, 140, 248, 0.15)", padding: "2px 6px", borderRadius: "4px" }}>
+                ZONE: {section?.toUpperCase() || "LINE"}
               </span>
               <span style={{ opacity: 0.4, fontSize: "9px" }}>
                 ID: {id.split("-").pop()}
@@ -1103,6 +1107,8 @@ export default function WarRoom() {
   }, []);
 
 
+  const [viewMode, setViewMode] = useState("today"); // "today" or "lastSession"
+
   useEffect(() => {
     let isMounted = true;
     let unsub = null;
@@ -1110,38 +1116,82 @@ export default function WarRoom() {
     const q = collection(db, "changeoverData");
     unsub = onSnapshot(q, (snap) => {
       if (!isMounted) return;
-      const today = new Date();
-      const todayDateStr = `${today.getDate()}/${today.getMonth() + 1}/${today.getFullYear()}`;
-      const todayAltDateStr = todayDateStr.split('/').map(p => p.padStart(2, '0')).join('/');
+      const allLines = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      const firestorePartials = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(l => {
-          const status = (l.status || "").toLowerCase();
-          if (status !== 'partial' && status !== 'in_progress') return false;
-          const dStr = l.lastUpdated || l.summaryData?.lastUpdated || "";
-          return (dStr.includes(todayDateStr) || dStr.includes(todayAltDateStr));
-        });
-      
-      // Sort by lastUpdated or just latest docs
-      firestorePartials.sort((a, b) => {
-         const dA = new Date(a.lastUpdated || a.summaryData?.lastUpdated || 0);
-         const dB = new Date(b.lastUpdated || b.summaryData?.lastUpdated || 0);
-         return dB - dA;
+      // 1. Extract all unique dates from the data
+      const datesSet = new Set();
+      const today = new Date();
+      const todayDateStr = `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getFullYear()}`;
+      const altTodayDateStr = todayDateStr.split('/').map(p => parseInt(p, 10).toString()).join('/');
+
+      allLines.forEach(l => {
+        const dStr = l.lastUpdated || l.summaryData?.lastUpdated || "";
+        const match = dStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (match) {
+          const norm = `${match[1].padStart(2, '0')}/${match[2].padStart(2, '0')}/${match[3]}`;
+          datesSet.add(norm);
+        }
       });
 
-      setActiveLines(firestorePartials);
-      
-      if (firestorePartials.length > 0 && !activeLineLabel) {
-        setSelectedLineId(firestorePartials[0].id);
-        setActiveLineLabel(firestorePartials[0].line || firestorePartials[0].summaryData?.line || "");
+      // 2. Sort dates descending
+      const sortedDates = Array.from(datesSet).sort((a, b) => {
+        const [da, ma, ya] = a.split('/').map(Number);
+        const [db, mb, yb] = b.split('/').map(Number);
+        return new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da);
+      });
+
+      // 3. Determine target date
+      let targetDateStr = todayDateStr;
+      if (viewMode === "lastSession") {
+        const beforeToday = sortedDates.filter(d => {
+          const [day, month, year] = d.split('/').map(Number);
+          return new Date(year, month - 1, day) < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        });
+        targetDateStr = (beforeToday.length > 0) ? beforeToday[0] : (sortedDates[1] || "NONE");
       }
+
+      const parts = targetDateStr.split('/');
+      const altTargetDateStr = parts.map(p => parseInt(p, 10).toString()).join('/');
+
+      const filtered = allLines.filter((l) => {
+        if (targetDateStr === "NONE") return false;
+        const dStr = l.lastUpdated || l.summaryData?.lastUpdated || "";
+        if (!(dStr.includes(targetDateStr) || dStr.includes(altTargetDateStr))) return false;
+
+        if (viewMode === "today") {
+          const status = (l.status || "").toLowerCase();
+          return (status === 'partial' || status === 'in_progress');
+        }
+        return true;
+      });
+
+      setActiveLines(filtered.sort((a, b) => {
+         const dA = new Date(a.lastUpdated || a.summaryData?.lastUpdated || 0).getTime();
+         const dB = new Date(b.lastUpdated || b.summaryData?.lastUpdated || 0).getTime();
+         return dB - dA;
+      }));
     });
 
     return () => {
       isMounted = false;
       if (unsub) unsub();
     };
-  }, [activeLineLabel]);
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (activeLines.length > 0) {
+       const currentInList = activeLines.find(l => l.id === activeLineLabel || (l.line || l.summaryData?.line) === activeLineLabel);
+       if (!currentInList) {
+          setSelectedLineId(activeLines[0].id);
+          setActiveLineLabel(activeLines[0].id);
+       }
+    } else {
+       setSelectedLineId("");
+       if (activeLineLabel && !activeLineLabel.includes('Line')) {
+          setActiveLineLabel("");
+       }
+    }
+  }, [activeLines, viewMode]);
 
 
   useEffect(() => {
@@ -1155,9 +1205,25 @@ export default function WarRoom() {
   useEffect(() => {
     const fetchMetadata = async () => {
       if (!activeLineLabel) return;
+      
+      // Search by ID or Line Name
       let currentLine = activeLines.find(
-        (l) => (l.line || l.summaryData?.line) === activeLineLabel,
+        (l) => l.id === activeLineLabel || (l.line || l.summaryData?.line) === activeLineLabel,
       );
+      
+      if (!currentLine) {
+        // Fallback for direct searches or URL params
+        const q = query(
+          collection(db, "activeLines"),
+          where("line", "in", [activeLineLabel, activeLineLabel.toUpperCase()]),
+          limit(1)
+        );
+        const qSnap = await getDocs(q);
+        if(!qSnap.empty) {
+            currentLine = { id: qSnap.docs[0].id, ...qSnap.docs[0].data() };
+        }
+      }
+
       if (!currentLine) {
         const q = query(
           collection(db, "changeoverData"),
@@ -1198,7 +1264,7 @@ export default function WarRoom() {
           "---",
         fromStyle:
           currentLine.fromStyle || currentLine.summaryData?.fromStyle || "---",
-        line: activeLineLabel,
+        line: currentLine.line || currentLine.summaryData?.line || (activeLineLabel?.includes('Line') ? activeLineLabel : 'Line 1'),
         con,
         fromCon:
           currentLine.fromCon || currentLine.summaryData?.fromCon || "---",
@@ -1262,7 +1328,12 @@ export default function WarRoom() {
       (!meta.style || meta.style === "---")
     )
       return;
+    let unsub = null;
     const findAndListen = async () => {
+      // Clear current data immediately to provide visual feedback of change
+      setMasterData([]);
+      setFullObData(null);
+
       // Try by CON Number first
       let q = query(
         collection(db, "styleOBmetadata"),
@@ -1290,10 +1361,9 @@ export default function WarRoom() {
         }
       }
 
-
       if (!snap.empty) {
         setObRef(snap.docs[0].ref);
-        onSnapshot(snap.docs[0].ref, (docSnap) => {
+        unsub = onSnapshot(snap.docs[0].ref, (docSnap) => {
           const foundData = docSnap.data();
           if (!foundData) return;
           setFullObData(foundData);
@@ -1302,44 +1372,62 @@ export default function WarRoom() {
           const seenOps = new Set();
           const extractOps = (data) => {
             if (!data) return;
+            // Recursively search for arrays that look like operation lists
             if (Array.isArray(data)) {
-              data.forEach((item) => {
-                if (item.operations) {
-                  const sName = item.section?.trim() || "General";
-                  item.operations.forEach((op) => {
-                    const opId = op.op_no || op.a || op.A || op.operation || Math.random();
-                    if (!seenOps.has(opId)) {
-                      seenOps.add(opId);
-                      ops.push({
-                        ...op,
-                        section: sName,
-                        op_no: op.op_no || op.a || op.A || "",
-                        op_name: extractOpName(op),
-                        machine_type: op.machine_type || op.machine || "SNLS",
-                        smv: extractOpSMV(op)
+               const looksLikeOps = data.some(item => 
+                 item.operations || item.operation || item.op_name || 
+                 item.description || item.machine || item.machine_type ||
+                 item.a || item.b || item.A || item.B
+               );
+
+               if (looksLikeOps) {
+                data.forEach((item) => {
+                    if (item.operations) {
+                      const sName = item.section?.trim() || "General";
+                      item.operations.forEach((op) => {
+                        const opId = op.op_no || op.a || op.A || op.operation || Math.random();
+                        if (!seenOps.has(opId)) {
+                          seenOps.add(opId);
+                          ops.push({
+                            ...op,
+                            section: sName,
+                            op_no: op.op_no || op.a || op.A || "",
+                            op_name: extractOpName(op),
+                            machine_type: op.machine_type || op.machine || "SNLS",
+                            smv: extractOpSMV(op)
+                          });
+                        }
                       });
+                    } else if (item.operation || item.op_name || item.operation_description || item.description || item.b || item.B || item.a || item.A) {
+                      const opId = item.op_no || item.a || item.A || item.operation || Math.random();
+                      if (!seenOps.has(opId)) {
+                        seenOps.add(opId);
+                        ops.push({
+                          ...item,
+                          section: item.section || "General",
+                          op_no: item.op_no || item.a || item.A || "",
+                          op_name: extractOpName(item),
+                          machine_type: item.machine_type || item.machine || "SNLS",
+                          smv: extractOpSMV(item)
+                        });
+                      }
                     }
                   });
-                } else if (item.operation || item.op_name || item.operation_description || item.description || item.b || item.B) {
-                  const opId = item.op_no || item.a || item.A || item.operation || Math.random();
-                  if (!seenOps.has(opId)) {
-                    seenOps.add(opId);
-                    ops.push({
-                      ...item,
-                      op_no: item.op_no || item.a || item.A || "",
-                      op_name: extractOpName(item),
-                      machine_type: item.machine_type || item.machine || "SNLS",
-                      smv: extractOpSMV(item)
-                    });
-                  }
-                }
-              });
-            } else if (typeof data === "object") {
-              Object.values(data).forEach((val) => extractOps(val));
+               } else {
+                  // Not an op list, but might contain one inside its elements
+                  data.forEach(val => extractOps(val));
+               }
+            } else if (typeof data === "object" && data !== null) {
+              // Priority search for common OB fields
+              if (data.parsedOBData) extractOps(data.parsedOBData);
+              else if (data.operations) extractOps(data.operations);
+              else if (data.rows) extractOps(data.rows);
+              else {
+                Object.values(data).forEach((val) => extractOps(val));
+              }
             }
           };
-          extractOps(parsedOB);
-
+          extractOps(foundData);
 
           const result = generateCotLayout(ops, meta.line || "Line 1");
           setMasterData(result.machines);
@@ -1347,15 +1435,22 @@ export default function WarRoom() {
             totalSMV: result.totalSMV.toFixed(2),
             target: result.target,
           });
-          setSections([
-            ...new Set(result.machines.map((m) => m.section).filter(Boolean)),
-          ]);
+          const standardSections = ["Collar", "Cuff", "Sleeve", "Back", "Front", "Assembly"];
+          const foundSections = result.machines.map((m) => {
+             const s = m.section || "";
+             if (s.toLowerCase().includes('assembly') || s.toLowerCase().includes('lane')) return 'Assembly';
+             return s;
+          }).filter(Boolean);
+          const uniqueSections = [...new Set([...standardSections, ...foundSections])];
+          
+          setSections(uniqueSections.filter(s => !s.toLowerCase().includes('assembly') || s === 'Assembly'));
           setSections3D(result.sections);
         });
       }
     };
     findAndListen();
-  }, [meta.style, meta.con, meta.line]);
+    return () => { if(unsub) unsub(); };
+  }, [meta.style, meta.con, meta.line, viewMode, activeLines]);
 
   // ─── Comparative OB memoization ────────────────────
   const { externalOps, internalOps } = useMemo(() => {
@@ -1417,13 +1512,7 @@ export default function WarRoom() {
   }, [sections3D]);
 
   const totalReadyGlobal = useMemo(() => {
-    const validMachines = (masterData || []).filter(m =>
-      m.section !== "Assembly 4" &&
-      !m.operation?.machine_type?.toLowerCase().includes("helper") &&
-      !m.operation?.machine_type?.toLowerCase().includes("inspection") &&
-      !m.operation?.machine_type?.toLowerCase().includes("supermarket")
-    );
-    return validMachines.filter(
+    return (masterData || []).filter(
       (m) =>
         m.operation?.qcStatus === "QC_APPROVED" ||
         m.operation?.machineArranged === "Yes",
@@ -1431,12 +1520,7 @@ export default function WarRoom() {
   }, [masterData]);
 
   const globalTotalMachines = useMemo(() => {
-    return (masterData || []).filter(m =>
-      m.section !== "Assembly 4" &&
-      !m.operation?.machine_type?.toLowerCase().includes("helper") &&
-      !m.operation?.machine_type?.toLowerCase().includes("inspection") &&
-      !m.operation?.machine_type?.toLowerCase().includes("supermarket")
-    ).length;
+    return (masterData || []).length;
   }, [masterData]);
 
   const updateDisplayLayout = (data, sectionName) => {
@@ -1608,6 +1692,39 @@ export default function WarRoom() {
           <div
             style={{
               background: "rgba(255,255,255,0.05)",
+              padding: "4px",
+              borderRadius: "10px",
+              border: "1px solid rgba(255,255,255,0.1)",
+              display: "flex",
+              gap: "4px"
+            }}
+          >
+            {["today", "lastSession"].map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                style={{
+                  padding: "6px 15px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "9px",
+                  fontWeight: "900",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  transition: "all 0.3s",
+                  background: viewMode === mode ? "#6366f1" : "transparent",
+                  color: viewMode === mode ? "#fff" : "#94a3b8",
+                  boxShadow: viewMode === mode ? "0 4px 12px rgba(99, 102, 241, 0.4)" : "none"
+                }}
+              >
+                {mode === "today" ? "Today" : "Last Session"}
+              </button>
+            ))}
+          </div>
+
+          <div
+            style={{
+              background: "rgba(255,255,255,0.05)",
               padding: "8px 15px",
               borderRadius: "8px",
               border: "1px solid rgba(255,255,255,0.1)",
@@ -1638,22 +1755,33 @@ export default function WarRoom() {
               }}
             >
               {!activeLineLabel ? (
-                <option value="">NO ACTIVE CHANGEOVER</option>
+                <option value="">{viewMode === "today" ? "NO ACTIVE CHANGEOVER" : "NO PREVIOUS SESSION"}</option>
               ) : (
                 <option value={activeLineLabel}>
-                  {activeLineLabel.toUpperCase()} | {meta.con}
+                  {(() => {
+                    const l = activeLines.find(x => x.id === activeLineLabel);
+                    const ln = (l?.line || l?.summaryData?.line || activeLineLabel || "---").toUpperCase();
+                    const date = l?.lastUpdated?.split(' ')[0] || "";
+                    const showDate = viewMode === "lastSession" && date;
+                    return `${ln} | ${meta.con} ${showDate ? `(${date})` : ""}`;
+                  })()}
                 </option>
               )}
               {activeLines
                 .filter(
-                  (l) => (l.line || l.summaryData?.line) !== activeLineLabel,
+                  (l) => l.id !== activeLineLabel && (l.line || l.summaryData?.line) !== activeLineLabel,
                 )
-                .map((l) => (
-                  <option key={l.id} value={l.line || l.summaryData?.line}>
-                    {(l.line || l.summaryData?.line).toUpperCase()} |{" "}
-                    {l.conNumber || l.summaryData?.conNumber}
-                  </option>
-                ))}
+                .map((l) => {
+                  const ln = (l.line || l.summaryData?.line || "").toUpperCase();
+                  const con = l.conNumber || l.summaryData?.conNumber || l.conNo || "---";
+                  const date = l.lastUpdated?.split(' ')[0] || "";
+                  const showDate = viewMode === "lastSession" && date;
+                  return (
+                    <option key={l.id} value={l.id}>
+                      {ln} | {con} {showDate ? `(${date})` : ""}
+                    </option>
+                  );
+                })}
             </select>
           </div>
 
@@ -1709,7 +1837,10 @@ export default function WarRoom() {
             {isLiveChangeover ? "Active Changeover" : "Normal Production"}
           </div>
           <div style={{ color: "#fff", fontWeight: "900", fontSize: "24px" }}>
-            {activeLineLabel}
+            {(() => {
+              const l = activeLines.find((x) => x.id === activeLineLabel || (x.line || x.summaryData?.line) === activeLineLabel);
+              return (l?.line || l?.summaryData?.line || activeLineLabel || "WAR ROOM").toUpperCase();
+            })()}
           </div>
         </div>
       </div>
@@ -1754,7 +1885,11 @@ export default function WarRoom() {
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
                 gap: "6px",
+                maxHeight: "220px",
+                overflowY: "auto",
+                paddingRight: "4px",
               }}
+              className="custom-scrollbar"
             >
               <button
                 onClick={() => setActiveSection("All")}
@@ -1780,15 +1915,19 @@ export default function WarRoom() {
                   {totalReadyGlobal}/{globalTotalMachines}
                 </span>
               </button>
-              {sections
+               {sections
                 .filter((s) => !s.toLowerCase().includes("supermarket"))
                 .map((name) => {
                   const sectionOps = masterData.filter(
-                    (m) => m.section === name &&
-                      m.section !== "Assembly 4" &&
-                      !m.operation?.machine_type?.toLowerCase().includes("helper") &&
-                      !m.operation?.machine_type?.toLowerCase().includes("inspection") &&
-                      !m.operation?.machine_type?.toLowerCase().includes("supermarket")
+                    (m) => {
+                       const ms = (m.section || "").toLowerCase();
+                       const tn = name.toLowerCase();
+                       const isMatch = ms === tn || 
+                                     (tn === 'assembly' && ms.includes('assembly')) || 
+                                     (ms.includes(tn) || tn.includes(ms));
+                       
+                       return isMatch;
+                    }
                   );
                   const ready = sectionOps.filter(
                     (m) =>
@@ -1796,6 +1935,8 @@ export default function WarRoom() {
                       m.operation?.machineArranged === "Yes",
                   ).length;
                   const total = sectionOps.length;
+                  const isPunched = total > 0 && ready === total;
+                  const isPartiallyPunched = total > 0 && ready > 0 && ready < total;
                   return (
                     <button
                       key={name}
@@ -1827,7 +1968,7 @@ export default function WarRoom() {
                         {name.toUpperCase()}
                       </span>
                       <span style={{ opacity: 0.6 }}>
-                        {name === "Assembly 4" ? "0" : `${ready}/${total}`}
+                        {`${ready}/${total}`}
                       </span>
                     </button>
                   );
@@ -2237,6 +2378,7 @@ export default function WarRoom() {
                     isInspectionItem={m.isInspection}
                     showStatusLights={m.section !== 'Assembly 4'}
                     allocatedLine={m.operation?.allocatedLine}
+                    section={m.section || m.operation?.section}
                   />
                 </group>
               ))}

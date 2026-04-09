@@ -24,16 +24,21 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 
 /**
- * Page to view and manage all saved production lines, segregated by Line Number (LINE 1 - LINE 9)
+ * Page to view and manage all saved production lines, segregated by Line Number (LINE 1 - LINE 8)
  */
 const ViewLinesPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { savedLines, loadLine, deleteLine } = useLineStore();
+  const { savedLines: allLines, loadLine, deleteLine } = useLineStore();
 
-  // Define fixed lines 1 to 9
+  // Only show lines belonging to KPR
+  const savedLines = useMemo(() => 
+    allLines.filter(line => line.factoryId === 'kpr'), 
+    [allLines]);
+
+  // Define fixed lines 1 to 8
   const FIXED_LINES = useMemo(() =>
-    Array.from({ length: 9 }, (_, i) => `LINE ${i + 1}`),
+    Array.from({ length: 8 }, (_, i) => `LINE ${i + 1}`),
     []);
 
   // Group lines by their Line Number, ensuring LINE 1-9 are always present
@@ -82,7 +87,7 @@ const ViewLinesPage = () => {
 
   const handleOpenLine = (id: string, lineNo: string) => {
     loadLine(id);
-    navigate('/line-planner/planner');
+    navigate('/kpr/line-planner/planner');
     toast({
       title: "Line Loaded",
       description: `Viewing ${lineNo}`,
@@ -116,7 +121,7 @@ const ViewLinesPage = () => {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate('/line-planner')}
+              onClick={() => navigate(-1)}
               className="hover:bg-secondary rounded-full w-10 h-10 transition-all hover:scale-110"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -215,7 +220,7 @@ const ViewLinesPage = () => {
                   No layouts have been saved for this production line yet.
                 </p>
                 <Button
-                  onClick={() => navigate('/line-planner/create')}
+                  onClick={() => navigate('/kpr/line-planner/create')}
                   className="rounded-full font-black uppercase tracking-widest text-xs px-8 shadow-lg shadow-primary/20"
                 >
                   Create Style
