@@ -7,6 +7,7 @@ import { Layout, Filter, Settings, ChevronDown, Edit2, Save, Play, CheckCircle, 
 import { cn } from "@/lib/utils";
 import { useLineStore } from "@/store/useLineStore";
 import { API_BASE_URL } from "@/config";
+import { toast } from "sonner";
 
 interface FinishingViewProps {
     activeFloor: string;
@@ -359,9 +360,9 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
         );
         try {
             await useLineStore.getState().syncDigitalTwinLayout("FINISHING", finishingToSave);
-            alert(`✅ Finishing layout saved to Firestore! (${finishingToSave.length} units)`);
+            toast.success("✅ Finishing layout saved!");
         } catch (err) {
-            alert("❌ Save failed: " + err);
+            toast.error("❌ Save failed: " + err);
         }
     };
 

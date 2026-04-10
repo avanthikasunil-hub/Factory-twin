@@ -87,7 +87,10 @@ const LinePlannerPage = () => {
   const handleSave = () => {
     if (currentLine) {
       saveLine(currentLine);
-      toast({ title: "Line Saved", description: `Line ${currentLine.lineNo} has been saved` });
+      toast({ 
+        title: "Layout Saved", 
+        description: `Line ${currentLine.lineNo} has been saved successfully.` 
+      });
     }
   };
 

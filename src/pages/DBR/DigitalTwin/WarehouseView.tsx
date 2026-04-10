@@ -13,6 +13,7 @@ import { Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle } from "lucid
 import { cn } from "@/lib/utils";
 import { useLineStore } from "@/store/useLineStore";
 import { API_BASE_URL } from "@/config";
+import { toast } from "sonner";
 
 const Wrapper = styled.div`
   width: 100%;
@@ -874,9 +875,9 @@ export const WarehouseView = () => {
   const handleSave = async () => {
     try {
       await useLineStore.getState().syncDigitalTwinLayout("WAREHOUSE", addedItems);
-      alert("✅ Warehouse layout saved to Firestore!");
+      toast.success("✅ Warehouse layout saved!");
     } catch (err) {
-      alert("❌ Save failed: " + err);
+      toast.error("❌ Save failed: " + err);
     }
   };
 

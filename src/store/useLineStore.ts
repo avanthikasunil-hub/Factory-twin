@@ -1367,13 +1367,15 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     if (!line || !line.id) return;
     try {
       const factoryFolder = (line.factoryId || 'DBR').toUpperCase();
-      console.log(`[FirebaseSync] Syncing line to savedLines/${factoryFolder}/lines/${line.id}...`);
+      console.log(`[FirebaseSync] Saving Layout to Cloud... (ID: ${line.id})`);
       const lineRef = doc(db, "savedLines", factoryFolder, "lines", line.id);
       await setDoc(lineRef, {
         ...line,
         factoryId: factoryFolder.toLowerCase(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        firebase_updated: true
       });
+      console.log(`[FirebaseSync] Layout SAVED successfully to Firestore.`);
     } catch (err) {
       console.error("[FirebaseSync] Error syncing line to Firebase:", err);
     }
@@ -1381,14 +1383,16 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
 
   syncDigitalTwinLayout: async (department: 'WAREHOUSE' | 'CUTTING' | 'SEWING' | 'FINISHING', machines: MachinePosition[]) => {
     try {
-      console.log(`[FirebaseSync] Syncing digital twin layout to modifiedLayouts/${department}...`);
+      console.log(`[FirebaseSync] Saving Departmental Layout to Cloud... (${department})`);
       const layoutRef = doc(db, "modifiedLayouts", department);
       await setDoc(layoutRef, {
         department,
         machineLayout: machines,
         updatedAt: new Date().toISOString(),
-        count: machines.length
+        count: machines.length,
+        firebase_updated: true
       });
+      console.log(`[FirebaseSync] Departmental Layout SAVED successfully to Firestore.`);
     } catch (err) {
       console.error("[FirebaseSync] Error syncing digital twin layout:", err);
     }

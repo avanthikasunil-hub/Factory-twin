@@ -5,6 +5,7 @@ import { useLineStore } from "@/store/useLineStore";
 import { Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { API_BASE_URL } from "@/config";
+import { toast } from "sonner";
 
 interface SewingViewProps {
   activeFloor: string;
@@ -133,9 +134,9 @@ export const SewingView: React.FC<SewingViewProps> = ({
     );
     try {
       await useLineStore.getState().syncDigitalTwinLayout("SEWING", sewingMachines);
-      alert(`✅ Sewing layout saved to Firestore! (${sewingMachines.length} machines)`);
+      toast.success("✅ Sewing layout saved!");
     } catch (err) {
-      alert("❌ Save failed: " + err);
+      toast.error("Save failed: " + err);
     }
   };
 

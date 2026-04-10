@@ -5,6 +5,7 @@ import { useLineStore } from "@/store/useLineStore";
 import { Layout, Settings, Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { API_BASE_URL } from "@/config";
+import { toast } from "sonner";
 
 const FT = 0.3048;
 const Z_LENGTH = 500;
@@ -278,9 +279,9 @@ export const CuttingView: React.FC = () => {
                                     );
                                     try {
                                         await useLineStore.getState().syncDigitalTwinLayout("CUTTING", cuttingMachines);
-                                        alert(`✅ Layout saved to Firestore! (${cuttingMachines.length} units)`);
+                                        toast.success("✅ Layout saved!");
                                     } catch (err) {
-                                        alert("❌ Save failed: " + err);
+                                        toast.error("❌ Save failed: " + err);
                                     }
                                 }}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white shadow-2xl shadow-emerald-600/30 hover:bg-emerald-500 transition-colors text-[10px] font-black uppercase tracking-widest"
