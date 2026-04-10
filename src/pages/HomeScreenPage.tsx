@@ -32,14 +32,14 @@ export default function HomeScreenPage() {
             </motion.button>
           )}
 
-          <motion.h1
-            initial={{ opacity: 0, y: 25 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            className="text-5xl md:text-6xl font-extrabold mb-6 text-[#123B6D] tracking-tight"
-          >
-            Factory Twin
-          </motion.h1>
+           <motion.h1
+             initial={{ opacity: 0, y: 25 }}
+             animate={{ opacity: 1, y: 0 }}
+             transition={{ duration: 0.8, ease: "easeOut" }}
+             className="text-5xl md:text-6xl font-extrabold mb-6 text-[#123B6D] tracking-tight"
+           >
+             Factory Twin
+           </motion.h1>
 
           <p className="text-gray-500 max-w-2xl mx-auto text-lg pt-4 leading-relaxed">
             {selectedFactory === "DBR" 

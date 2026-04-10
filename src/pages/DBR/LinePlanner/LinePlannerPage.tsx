@@ -7,6 +7,12 @@ import {
   Users, Scissors, TrendingUp, Info, RefreshCw, Plus, Layers, FileDown
 } from 'lucide-react';
 import { generateLinePDF } from '@/utils/pdfGenerator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -361,14 +367,27 @@ const LinePlannerPage = () => {
               <Move className="w-4 h-4" />
             </Button>
           </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => currentLine && generateLinePDF(currentLine)}
-              className="text-[13px] px-3 font-bold border-primary/30 hover:bg-primary/10 transition-all active:scale-95"
-            >
-              <FileDown className="w-4 h-4 mr-2" />PDF
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-[13px] px-3 font-bold border-primary/30 hover:bg-primary/10 transition-all active:scale-95"
+                >
+                  <FileDown className="w-4 h-4 mr-2" />
+                  PDF
+                  <ChevronDown className="w-3 h-3 ml-2 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[180px]">
+                <DropdownMenuItem onClick={() => currentLine && generateLinePDF(currentLine, 'whole')}>
+                   Full Layout Blueprint
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => currentLine && generateLinePDF(currentLine, 'sections')}>
+                   Section Layout Blueprint
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button size="sm" onClick={handleSave} className="text-[13px] px-4 font-bold shadow-lg">
               <Save className="w-4 h-4 mr-2" />SAVE PLAN
             </Button>
