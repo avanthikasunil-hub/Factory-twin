@@ -801,15 +801,26 @@ export const WarehouseView = () => {
   };
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/warehouse/get-layout`)
-      .then(res => res.json())
-      .then(data => {
-        if (data && Array.isArray(data) && data.length > 0) {
-          setAddedItems(data);
-          setHistory([data]);
+    const fetchLayout = async () => {
+      try {
+        const { db } = await import("@/firebase");
+        const { doc, getDoc } = await import("firebase/firestore");
+        const layoutRef = doc(db, "modifiedLayouts", "WAREHOUSE");
+        const layoutSnap = await getDoc(layoutRef);
+
+        if (layoutSnap.exists()) {
+          const data = layoutSnap.data();
+          const savedItems = data.machineLayout || [];
+          if (savedItems.length > 0) {
+            setAddedItems(savedItems);
+            setHistory([savedItems]);
+          }
         }
-      })
-      .catch(e => console.error("Could not load warehouse layout:", e));
+      } catch (err) {
+        console.error("Error loading warehouse layout from Firestore:", err);
+      }
+    };
+    fetchLayout();
   }, []);
 
   const undo = () => { if (historyIndex > 0) { setHistoryIndex(historyIndex - 1); setAddedItems(history[historyIndex - 1]); setSelectedItem(null); } };
@@ -862,14 +873,10 @@ export const WarehouseView = () => {
 
   const handleSave = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/warehouse/save-layout`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(addedItems),
-      });
-      alert("✅ Warehouse layout saved permanently!");
-    } catch {
-      alert("❌ Could not reach server. Make sure the backend is running.");
+      await useLineStore.getState().syncDigitalTwinLayout("WAREHOUSE", addedItems);
+      alert("✅ Warehouse layout saved to Firestore!");
+    } catch (err) {
+      alert("❌ Save failed: " + err);
     }
   };
 

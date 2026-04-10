@@ -311,56 +311,57 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
     const hasInitialized = React.useRef(false);
 
     // ONE-TIME stable init: populate the store with finishing machines.
-    // Uses an empty dep array so it ONLY runs on mount. The ref guards
-    // against double-invocation in StrictMode.
     useEffect(() => {
         if (hasInitialized.current) return;
         hasInitialized.current = true;
 
         const loadSaved = async () => {
             try {
-                const r = await fetch(`${API_BASE_URL}/api/finishing/get-layout`);
-                const saved = await r.json();
+                const { db } = await import("@/firebase");
+                const { doc, getDoc } = await import("firebase/firestore");
+                const layoutRef = doc(db, "modifiedLayouts", "FINISHING");
+                const layoutSnap = await getDoc(layoutRef);
                 
                 const currentLayout = useLineStore.getState().machineLayout;
                 const otherMachines = currentLayout.filter(m => m.section !== 'Finishing');
                 
-                if (saved && saved.length > 0) {
-                    const savedMap = new Map(saved.map((m: any) => [m.id, m]));
-                    const merged = finishingMachines.map(base => 
-                        savedMap.has(base.id) ? { ...base, ...(savedMap.get(base.id) as any) } : base
-                    );
-                    const baseIds = new Set(finishingMachines.map(m => m.id));
-                    saved.forEach((m: any) => { if (!baseIds.has(m.id)) merged.push(m); });
-                    setMachineLayout([...otherMachines, ...merged]);
+                if (layoutSnap.exists()) {
+                    const data = layoutSnap.data();
+                    const saved = data.machineLayout || [];
+                    
+                    if (saved.length > 0) {
+                        const savedMap = new Map(saved.map((m: any) => [m.id, m]));
+                        const merged = finishingMachines.map(base => 
+                            savedMap.has(base.id) ? { ...base, ...(savedMap.get(base.id) as any) } : base
+                        );
+                        const baseIds = new Set(finishingMachines.map(m => m.id));
+                        saved.forEach((m: any) => { if (!baseIds.has(m.id)) merged.push(m); });
+                        setMachineLayout([...otherMachines, ...merged]);
+                    } else {
+                        setMachineLayout([...otherMachines, ...finishingMachines]);
+                    }
                 } else {
                     setMachineLayout([...otherMachines, ...finishingMachines]);
                 }
             } catch (e) {
+                console.error("Error loading finishing layout from Firestore:", e);
                 const currentLayout = useLineStore.getState().machineLayout;
                 const otherMachines = currentLayout.filter(m => m.section !== 'Finishing');
                 setMachineLayout([...otherMachines, ...finishingMachines]);
             }
         };
         loadSaved();
-    }, []);
+    }, [finishingMachines, setMachineLayout]);
 
     const handleSave = async () => {
         const finishingToSave = machineLayout.filter(m => 
             m.section === 'Finishing' || m.id.includes('finishing-')
         );
         try {
-            const res = await fetch(`${API_BASE_URL}/api/finishing/save-layout`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(finishingToSave),
-            });
-            const data = await res.json();
-            if (data.success) {
-                alert(`✅ Finishing layout saved permanently! (${data.count} units)`);
-            }
-        } catch {
-            alert("❌ Could not reach server. Make sure the backend is running.");
+            await useLineStore.getState().syncDigitalTwinLayout("FINISHING", finishingToSave);
+            alert(`✅ Finishing layout saved to Firestore! (${finishingToSave.length} units)`);
+        } catch (err) {
+            alert("❌ Save failed: " + err);
         }
     };
 

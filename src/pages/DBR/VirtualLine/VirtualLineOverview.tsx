@@ -31,7 +31,7 @@ const LINE_DATA = [
     { id: 9, name: "Line 9", floor: "Floor 2", style: "Performance Shorts", buyer: "Adidas", startDate: "20/03/2024", endDate: "05/04/2024", status: "Pending" },
 ];
 
-import { db } from "@/firebase";
+import { prodDb as db } from "@/firebase";
 import { collection, query, onSnapshot, where, limit, getDocs } from "firebase/firestore";
 
 export default function VirtualLineOverview() {
@@ -97,7 +97,7 @@ export default function VirtualLineOverview() {
                                 style_no: style,
                                 con_no: con,
                                 buyer: buyer,
-                                status: (foundCloud.status === 'partial' || foundCloud.status === 'in_progress' || foundCloud.status === 'Changeover') ? 'Changeover' : (foundCloud.status || 'Running'),
+                                status: (foundCloud.status || 'Running'),
                                 isLive: true
                             });
                         } else if (foundBackend) {
@@ -107,8 +107,25 @@ export default function VirtualLineOverview() {
                         }
                     }
 
+                    const today = new Date();
+                    const todayDateStr = `${today.getDate()}/${today.getMonth() + 1}/${today.getFullYear()}`;
+                    const todayAltDateStr = todayDateStr.split('/').map(p => p.padStart(2, '0')).join('/');
+
                     // ─── Post-process missing metadata ───
-                    const updatedWithMeta = await Promise.all(merged.map(async (item) => {
+                    const updatedWithMeta = await Promise.all(merged.map(async (mergedItem) => {
+                        let item = { ...mergedItem };
+
+                        // Check if this is a live changeover based on date
+                        const doc = latestByLine[item.line_no];
+                        if (doc) {
+                            const dStr = doc.lastUpdated || doc.summaryData?.lastUpdated || "";
+                            const isToday = (dStr.includes(todayDateStr) || dStr.includes(todayAltDateStr));
+                            const s = (doc.status || "").toLowerCase();
+                            const isChangeover = isToday && (s === 'partial' || s === 'in_progress' || s === 'changeover');
+                            
+                            item.status = isChangeover ? 'Changeover' : 'Running';
+                        }
+
                         if (item.style_no !== '---' || item.con_no !== '---') {
                             try {
                                 // 1. Try finding by Con No (most reliable for order details)
@@ -133,7 +150,7 @@ export default function VirtualLineOverview() {
                                 if (!metaSnap.empty) {
                                     const metaData = metaSnap.docs[0].data();
                                     
-                                    // Robust Quantity Check (checking top-level and nested)
+                                    // Robust Quantity Check
                                     const rawQty = 
                                         metaData.quantity || metaData.orderQty || metaData.totalQty || 
                                         metaData.orderQuantity || metaData.order_quantity || metaData.qty ||
@@ -150,8 +167,7 @@ export default function VirtualLineOverview() {
                                         style_name: readableStyle,
                                         con_no: (metaData.conNo && metaData.conNo !== '---') ? metaData.conNo : item.con_no,
                                         buyer: (metaData.buyer && metaData.buyer !== '---') ? metaData.buyer : (metaData.summaryData?.buyer || item.buyer),
-                                        quantity: rawQty,
-                                        status: item.line_no === "Line 1" ? "Changeover" : "Running"
+                                        quantity: rawQty
                                     };
                                 }
                             } catch (e) {
@@ -159,11 +175,7 @@ export default function VirtualLineOverview() {
                             }
                         }
                         
-                        // Default status override: Only Line 1 is changeover
-                        return {
-                            ...item,
-                            status: item.line_no === "Line 1" ? "Changeover" : (item.status === "Idle" ? "Idle" : "Running")
-                        };
+                        return item;
                     }));
 
                     setLineStatuses(updatedWithMeta);

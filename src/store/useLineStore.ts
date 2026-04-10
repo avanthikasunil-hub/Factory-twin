@@ -23,6 +23,8 @@ import {
 import { calculateMachineRequirements } from '@/utils/lineBalancing';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '../config';
+import { db } from "@/firebase";
+import { doc, setDoc, getDoc, collection, getDocs, query, where, deleteDoc } from "firebase/firestore";
 
 interface LineStore {
   savedLines: LineData[];
@@ -122,6 +124,11 @@ interface LineStore {
   moveToPreparatory: (machineId: string) => void;
   moveToLayout: (opIndex: number) => void;
   addMachine: (machineType: string, section: string, opName: string, parentX?: number, parentSeqIndex?: number, smv?: number) => void;
+
+  // Firebase integration
+  syncLineToFirebase: (line: LineData) => Promise<void>;
+  syncDigitalTwinLayout: (department: 'WAREHOUSE' | 'CUTTING' | 'SEWING' | 'FINISHING', machines: MachinePosition[]) => Promise<void>;
+  fetchAllLinesFromFirebase: () => Promise<void>;
 }
 
 const FT = 0.3048;
@@ -594,29 +601,41 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
 
   saveLine: (line, factoryId) => {
     (get() as any).takeSnapshot();
-    set((state) => {
-      const existingIdx = state.savedLines.findIndex((l) => l.id === line.id);
-      let newSavedLines = [...state.savedLines];
-      const updatedLine = { 
-        ...line, 
-        factoryId: factoryId || line.factoryId || 'dbr', // Preserve existing or default to dbr
-        updatedAt: new Date().toISOString() 
-      };
-      if (existingIdx !== -1) {
-        newSavedLines[existingIdx] = updatedLine;
-      } else {
-        newSavedLines.push(updatedLine);
-      }
-      return {
-        savedLines: newSavedLines,
-        currentLine: updatedLine,
-        operations: updatedLine.operations,
-        machineLayout: updatedLine.machineLayout,
-        sectionLayout: updatedLine.sectionLayout || []
-        // NOTE: intentionally NOT clearing layoutAlerts here — a saved line
-        // retains its current alert state.
-      };
+    const current = get();
+    const existingIdx = current.savedLines.findIndex((l) => l.id === line.id);
+    let newSavedLines = [...current.savedLines];
+    const updatedLine = { 
+      ...line, 
+      factoryId: factoryId || line.factoryId || 'dbr',
+      updatedAt: new Date().toISOString() 
+    };
+    if (existingIdx !== -1) {
+      newSavedLines[existingIdx] = updatedLine;
+    } else {
+      newSavedLines.push(updatedLine);
+    }
+    set({
+      savedLines: newSavedLines,
+      currentLine: updatedLine,
+      operations: updatedLine.operations,
+      machineLayout: updatedLine.machineLayout,
+      sectionLayout: updatedLine.sectionLayout || []
     });
+    get().syncLineToFirebase(updatedLine);
+  },
+
+  deleteLine: async (id) => {
+    const lineToDelete = get().savedLines.find(l => l.id === id);
+    if (lineToDelete) {
+      try {
+        const factoryFolder = (lineToDelete.factoryId || 'DBR').toUpperCase();
+        const lineRef = doc(db, "savedLines", factoryFolder, "lines", id);
+        await deleteDoc(lineRef);
+      } catch (err) {
+        console.error("[FirebaseSync] Error deleting line:", err);
+      }
+    }
+    set((state) => ({ savedLines: state.savedLines.filter((l) => l.id !== id) }));
   },
 
   // ─── loadLine: clear alerts — loaded layout is considered clean ───
@@ -642,8 +661,6 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     // Re-evaluate alerts for the new state
     setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
   },
-
-  deleteLine: (id) => set((state) => ({ savedLines: state.savedLines.filter((l) => l.id !== id) })),
 
   setSelectedMachine: (machine) => set({ selectedMachine: machine, selectedMachines: machine ? [machine.id] : [] }),
 
@@ -1344,17 +1361,66 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     } catch (err) {
       console.error("[Store] Error fetching OB from server:", err);
     }
+  },
+
+  syncLineToFirebase: async (line: LineData) => {
+    if (!line || !line.id) return;
+    try {
+      const factoryFolder = (line.factoryId || 'DBR').toUpperCase();
+      console.log(`[FirebaseSync] Syncing line to savedLines/${factoryFolder}/lines/${line.id}...`);
+      const lineRef = doc(db, "savedLines", factoryFolder, "lines", line.id);
+      await setDoc(lineRef, {
+        ...line,
+        factoryId: factoryFolder.toLowerCase(),
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("[FirebaseSync] Error syncing line to Firebase:", err);
+    }
+  },
+
+  syncDigitalTwinLayout: async (department: 'WAREHOUSE' | 'CUTTING' | 'SEWING' | 'FINISHING', machines: MachinePosition[]) => {
+    try {
+      console.log(`[FirebaseSync] Syncing digital twin layout to modifiedLayouts/${department}...`);
+      const layoutRef = doc(db, "modifiedLayouts", department);
+      await setDoc(layoutRef, {
+        department,
+        machineLayout: machines,
+        updatedAt: new Date().toISOString(),
+        count: machines.length
+      });
+    } catch (err) {
+      console.error("[FirebaseSync] Error syncing digital twin layout:", err);
+    }
+  },
+
+  fetchAllLinesFromFirebase: async () => {
+    try {
+      console.log("[FirebaseSync] Fetching all lines from both KPR and DBR folders...");
+      const lines: LineData[] = [];
+      
+      const dbrQuery = query(collection(db, "savedLines", "DBR", "lines"));
+      const dbrSnapshot = await getDocs(dbrQuery);
+      dbrSnapshot.forEach(doc => lines.push(doc.data() as LineData));
+
+      const kprQuery = query(collection(db, "savedLines", "KPR", "lines"));
+      const kprSnapshot = await getDocs(kprQuery);
+      kprSnapshot.forEach(doc => lines.push(doc.data() as LineData));
+      
+      if (lines.length > 0) {
+        set({ savedLines: lines });
+        console.log(`[FirebaseSync] Loaded ${lines.length} total lines from Firestore.`);
+      }
+    } catch (err) {
+      console.error("[FirebaseSync] Error fetching lines from Firebase:", err);
+    }
   }
 
 }), {
   name: 'line-store',
   partialize: (state) => ({
-    savedLines: state.savedLines,
+    // DON'T persist savedLines - it's huge and in the cloud!
     currentLine: state.currentLine,
-    machineLayout: state.machineLayout,
-    operations: state.operations,
-    preparatoryOps: state.preparatoryOps,
-    sectionLayout: state.sectionLayout,
     targetOutput: state.targetOutput,
     workingHours: state.workingHours,
     efficiency: state.efficiency,

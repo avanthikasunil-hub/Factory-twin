@@ -29,12 +29,15 @@ import KPRLinePlanner from "./pages/KPR/LinePlanner/LinePlannerPage";
 
 /* COMMON MODULES */
 import StyleOB from "./features/Cutting/StyleOB";
+import { useLineStore } from "./store/useLineStore";
 
 const queryClient = new QueryClient();
 
 export default function App() {
   useEffect(() => {
     fetch("https://factory-twin-2.onrender.com/ping").catch(() => {});
+    // Load layouts from Firebase on startup
+    useLineStore.getState().fetchAllLinesFromFirebase();
   }, []);
 
   return (

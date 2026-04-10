@@ -155,51 +155,48 @@ export const CuttingView: React.FC = () => {
 
     const [serverLayoutLoaded, setServerLayoutLoaded] = useState(false);
 
-    // ── ON MOUNT: Load layout from the backend server (not localStorage) ──
-    // This ensures the same layout is shown in ALL browsers, not just the one that made changes.
+    // ── ON MOUNT: Load layout from Firestore ──
     useEffect(() => {
-        fetch(`${API_BASE_URL}/api/cutting/get-layout`)
-            .then(r => r.json())
-            .then((savedLayout: any[]) => {
-                if (savedLayout && savedLayout.length > 0) {
-                    // Merge strategy: baseline is the foundation, saved layout overrides positions.
-                    // This ensures baseline machines (like Recutting Table) are NEVER dropped.
-                    const savedMap = new Map(savedLayout.map((m: any) => [m.id, m]));
+        const fetchLayout = async () => {
+            try {
+                const { db } = await import("@/firebase");
+                const { doc, getDoc } = await import("firebase/firestore");
+                const layoutRef = doc(db, "modifiedLayouts", "CUTTING");
+                const layoutSnap = await getDoc(layoutRef);
+
+                if (layoutSnap.exists()) {
+                    const data = layoutSnap.data();
+                    const savedLayout = data.machineLayout || [];
                     
-                    // Start with ALL baseline machines (using saved position if available)
-                    const merged = baseCuttingMachines.map(base =>
-                        savedMap.has(base.id) ? { ...base, ...savedMap.get(base.id) } : base
-                    );
-                    
-                    // Then add any user-added machines (IDs not in the baseline)
-                    const baseIds = new Set(baseCuttingMachines.map(m => m.id));
-                    savedLayout.forEach((m: any) => {
-                        if (!baseIds.has(m.id)) merged.push(m);
-                    });
-                    
-                    setMachineLayout(merged);
+                    if (savedLayout.length > 0) {
+                        const savedMap = new Map(savedLayout.map((m: any) => [m.id, m]));
+                        const merged = baseCuttingMachines.map(base =>
+                            savedMap.has(base.id) ? { ...base, ...savedMap.get(base.id) } : base
+                        );
+                        const baseIds = new Set(baseCuttingMachines.map(m => m.id));
+                        savedLayout.forEach((m: any) => {
+                            if (!baseIds.has(m.id)) merged.push(m);
+                        });
+                        setMachineLayout(merged);
+                    } else {
+                        setMachineLayout([...baseCuttingMachines]);
+                    }
                 } else {
-                    // No server layout yet — use the baseline as-is
                     setMachineLayout([...baseCuttingMachines]);
                 }
+            } catch (err) {
+                console.error("Error loading cutting layout from Firestore:", err);
+                setMachineLayout([...baseCuttingMachines]);
+            } finally {
                 setServerLayoutLoaded(true);
-            })
-            .catch(() => {
-                // Backend not available — fall back to baseCuttingMachines
-                const hasSome = machineLayout.some(m =>
-                    m.id.startsWith('gerber-') ||
-                    m.id.startsWith('mc-zone0-') ||
-                    (m.section && m.section.toLowerCase().includes('cutting'))
-                );
-                if (!hasSome) setMachineLayout([...baseCuttingMachines]);
-                setServerLayoutLoaded(true);
-            });
+            }
+        };
+        fetchLayout();
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // ── AUTO-SAVE: Whenever layout changes, persist to backend server ──
-    // This replaces localStorage — changes are saved to disk, visible in all browsers.
+    // ── AUTO-SAVE: Whenever layout changes, persist to Firestore ──
     useEffect(() => {
-        if (!serverLayoutLoaded) return; // Don't save during the initial load
+        if (!serverLayoutLoaded) return;
 
         const cuttingMachines = machineLayout.filter(m =>
             m.id.startsWith('gerber-') ||
@@ -218,13 +215,7 @@ export const CuttingView: React.FC = () => {
 
         if (cuttingMachines.length === 0) return;
 
-        fetch(`${API_BASE_URL}/api/cutting/save-layout`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(cuttingMachines),
-        }).catch(() => {
-            // Silent fail — server may be momentarily unavailable
-        });
+        useLineStore.getState().syncDigitalTwinLayout("CUTTING", cuttingMachines);
     }, [machineLayout, serverLayoutLoaded]);
 
 
@@ -279,29 +270,17 @@ export const CuttingView: React.FC = () => {
                         {isEditMode && (
                             <button 
                                 onClick={async () => {
-                                    const cuttingMachines = machineLayout.filter((m: any) =>
-                                        m.id.startsWith('gerber-') || m.id.startsWith('mc-zone0-') ||
-                                        m.id.startsWith('bandknife-') || m.id.startsWith('spreading-table-') ||
-                                        m.id.startsWith('fusing-custom-') || m.id.startsWith('straight-knife-') ||
-                                        m.id.startsWith('manual-spreader-') || m.id.startsWith('supermarket-zone') ||
-                                        m.id.startsWith('human-') || m.id.startsWith('op-') ||
+                                    const cuttingMachines = machineLayout.filter(m =>
+                                        m.id.startsWith('gerber-') ||
+                                        m.id.startsWith('mc-zone0-') ||
                                         (m.section && m.section.toLowerCase().includes('cutting')) ||
                                         (m.operation?.section && m.operation.section.toLowerCase().includes('cutting'))
                                     );
                                     try {
-                                        const res = await fetch(`${API_BASE_URL}/api/cutting/save-layout`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify(cuttingMachines),
-                                        });
-                                        const data = await res.json();
-                                        if (data.success) {
-                                            alert(`✅ Layout saved permanently! (${data.count} machines)`);
-                                        } else {
-                                            alert('❌ Save failed: ' + (data.error || 'Unknown error'));
-                                        }
-                                    } catch {
-                                        alert('❌ Could not reach server. Make sure the backend is running.');
+                                        await useLineStore.getState().syncDigitalTwinLayout("CUTTING", cuttingMachines);
+                                        alert(`✅ Layout saved to Firestore! (${cuttingMachines.length} units)`);
+                                    } catch (err) {
+                                        alert("❌ Save failed: " + err);
                                     }
                                 }}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white shadow-2xl shadow-emerald-600/30 hover:bg-emerald-500 transition-colors text-[10px] font-black uppercase tracking-widest"

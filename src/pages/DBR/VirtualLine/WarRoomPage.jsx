@@ -1179,19 +1179,18 @@ export default function WarRoom() {
   }, [viewMode]);
 
   useEffect(() => {
-    if (activeLines.length > 0) {
-       const currentInList = activeLines.find(l => l.id === activeLineLabel || (l.line || l.summaryData?.line) === activeLineLabel);
-       if (!currentInList) {
-          setSelectedLineId(activeLines[0].id);
-          setActiveLineLabel(activeLines[0].id);
-       }
-    } else {
-       setSelectedLineId("");
-       if (activeLineLabel && !activeLineLabel.includes('Line')) {
-          setActiveLineLabel("");
-       }
+    const currentInList = activeLines.find(l => l.id === activeLineLabel || (l.line || l.summaryData?.line) === activeLineLabel);
+    if (!currentInList) {
+      if (activeLines.length > 0) {
+        // Pick the first available one in the new mode
+        setActiveLineLabel(activeLines[0].id || activeLines[0].line || activeLines[0].summaryData?.line);
+      } else {
+        // Clear selection if no data for this mode
+        setActiveLineLabel("");
+        setSelectedLineId("");
+      }
     }
-  }, [activeLines, viewMode]);
+  }, [activeLines]);
 
 
   useEffect(() => {
@@ -1323,6 +1322,12 @@ export default function WarRoom() {
   }, [activeLineLabel, activeLines]);
 
   useEffect(() => {
+    // Clear data immediately whenever dependencies change
+    setMasterData([]);
+    setFullObData(null);
+    setSections([]);
+    setSections3D([]);
+
     if (
       (!meta.con || meta.con === "---") &&
       (!meta.style || meta.style === "---")
@@ -1330,9 +1335,7 @@ export default function WarRoom() {
       return;
     let unsub = null;
     const findAndListen = async () => {
-      // Clear current data immediately to provide visual feedback of change
-      setMasterData([]);
-      setFullObData(null);
+      // Data already cleared above
 
       // Try by CON Number first
       let q = query(

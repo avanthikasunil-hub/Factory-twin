@@ -3,7 +3,8 @@ import { getAnalytics } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
-const devConfig = {
+// Main Factory Twin project (Primary)
+const factoryTwinConfig = {
     apiKey: "AIzaSyD9wx77qJkhSS7Ltxu59Bb5Slui_IFWdxA",
     authDomain: "factory-twin-a4026.firebaseapp.com",
     projectId: "factory-twin-a4026",
@@ -13,7 +14,8 @@ const devConfig = {
     measurementId: "G-TPJ4HMV5QT"
 };
 
-const firebaseConfig = {
+// Ishika project (Secondary)
+const ishikaConfig = {
     apiKey: "AIzaSyDFGqcLU8TSynFUI9nP3YDC09J7v1Vdlg0",
     authDomain: "lagunaclothing-ishika.firebaseapp.com",
     projectId: "lagunaclothing-ishika",
@@ -22,15 +24,17 @@ const firebaseConfig = {
     appId: "1:1056026503792:web:5b4d1ecc17c1b8e45b62b5",
 };
 
-const app = initializeApp(firebaseConfig);
+import { getApp, getApps } from "firebase/app";
+
+const app = initializeApp(factoryTwinConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-// Keep the dev project available as devDb
-import { getApp, getApps } from "firebase/app";
-const devApp = !getApps().some(a => a.name === "development") ? initializeApp(devConfig, "development") : getApp("development");
-const devDb = getFirestore(devApp);
-const prodDb = db; // For backwards compatibility
+const ishikaApp = !getApps().some(a => a.name === "ishika") ? initializeApp(ishikaConfig, "ishika") : getApp("ishika");
+const ishikaDb = getFirestore(ishikaApp);
 
-export { db, storage, prodDb, devDb };
+const devDb = ishikaDb; 
+const prodDb = ishikaDb; 
+
+export { db, storage, prodDb, devDb, ishikaDb };
 export default app;

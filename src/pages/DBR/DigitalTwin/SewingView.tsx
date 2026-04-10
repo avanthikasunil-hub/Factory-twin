@@ -94,25 +94,48 @@ export const SewingView: React.FC<SewingViewProps> = ({
     return loadedMachines || propMachines;
   }, [isEditMode, machineLayout, propMachines, loadedMachines]);
 
+  const [serverLayoutLoaded, setServerLayoutLoaded] = useState(false);
+
+  // ── ON MOUNT: Load layout from Firestore ──
+  useEffect(() => {
+    const fetchLayout = async () => {
+      try {
+        const { db } = await import("@/firebase");
+        const { doc, getDoc } = await import("firebase/firestore");
+        const layoutRef = doc(db, "modifiedLayouts", "SEWING");
+        const layoutSnap = await getDoc(layoutRef);
+        
+        if (layoutSnap.exists()) {
+          const data = layoutSnap.data();
+          if (data.machineLayout) {
+            const current = useLineStore.getState().machineLayout;
+            const otherMachines = current.filter((m: any) =>
+              m.section !== "Cuff" && m.section !== "Sleeve" && m.section !== "Back" &&
+              m.section !== "Collar" && m.section !== "Front" && !m.section?.includes("Assembly")
+            );
+            useLineStore.getState().setMachineLayout([...otherMachines, ...data.machineLayout]);
+            setLoadedMachines(data.machineLayout);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading sewing layout from Firestore:", err);
+      } finally {
+        setServerLayoutLoaded(true);
+      }
+    };
+    fetchLayout();
+  }, []);
+
   const handleSave = async () => {
     const sewingMachines = machineLayout.filter((m: any) =>
       m.section === "Cuff" || m.section === "Sleeve" || m.section === "Back" ||
       m.section === "Collar" || m.section === "Front" || m.section?.includes("Assembly")
     );
     try {
-      const res = await fetch(`${API_BASE_URL}/api/sewing/save-layout`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sewingMachines),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(`✅ Sewing layout saved! (${data.count} machines)`);
-      } else {
-        alert("❌ Save failed: " + (data.error || "Unknown error"));
-      }
-    } catch {
-      alert("❌ Could not reach server. Make sure the backend is running.");
+      await useLineStore.getState().syncDigitalTwinLayout("SEWING", sewingMachines);
+      alert(`✅ Sewing layout saved to Firestore! (${sewingMachines.length} machines)`);
+    } catch (err) {
+      alert("❌ Save failed: " + err);
     }
   };
 
