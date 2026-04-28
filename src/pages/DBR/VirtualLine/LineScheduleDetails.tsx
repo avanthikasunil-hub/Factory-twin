@@ -126,7 +126,7 @@ export default function LineScheduleDetails() {
             <div className="flex flex-col gap-6">
                 <Button
                     variant="ghost"
-                    onClick={() => navigate(-1)}
+                    onClick={() => navigate('/dbr/virtual-line')}
                     className="w-fit gap-2 -ml-2 text-slate-500 hover:text-purple-600 hover:bg-purple-50 transition-all rounded-xl"
                 >
                     <ChevronLeft size={18} />

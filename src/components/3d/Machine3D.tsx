@@ -209,6 +209,10 @@ const getTargetDimensionsMeters = (type: string, data?: any) => {
     l = 7 * FT; w = 4 * FT; h = 5.5 * FT;
   } else if (t.includes('fusing_custom')) {
     l = 24.4 * FT; w = 5.7 * FT; h = 6 * FT; // Updated to exactly 24.4ft L, 5.7ft W, and 5ft H
+  } else if (t === 'pillar-1') {
+    l = 2.5 * FT; w = 1.7 * FT; h = 9.0 * FT;
+  } else if (t === 'pillar-2') {
+    l = 3.5 * FT; w = 1.7 * FT; h = 9.0 * FT;
   }
 
   return {
@@ -620,6 +624,28 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
               rotation={0}
               isStanding={!mType.includes('sitting')}
               isInspection={false}
+            />
+          </group>
+        ) : mType.startsWith('pillar') ? (
+          <group position={[zoneOffsetX, 0, zoneOffsetZ]}>
+            <mesh position={[0, targetDims.height / 2, 0]}>
+              <boxGeometry args={[targetDims.length, targetDims.height, targetDims.width]} />
+              <meshStandardMaterial color="#334155" roughness={0.8} />
+            </mesh>
+            <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[targetDims.length, targetDims.width]} />
+              <meshBasicMaterial color="#eab308" transparent opacity={0.2} />
+            </mesh>
+            <Line
+              points={[
+                [-targetDims.length / 2, 0.02, -targetDims.width / 2],
+                [targetDims.length / 2, 0.02, -targetDims.width / 2],
+                [targetDims.length / 2, 0.02, targetDims.width / 2],
+                [-targetDims.length / 2, 0.02, targetDims.width / 2],
+                [-targetDims.length / 2, 0.02, -targetDims.width / 2],
+              ]}
+              color="#eab308"
+              lineWidth={2}
             />
           </group>
         ) : (

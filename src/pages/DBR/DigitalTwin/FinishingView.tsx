@@ -29,6 +29,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
     const [activeFloor, setActiveFloor] = useState(propFloor);
     const [activeLine, setActiveLine] = useState(propLine);
     const [isEditMode, setIsEditMode] = useState(false);
+    const [isSaved, setIsSaved] = useState(false);
     const [selectedAddType, setSelectedAddType] = useState("Iron");
     const [selectedAddLabel, setSelectedAddLabel] = useState("Ironing M/C");
 
@@ -61,7 +62,21 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
 
     const numLines = activeFloor === "Floor 1" ? 6 : 3;
     const { specs } = getLayoutSpecs("Line 1");
-    const zStep = (LANE_Z_CENTER_CD + specs.widthCD / 2 - (LANE_Z_CENTER_AB - specs.widthAB / 2)) + 3.7;
+    const minZ = LANE_Z_CENTER_AB - specs.widthAB / 2;
+    const maxZ = LANE_Z_CENTER_CD + specs.widthCD / 2;
+    
+    // Default finishing gap was 3.7 meters.
+    const getLineOffset = (index: number) => {
+        let zo = 0;
+        const FT = 0.3048;
+        for (let i = 0; i <= index; i++) {
+            const lineVal = activeFloor === "Floor 1" ? `Line ${i + 1}` : `Line ${i + 7}`;
+            let customGap = 3.1 * FT; // default for finishing
+            if (lineVal === "Line 3") customGap = 6.29 * FT;
+            if (i > 0) zo += (maxZ - minZ) + customGap;
+        }
+        return zo;
+    };
 
     const lines = useMemo(() => {
         const list = ["All Lines"];
@@ -80,7 +95,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
             const lineVal = `Line ${lineNum}`;
             if (activeLine !== "All Lines" && lineVal !== activeLine) continue;
 
-            const zo = i * zStep;
+            const zo = getLineOffset(i);
             const centerZ = ((LANE_Z_CENTER_AB + LANE_Z_CENTER_CD) / 2 + zo) + 1.3;
             const machineX = 55.0;
 
@@ -92,7 +107,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
             });
         }
         return arr;
-    }, [activeFloor, activeLine, numLines, zStep]);
+    }, [activeFloor, activeLine, numLines, getLineOffset]);
 
     const finishingSections = useMemo((): SectionLayout[] => {
         const arr: SectionLayout[] = [];
@@ -106,7 +121,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
             if (activeLine !== "All Lines" && lineVal !== activeLine) continue;
 
             const color = lineColors[(activeFloor === "Floor 1" ? i : i + 6) % lineColors.length];
-            const zo = i * zStep;
+            const zo = getLineOffset(i);
 
             arr.push({
                 id: `finishing-section-${lineNum}`,
@@ -118,7 +133,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
             } as any);
         }
         return arr;
-    }, [activeFloor, activeLine, lineColors, numLines, zStep]);
+    }, [activeFloor, activeLine, lineColors, numLines, getLineOffset]);
 
     const finishingMachines = useMemo((): MachinePosition[] => {
         const arr: MachinePosition[] = [];
@@ -128,7 +143,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
             const lineVal = `Line ${lineNum}`;
             // Removed activeLine filter from template generation to prevent store drift
 
-            const zo = i * zStep;
+            const zo = getLineOffset(i);
             const machineX = 55.0;
             const centerZ = ((LANE_Z_CENTER_AB + LANE_Z_CENTER_CD) / 2 + zo) + 1.3;
 
@@ -284,7 +299,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
             }
         }
         return arr;
-    }, [activeFloor, activeLine, numLines, zStep]);
+    }, [activeFloor, activeLine, numLines, getLineOffset]);
 
     const [editTool, setEditTool] = useState<"move" | "rotate" | "delete" | "add">("move");
 
@@ -328,9 +343,44 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                 
                 if (layoutSnap.exists()) {
                     const data = layoutSnap.data();
-                    const saved = data.machineLayout || [];
+                    let saved = data.machineLayout || [];
                     
                     if (saved.length > 0) {
+                        const { specs } = getLayoutSpecs("Line 1");
+                        const FT = 0.3048;
+                        const minZ = LANE_Z_CENTER_AB - specs.widthAB / 2;
+                        const maxZ = LANE_Z_CENTER_CD + specs.widthCD / 2;
+                        const oldZStep = (maxZ - minZ) + 3.7;
+                        const oldCenter = (minZ + maxZ) / 2;
+
+                        let updated = false;
+                        saved = saved.map((m: any) => {
+                            if (m._migrated_gap_finishing_v2 || !m.position || m.position.z === undefined) return m;
+
+                            const oldZ = m.position.z;
+                            let lineIdx = Math.round((oldZ - oldCenter) / oldZStep);
+                            if (lineIdx < 0) lineIdx = 0;
+
+                            const oldZO = lineIdx * oldZStep;
+                            
+                            let newZO = 0;
+                            for (let i = 0; i < lineIdx; i++) {
+                                let customGap = 3.1 * FT;
+                                if (i === 1) customGap = 6.29 * FT;
+                                newZO += (maxZ - minZ) + customGap;
+                            }
+
+                            let newZ = oldZ - oldZO + newZO;
+                            updated = true;
+                            return { ...m, position: { ...m.position, z: newZ }, _migrated_gap_finishing_v2: true };
+                        });
+
+                        if (updated) {
+                            import("firebase/firestore").then(({ setDoc }) => {
+                                setDoc(layoutRef, { machineLayout: saved }, { merge: true });
+                            });
+                        }
+
                         const savedMap = new Map(saved.map((m: any) => [m.id, m]));
                         const merged = finishingMachines.map(base => 
                             savedMap.has(base.id) ? { ...base, ...(savedMap.get(base.id) as any) } : base
@@ -360,6 +410,8 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
         );
         try {
             await useLineStore.getState().syncDigitalTwinLayout("FINISHING", finishingToSave);
+            setIsSaved(true);
+            setTimeout(() => setIsSaved(false), 3000);
             toast.success("✅ Finishing layout saved!");
         } catch (err) {
             toast.error("❌ Save failed: " + err);
@@ -377,6 +429,17 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
 
     return (
         <div className="relative w-full h-full flex flex-col overflow-hidden bg-background">
+            {/* SAVE SUCCESS BANNER */}
+            {isSaved && (
+                <div className="absolute inset-x-0 top-0 z-[100] flex items-center justify-center pt-4 pointer-events-none animate-in fade-in slide-in-from-top-2">
+                    <div className="flex items-center gap-3 bg-emerald-600 text-white px-8 py-3.5 rounded-2xl shadow-2xl shadow-emerald-600/40 border border-emerald-400/50">
+                        <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span className="text-sm font-black uppercase tracking-[0.15em]">Layout Saved — Changes Persisted</span>
+                    </div>
+                </div>
+            )}
             {/* VIOLET COMMAND HEADER */}
             <div className="w-full bg-slate-950/80 backdrop-blur-3xl border-b border-white/5 flex flex-col z-[60] shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
                 {/* Top Bar: Branding & Status */}
@@ -592,6 +655,8 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                                             <option value="Helper Table">Checking Table</option>
                                             <option value="Checking">Tag Attaching Area</option>
                                             <option value="Helper Table">Packing Station</option>
+                                            <option value="pillar-1">Pillar 1 (2.5x1.7ft)</option>
+                                            <option value="pillar-2">Pillar 2 (3.5x1.7ft)</option>
                                         </optgroup>
                                     </select><ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                                 </div>

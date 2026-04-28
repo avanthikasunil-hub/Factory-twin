@@ -310,7 +310,7 @@ const LinePlannerPage = () => {
       {/* Header */}
       <header className="flex-shrink-0 h-16 border-b border-border bg-card/80 backdrop-blur-sm flex items-center justify-between px-6 z-30">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="hover:bg-secondary">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/')} className="hover:bg-secondary">
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div className="flex flex-col">

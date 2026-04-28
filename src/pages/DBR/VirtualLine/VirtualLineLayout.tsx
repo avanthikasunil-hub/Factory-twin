@@ -32,7 +32,7 @@ import { API_BASE_URL } from "../../../config";
 const NAV_ITEMS = [
     { id: "overview", label: 'Overview', icon: LayoutDashboard, path: '/dbr/virtual-line/overview' },
     { id: "floor", label: 'Floor View', icon: Map, path: '/dbr/virtual-line/floor' },
-    { id: "war-room", label: 'War Room', icon: Monitor, path: '/dbr/virtual-line/war-room' },
+    { id: "war-room", label: 'Changeover Live', icon: Monitor, path: '/dbr/virtual-line/war-room' },
     { id: "ob", label: 'Style OB', icon: Layers, path: '/dbr/virtual-line/ob' },
 ];
 
@@ -225,7 +225,7 @@ export default function VirtualLineLayout() {
                         className={cn(
                             "w-full flex items-center justify-center py-4 rounded-2xl transition-all duration-300 text-slate-500 hover:bg-white/5 hover:text-slate-200 group relative"
                         )}
-                        onClick={() => navigate(-1)}
+                        onClick={() => navigate('/')}
                     >
                         <ChevronLeft className="w-5 h-5 shrink-0 transition-transform group-hover:-translate-x-1" />
 
@@ -244,7 +244,7 @@ export default function VirtualLineLayout() {
                     <div className="flex items-center gap-4">
                         {currentPath !== "/dbr/virtual-line/overview" && (
                             <button
-                                onClick={() => navigate(-1)}
+                                onClick={() => navigate('/')}
                                 className="group flex items-center justify-center w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 text-slate-400 hover:text-purple-600 hover:border-purple-200 hover:bg-purple-50 transition-all duration-300 shadow-sm"
                             >
                                 <ChevronLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />

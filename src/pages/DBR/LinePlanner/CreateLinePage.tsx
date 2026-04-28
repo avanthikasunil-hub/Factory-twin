@@ -182,7 +182,7 @@ const CreateLinePage = () => {
       <AnimatedBackground />
       <div className="relative z-10 min-h-screen p-8">
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4 mb-8">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}><ArrowLeft className="w-5 h-5" /></Button>
+          <Button variant="ghost" size="icon" onClick={() => navigate('/dbr/line-planner')}><ArrowLeft className="w-5 h-5" /></Button>
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-primary/10"><Factory className="w-6 h-6 text-primary" /></div>
             <div>

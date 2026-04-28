@@ -430,7 +430,7 @@ export default function CotTracker() {
                         <div className="space-y-3 relative shrink-0">
                             <div className="flex items-center justify-between">
                                 <button
-                                    onClick={() => navigate(-1)}
+                                    onClick={() => navigate('/dbr/virtual-line')}
                                     className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors group/back"
                                 >
                                     <ChevronLeft size={16} className="transition-transform group-hover/back:-translate-x-1" />

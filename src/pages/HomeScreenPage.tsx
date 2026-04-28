@@ -7,10 +7,21 @@ import { Button } from "@/components/ui/button";
 
 export default function HomeScreenPage() {
   const navigate = useNavigate();
-  const [selectedFactory, setSelectedFactory] = useState<string | null>(null);
+  const [selectedFactory, setSelectedFactory] = useState<string | null>(() => {
+    return sessionStorage.getItem("selectedFactory");
+  });
+
+  const handleSetFactory = (factory: string | null) => {
+    setSelectedFactory(factory);
+    if (factory) {
+      sessionStorage.setItem("selectedFactory", factory);
+    } else {
+      sessionStorage.removeItem("selectedFactory");
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#eaf2ff] via-[#f5f9ff] to-[#e8f0ff] flex items-center justify-center px-6 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-[#eaf2ff] via-[#f5f9ff] to-[#e8f0ff] flex items-center justify-center px-4 py-8 md:px-6 md:py-12">
       <div className="max-w-6xl w-full">
 
         {/* Header */}
@@ -24,7 +35,7 @@ export default function HomeScreenPage() {
             <motion.button
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
-              onClick={() => setSelectedFactory(null)}
+              onClick={() => handleSetFactory(null)}
               className="flex items-center gap-2 text-[#123B6D] font-bold text-sm uppercase tracking-widest hover:opacity-70 transition-colors mb-8 mx-auto"
             >
               <ArrowLeft size={16} />
@@ -36,7 +47,7 @@ export default function HomeScreenPage() {
              initial={{ opacity: 0, y: 25 }}
              animate={{ opacity: 1, y: 0 }}
              transition={{ duration: 0.8, ease: "easeOut" }}
-             className="text-5xl md:text-6xl font-extrabold mb-6 text-[#123B6D] tracking-tight"
+             className="text-4xl sm:text-5xl md:text-6xl font-extrabold mb-6 text-[#123B6D] tracking-tight"
            >
              Factory Twin
            </motion.h1>
@@ -63,9 +74,9 @@ export default function HomeScreenPage() {
               <motion.div whileHover={{ y: -10 }} transition={{ type: "spring", stiffness: 300 }}>
                 <Card
                   className="rounded-[2.5rem] shadow-xl border-0 bg-white cursor-pointer hover:shadow-2xl transition h-full group"
-                  onClick={() => setSelectedFactory("DBR")}
+                  onClick={() => handleSetFactory("DBR")}
                 >
-                  <CardContent className="p-12 flex flex-col items-center text-center gap-6 min-h-[400px] justify-between">
+                  <CardContent className="p-6 md:p-12 flex flex-col items-center text-center gap-4 md:gap-6 min-h-[300px] md:min-h-[400px] justify-between">
                     <div className="flex flex-col items-center gap-6">
                       <div className="p-6 rounded-[2rem] bg-indigo-600 text-white shadow-xl group-hover:scale-105 transition-transform duration-300">
                         <Building2 size={48} />
@@ -87,9 +98,9 @@ export default function HomeScreenPage() {
               <motion.div whileHover={{ y: -10 }} transition={{ type: "spring", stiffness: 300 }}>
                 <Card
                   className="rounded-[2.5rem] shadow-xl border-0 bg-white cursor-pointer hover:shadow-2xl transition h-full group"
-                  onClick={() => setSelectedFactory("KPR")}
+                  onClick={() => handleSetFactory("KPR")}
                 >
-                  <CardContent className="p-12 flex flex-col items-center text-center gap-6 min-h-[400px] justify-between">
+                  <CardContent className="p-6 md:p-12 flex flex-col items-center text-center gap-4 md:gap-6 min-h-[300px] md:min-h-[400px] justify-between">
                     <div className="flex flex-col items-center gap-6">
                       <div className="p-6 rounded-[2rem] bg-emerald-600 text-white shadow-xl group-hover:scale-105 transition-transform duration-300">
                         <Building2 size={48} />
@@ -113,7 +124,7 @@ export default function HomeScreenPage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="grid grid-cols-1 md:grid-cols-3 gap-12"
+              className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-12"
             >
               {selectedFactory === "DBR" ? (
                 <>

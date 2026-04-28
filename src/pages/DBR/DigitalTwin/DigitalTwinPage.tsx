@@ -69,39 +69,68 @@ export default function DigitalTwinPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [lineStatuses, setLineStatuses] = useState<any[]>([]);
   const [activeMachines, setActiveMachines] = useState<MachinePosition[]>([]);
+  const [isGeneratingLayout, setIsGeneratingLayout] = useState(false);
+
+  // Read ops cache synchronously on first render (useRef doesn't support lazy init like useState)
+  const cachedOpsRef = React.useRef<any[]>([]);
+  if (cachedOpsRef.current.length === 0) {
+    try {
+      const raw = sessionStorage.getItem('dt_ops_cache');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) cachedOpsRef.current = parsed;
+      }
+    } catch (_) {}
+  }
+
+  const [opsReady, setOpsReady] = useState(() => cachedOpsRef.current.length > 0 ? 1 : 0);
 
   const activeFloor = searchParams.get("floor") || "Floor 1";
   const activeLine = searchParams.get("line") || "All Lines";
 
   const floorSections = useMemo((): SectionLayout[] => {
-    const { specs, sections } = getLayoutSpecs("Line 1");
+    const { specs } = getLayoutSpecs("Line 1");
     const S = FT;
     const minZ = LANE_Z_CENTER_AB - specs.widthAB / 2;
     const maxZ = LANE_Z_CENTER_CD + specs.widthCD / 2;
-    const zStep = (maxZ - minZ) + (3.5 * S);
+    const baseZStep = (maxZ - minZ) + (3.5 * S);
     const numLines = activeFloor === "Floor 1" ? 6 : 3;
     const arr: SectionLayout[] = [];
+    
+    let currentZO = 0;
+
     for (let i = 0; i < numLines; i++) {
       const lineVal = activeFloor === "Floor 1" ? `Line ${i + 1}` : `Line ${i + 7}`;
+      
+      // Custom gap before this line (gap between previous line CD and this line AB)
+      let customGap = 3.5 * S;
+      if (lineVal === "Line 3") customGap = 6.29 * S; // Gap between Line 2 and Line 3
+      if (lineVal === "Line 6") customGap = 3.15 * S - (-0.564); // Compensate for internal offset to get exactly 3.15ft
+      
+      if (i > 0) {
+          currentZO += (maxZ - minZ) + customGap;
+      }
+
       if (activeLine !== "All Lines" && lineVal !== activeLine) continue;
 
-      // Special handling for Line 6 color
       let color = LINE_COLORS[(activeFloor === "Floor 1" ? i : i + 6) % LINE_COLORS.length];
       if (lineVal === "Line 6") color = PINK_COLOR;
 
-      // v195: Calculate specs PER LINE to respect individual presets (Line 6 uses Preset B)
       const { specs: lSpecs, sections: lSections } = getLayoutSpecs(lineVal);
 
-      const zo = i * zStep;
+      // Custom internal AB offset
+      let internalAbOffset = 0;
+      if (lineVal === "Line 1") internalAbOffset = -0.791; // 5.7ft gap
+      if (lineVal === "Line 6") internalAbOffset = -0.564; // 5.7ft gap for Preset B
+
       arr.push(
-        // { id: `${lineVal}-marker`, name: lineVal, length: 2, width: lSpecs.widthAB + lSpecs.widthCD + (3.5 * FT), position: { x: lSections.cuff.start - 3, y: -0.01, z: (LANE_Z_CENTER_AB + LANE_Z_CENTER_CD) / 2 + zo }, color: "transparent" },
-        { id: `${lineVal}-cuff`, name: `${lineVal} Cuff`, length: lSections.cuff.end - lSections.cuff.start, width: lSpecs.widthAB, position: { x: lSections.cuff.start, y: 0, z: LANE_Z_CENTER_AB + zo }, color },
-        { id: `${lineVal}-sleeve`, name: `${lineVal} Sleeve`, length: lSections.sleeve.end - lSections.sleeve.start, width: lSpecs.widthAB, position: { x: lSections.sleeve.start, y: 0, z: LANE_Z_CENTER_AB + zo }, color },
-        { id: `${lineVal}-back`, name: `${lineVal} Back`, length: lSections.back.end - lSections.back.start, width: lSpecs.widthAB, position: { x: lSections.back.start, y: 0, z: LANE_Z_CENTER_AB + zo }, color },
-        { id: `${lineVal}-collar`, name: `${lineVal} Collar`, length: lSections.collar.end - lSections.collar.start, width: lSpecs.widthCD, position: { x: lSections.collar.start, y: 0, z: LANE_Z_CENTER_CD + zo }, color },
-        { id: `${lineVal}-front`, name: `${lineVal} Front`, length: lSections.front.end - lSections.front.start, width: lSpecs.widthCD, position: { x: lSections.front.start, y: 0, z: LANE_Z_CENTER_CD + zo }, color },
-        { id: `${lineVal}-a1`, name: `${lineVal} Assembly AB`, length: lSections.assemblyAB.end - lSections.assemblyAB.start, width: lSpecs.widthAB, position: { x: lSections.assemblyAB.start, y: 0, z: LANE_Z_CENTER_AB + zo }, color },
-        { id: `${lineVal}-a2`, name: `${lineVal} Assembly CD`, length: lSections.assemblyCD.end - lSections.assemblyCD.start, width: lSpecs.widthCD, position: { x: lSections.assemblyCD.start, y: 0, z: LANE_Z_CENTER_CD + zo }, color },
+        { id: `${lineVal}-cuff`, name: `${lineVal} Cuff`, length: lSections.cuff.end - lSections.cuff.start, width: lSpecs.widthAB, position: { x: lSections.cuff.start, y: 0, z: LANE_Z_CENTER_AB + currentZO + internalAbOffset }, color },
+        { id: `${lineVal}-sleeve`, name: `${lineVal} Sleeve`, length: lSections.sleeve.end - lSections.sleeve.start, width: lSpecs.widthAB, position: { x: lSections.sleeve.start, y: 0, z: LANE_Z_CENTER_AB + currentZO + internalAbOffset }, color },
+        { id: `${lineVal}-back`, name: `${lineVal} Back`, length: lSections.back.end - lSections.back.start, width: lSpecs.widthAB, position: { x: lSections.back.start, y: 0, z: LANE_Z_CENTER_AB + currentZO + internalAbOffset }, color },
+        { id: `${lineVal}-collar`, name: `${lineVal} Collar`, length: lSections.collar.end - lSections.collar.start, width: lSpecs.widthCD, position: { x: lSections.collar.start, y: 0, z: LANE_Z_CENTER_CD + currentZO }, color },
+        { id: `${lineVal}-front`, name: `${lineVal} Front`, length: lSections.front.end - lSections.front.start, width: lSpecs.widthCD, position: { x: lSections.front.start, y: 0, z: LANE_Z_CENTER_CD + currentZO }, color },
+        { id: `${lineVal}-a1`, name: `${lineVal} Assembly AB`, length: lSections.assemblyAB.end - lSections.assemblyAB.start, width: lSpecs.widthAB, position: { x: lSections.assemblyAB.start, y: 0, z: LANE_Z_CENTER_AB + currentZO + internalAbOffset }, color },
+        { id: `${lineVal}-a2`, name: `${lineVal} Assembly CD`, length: lSections.assemblyCD.end - lSections.assemblyCD.start, width: lSpecs.widthCD, position: { x: lSections.assemblyCD.start, y: 0, z: LANE_Z_CENTER_CD + currentZO }, color },
       );
     }
     return arr;
@@ -110,61 +139,145 @@ export default function DigitalTwinPage() {
   const cameraConfig = useMemo(() => {
     if (activeLine === "All Lines")
       return { pos: activeFloor === "Floor 1" ? [-90, 80, 12] : [-60, 50, 8], fov: activeFloor === "Floor 1" ? 32 : 28 };
+    
     const num = parseInt(activeLine.split(" ")[1]);
-    const idx = activeFloor === "Floor 1" ? num - 1 : num - 7;
+    const numLines = activeFloor === "Floor 1" ? 6 : 3;
     const { specs } = getLayoutSpecs("Line 1");
-    const zStep = (LANE_Z_CENTER_CD + specs.widthCD / 2 - (LANE_Z_CENTER_AB - specs.widthAB / 2)) + (3.5 * FT);
-    return { pos: [-30, 40, (LANE_Z_CENTER_AB + LANE_Z_CENTER_CD) / 2 + (idx * zStep)], fov: 25 };
+    const minZ = LANE_Z_CENTER_AB - specs.widthAB / 2;
+    const maxZ = LANE_Z_CENTER_CD + specs.widthCD / 2;
+    
+    let currentZO = 0;
+    for (let i = 0; i < numLines; i++) {
+      const lineVal = activeFloor === "Floor 1" ? `Line ${i + 1}` : `Line ${i + 7}`;
+      let customGap = 3.5 * FT;
+      if (lineVal === "Line 3") customGap = 6.29 * FT;
+      
+      if (i > 0) currentZO += (maxZ - minZ) + customGap;
+      
+      if (lineVal === activeLine) {
+        return { pos: [-30, 40, (LANE_Z_CENTER_AB + LANE_Z_CENTER_CD) / 2 + currentZO], fov: 25 };
+      }
+    }
+    return { pos: [-30, 40, 0], fov: 25 };
   }, [activeFloor, activeLine]);
 
-  // ── STABLE layout generation: runs once per floor/line change, never inside a timer or snapshot ──
+  // ── Fetch backend ops ONCE on mount ──
   const layoutGeneratedKey = React.useRef("");
 
   useEffect(() => {
-    // We generate the background data on mount so it's ready before the user clicks "Sewing"
-    const key = `${activeFloor}|${activeLine}`;
-    if (layoutGeneratedKey.current === key) return;
-    
-    const generateSewingLayout = async () => {
+    const loadOps = async () => {
+      // 1. Serve from sessionStorage cache immediately (makes revisits instant)
+      const CACHE_KEY = 'dt_ops_cache';
+      try {
+        const cached = sessionStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const ops = JSON.parse(cached);
+          if (ops?.length > 0) {
+            cachedOpsRef.current = ops;
+            layoutGeneratedKey.current = "";
+            setOpsReady(n => n + 1); // render instantly from cache
+          }
+        }
+      } catch (_) {}
+
+      // 2. Always fetch fresh in background and update cache
       try {
         const res = await fetch(`${API_BASE_URL}/active-layouts`);
-        let backendData: any[] = [];
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data)) backendData = data;
+          if (Array.isArray(data)) {
+            const ops = data.find((s: any) => s.operations?.length > 0)?.operations || [];
+            if (ops.length > 0) {
+              try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(ops)); } catch (_) {}
+              // Only re-render if ops changed significantly
+              if (cachedOpsRef.current.length !== ops.length) {
+                cachedOpsRef.current = ops;
+                layoutGeneratedKey.current = "";
+                setOpsReady(n => n + 1);
+              }
+            }
+          }
         }
+      } catch (err) { /* backend offline — cache served above */ }
+    };
+    loadOps();
+  }, []);
 
-        const commonOps = backendData.find((s: any) => s.operations && s.operations.length > 0)?.operations || [];
-        if (commonOps.length === 0) return;
+  // ── Layout generation — runs when floor/line changes OR ops first arrive ──
+  useEffect(() => {
+    const commonOps = cachedOpsRef.current;
+    if (commonOps.length === 0) return; // ops not loaded yet, will re-run when opsReady increments
 
-        const getN = (l: string) => { const m = String(l).match(/\d+/); return m ? parseInt(m[0]) : null; };
+    const key = `${activeFloor}|${activeLine}`;
+    if (layoutGeneratedKey.current === key) return;
+    layoutGeneratedKey.current = key;
+
+    setIsGeneratingLayout(true);
+
+    const timerId = setTimeout(() => {
+      try {
         const { specs } = getLayoutSpecs("Line 1");
-        const zStep = (LANE_Z_CENTER_CD + specs.widthCD / 2 - (LANE_Z_CENTER_AB - specs.widthAB / 2)) + (3.5 * FT);
+        const minZ = LANE_Z_CENTER_AB - specs.widthAB / 2;
+        const maxZ = LANE_Z_CENTER_CD + specs.widthCD / 2;
 
         const allMachines: any[] = [];
         const floorPrefix = activeFloor === "Floor 1" ? 1 : 7;
         const floorLimit = activeFloor === "Floor 1" ? 6 : 9;
 
+        // Only generate layouts for lines that need to render
+        const linesToGenerate: number[] = [];
         for (let i = floorPrefix; i <= floorLimit; i++) {
           const ln = `Line ${i}`;
+          if (activeLine === "All Lines" || ln === activeLine) linesToGenerate.push(i);
+        }
+
+        // Pre-compute layout per preset (A=lines 1-5, B=line 6+) — max 2 heavy calls
+        const layoutCache = new Map<string, any>();
+        for (const i of linesToGenerate) {
+          const preset = i >= 6 ? 'B' : 'A';
+          if (!layoutCache.has(preset)) {
+            layoutCache.set(preset, generateLayout(commonOps, 1200, 9, 90, `Line ${i}`));
+          }
+        }
+
+        let currentZO = 0;
+        for (let i = floorPrefix; i <= floorLimit; i++) {
+          const ln = `Line ${i}`;
+          let customGap = 3.5 * FT;
+          if (ln === "Line 3") customGap = 6.29 * FT;
+          if (ln === "Line 6") customGap = 3.15 * FT - (-0.564);
+          if (i > floorPrefix) currentZO += (maxZ - minZ) + customGap;
+
           if (activeLine !== "All Lines" && ln !== activeLine) continue;
 
-          const result = generateLayout(commonOps, 1200, 9, 90, ln);
-          const ri = i <= 6 ? i - 1 : i - 7;
-          const lineMachines = result.machines.map((m: any) => ({
-            ...m,
-            position: { ...m.position, z: m.position.z + (ri * zStep) }
-          }));
+          const preset = i >= 6 ? 'B' : 'A';
+          const result = layoutCache.get(preset)!;
+          if (!result) continue;
+
+          let internalAbOffset = 0;
+          if (ln === "Line 1") internalAbOffset = -0.791;
+          if (ln === "Line 6") internalAbOffset = -0.564;
+
+          const lineMachines = result.machines.map((m: any) => {
+            const zOffset = currentZO + ((m.lane === 'A' || m.lane === 'B') ? internalAbOffset : 0);
+            return {
+              ...m,
+              id: `${ln}-${m.id}`,
+              position: { ...m.position, z: m.position.z + zOffset },
+              lineVal: ln
+            };
+          });
           allMachines.push(...lineMachines);
         }
-        
-        setActiveMachines(allMachines);
-        layoutGeneratedKey.current = key;
-      } catch (err) { /* silent fail */ }
-    };
 
-    generateSewingLayout();
-  }, [activeFloor, activeLine]); // Runs on switch or floor change, independent of activeTab
+        setActiveMachines(allMachines);
+      } catch (err) { /* silent */ } finally {
+        setIsGeneratingLayout(false);
+      }
+    }, 0);
+
+    return () => clearTimeout(timerId);
+  }, [activeFloor, activeLine, opsReady]);
 
   // ── Firestore-only sync: ONLY updates line statuses, never touches machine positions ──
   useEffect(() => {
@@ -228,7 +341,7 @@ export default function DigitalTwinPage() {
           ))}
         </nav>
         <div className="p-6 border-t border-white/5">
-          <NavItem $active={false} onClick={() => navigate(-1)} className="flex justify-center">
+          <NavItem $active={false} onClick={() => navigate('/')} className="flex justify-center">
             <Home size={22} />
           </NavItem>
         </div>
@@ -305,27 +418,37 @@ export default function DigitalTwinPage() {
           )}
 
           <div className="flex-1 h-full bg-[#080a0f] relative">
-            {activeTab === "sewing" && activeMachines.length === 0 && (
-              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-3xl">
-                <div className="w-16 h-16 relative mb-8">
-                  <div className="absolute inset-0 rounded-full border-4 border-violet-500/10 border-t-violet-600 animate-spin" />
-                  <div className="absolute inset-4 rounded-full border-4 border-violet-500/10 border-b-violet-400 animate-spin-slow" />
-                </div>
-                <div className="flex flex-col items-center gap-2">
-                  <h3 className="text-xl font-black text-white uppercase tracking-widest">Compiling Spatial View</h3>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-bold text-violet-400 uppercase tracking-widest animate-pulse">Syncing Production Assets</span>
-                    <span className="w-1 h-1 rounded-full bg-slate-700" />
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">15,402 Entities</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {activeTab === "warehouse" ? (
               <WarehouseView />
             ) : activeTab === "sewing" ? (
-              <SewingView activeFloor={activeFloor} activeLine={activeLine} activeMachines={activeMachines} floorSections={floorSections} cameraConfig={cameraConfig} />
+              isGeneratingLayout || activeMachines.length === 0 ? (
+                /* ── Sewing loading screen ── */
+                <div className="absolute inset-0 bg-[#080a0f] flex flex-col items-center justify-center gap-8">
+                  {/* Pulsing logo rings */}
+                  <div className="relative w-24 h-24">
+                    <div className="absolute inset-0 rounded-full border-4 border-violet-600/20" />
+                    <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-violet-500 animate-spin" />
+                    <div className="absolute inset-2 rounded-full border-4 border-transparent border-b-violet-400/60 animate-spin" style={{animationDirection:'reverse', animationDuration:'1.5s'}} />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-4 h-4 rounded-full bg-violet-500 animate-pulse" />
+                    </div>
+                  </div>
+                  {/* Text */}
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-white font-black text-lg uppercase tracking-[0.2em]">Building Sewing View</span>
+                    <span className="text-violet-400 text-[11px] font-bold uppercase tracking-widest animate-pulse">Syncing {activeFloor} · {activeLine}</span>
+                  </div>
+                  {/* Dot loader */}
+                  <div className="flex gap-2">
+                    {[0,1,2,3,4].map(i => (
+                      <div key={i} className="w-2 h-2 rounded-full bg-violet-500/60 animate-bounce"
+                        style={{animationDelay: `${i * 120}ms`, animationDuration: '0.8s'}} />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <SewingView activeFloor={activeFloor} activeLine={activeLine} activeMachines={activeMachines} floorSections={floorSections} cameraConfig={cameraConfig} />
+              )
             ) : activeTab === "finishing" ? (
               <FinishingView activeFloor={activeFloor} activeLine={activeLine} cameraConfig={cameraConfig} lineColors={LINE_COLORS} />
             ) : (
@@ -334,7 +457,16 @@ export default function DigitalTwinPage() {
           </div>
         </div>
       </Content>
-      <style>{`.custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }`}</style>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
+        @keyframes slideRight {
+          0% { transform: translateX(-200%); }
+          100% { transform: translateX(400%); }
+        }
+      `}</style>
     </Wrapper>
   );
 }

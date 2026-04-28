@@ -31,6 +31,25 @@ import {
   extractOpName,
   extractOpSMV
 } from "./generatorCotLayout"; // Refreshed
+import { generateVirtualFloorLayout, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD } from "./virtualFloorLayoutGenerator";
+
+const MACHINE_NORMALISATION = {
+  'bholemc': 'Button Hole M/C', 'buttonholemc': 'Button Hole M/C', 'bholem': 'Button Hole M/C',
+  'buttonmc': 'Button M/C', 'buttonsew': 'Button M/C', 'buttonm': 'Button M/C',
+  'snec': 'SNEC', 'pnec': 'SNEC', '3tol': 'SNEC', '4tol': 'SNEC', '5tol': 'SNEC', 'overlock': 'SNEC', '3to/l': 'SNEC', '4to/l': 'SNEC', '5to/l': 'SNEC', '3toverlock': 'SNEC', 'ol': 'SNEC',
+  'snecmc': 'SNEC', 'snecm/c': 'SNEC',
+  'kansai': 'Kansai', 'kansaismc': 'Kansai', 'kansaimc': 'Kansai',
+  'dnls': 'DNLS', 'double': 'DNLS',
+  'feedoffarm': 'FOA', 'foa': 'FOA',
+  'irontable': 'Iron Table', 'ironingtable': 'Iron Table', 'pressingtable': 'Iron Table', 'ironing': 'Iron Table',
+  'helpertable': 'Helper Table', 'manualtable': 'Helper Table', 'manual': 'Helper Table', 'trolley': 'Helper Table',
+  'rotaryfusingmc': 'Rotary Fusing M/C', 'rotaryfusing': 'Rotary Fusing M/C',
+  'buttonholestitch': 'Button Hole M/C', 'single': 'SNLS', 'lockstitch': 'SNLS', 'snls': 'SNLS'
+};
+
+const IGNORED_OPS = ['washing allowance', 'washing_allowance', 'thread sucking', 'allowance'];
+
+function normalizeKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
 
 import fuzzy from "fuzzy";
 import axios from "axios";
@@ -1370,72 +1389,39 @@ export default function WarRoom() {
           const foundData = docSnap.data();
           if (!foundData) return;
           setFullObData(foundData);
+          // ── Robust OB extraction: same as Floor View buildOps ──
           const parsedOB = foundData.parsedOBData || {};
+          const data = Array.isArray(parsedOB) ? parsedOB : Object.values(parsedOB);
+
           const ops = [];
-          const seenOps = new Set();
-          const extractOps = (data) => {
-            if (!data) return;
-            // Recursively search for arrays that look like operation lists
-            if (Array.isArray(data)) {
-               const looksLikeOps = data.some(item => 
-                 item.operations || item.operation || item.op_name || 
-                 item.description || item.machine || item.machine_type ||
-                 item.a || item.b || item.A || item.B
-               );
+          data.forEach(group => {
+            const addBlock = (block) => {
+              const sName = (block.section || 'General').trim();
+              (block.operations || []).forEach(op => {
+                if (IGNORED_OPS.some(p => (op.op_name || op.operation || '').toLowerCase().includes(p))) return;
+                const rawSMV = extractOpSMV(op);
+                const rawMachine = op.machine_type || op.machine || '';
+                const machineType = MACHINE_NORMALISATION[normalizeKey(rawMachine)] || rawMachine || 'SNLS';
+                ops.push({
+                  ...op,
+                  section: sName,
+                  op_name: extractOpName(op),
+                  machine_type: machineType,
+                  smv: rawSMV > 0 ? rawSMV : 1.0,
+                });
+              });
+            };
+            if (Array.isArray(group)) group.forEach(addBlock);
+            else if (group && typeof group === 'object' && group.operations) addBlock(group);
+          });
 
-               if (looksLikeOps) {
-                data.forEach((item) => {
-                    if (item.operations) {
-                      const sName = item.section?.trim() || "General";
-                      item.operations.forEach((op) => {
-                        const opId = op.op_no || op.a || op.A || op.operation || Math.random();
-                        if (!seenOps.has(opId)) {
-                          seenOps.add(opId);
-                          ops.push({
-                            ...op,
-                            section: sName,
-                            op_no: op.op_no || op.a || op.A || "",
-                            op_name: extractOpName(op),
-                            machine_type: op.machine_type || op.machine || "SNLS",
-                            smv: extractOpSMV(op)
-                          });
-                        }
-                      });
-                    } else if (item.operation || item.op_name || item.operation_description || item.description || item.b || item.B || item.a || item.A) {
-                      const opId = item.op_no || item.a || item.A || item.operation || Math.random();
-                      if (!seenOps.has(opId)) {
-                        seenOps.add(opId);
-                        ops.push({
-                          ...item,
-                          section: item.section || "General",
-                          op_no: item.op_no || item.a || item.A || "",
-                          op_name: extractOpName(item),
-                          machine_type: item.machine_type || item.machine || "SNLS",
-                          smv: extractOpSMV(item)
-                        });
-                      }
-                    }
-                  });
-               } else {
-                  // Not an op list, but might contain one inside its elements
-                  data.forEach(val => extractOps(val));
-               }
-            } else if (typeof data === "object" && data !== null) {
-              // Priority search for common OB fields
-              if (data.parsedOBData) extractOps(data.parsedOBData);
-              else if (data.operations) extractOps(data.operations);
-              else if (data.rows) extractOps(data.rows);
-              else {
-                Object.values(data).forEach((val) => extractOps(val));
-              }
-            }
-          };
-          extractOps(foundData);
+          console.log(`[WarRoom] Extracted ${ops.length} ops (sections: ${[...new Set(ops.map(o => o.section))].join(', ')})`);
 
-          const result = generateCotLayout(ops, meta.line || "Line 1");
+          // Use generateVirtualFloorLayout — same generator as Floor View
+          const result = generateVirtualFloorLayout(ops, meta.line || "Line 1");
           setMasterData(result.machines);
           setObMetrics({
-            totalSMV: result.totalSMV.toFixed(2),
+            totalSMV: (result.totalSMV || 0).toFixed(2),
             target: result.target,
           });
           const standardSections = ["Collar", "Cuff", "Sleeve", "Back", "Front", "Assembly"];
@@ -1447,7 +1433,17 @@ export default function WarRoom() {
           const uniqueSections = [...new Set([...standardSections, ...foundSections])];
           
           setSections(uniqueSections.filter(s => !s.toLowerCase().includes('assembly') || s === 'Assembly'));
-          setSections3D(result.sections);
+          const { specs: s, sections: se } = getLayoutSpecs(meta.line || "Line 1");
+          const allSecs = [
+            { id: `c`, name: `Cuff`, length: se.cuff.end - se.cuff.start, width: s.widthAB, position: { x: se.cuff.start, y: 0, z: LANE_Z_CENTER_AB }, color: '#f06b43' },
+            { id: `s`, name: `Sleeve`, length: se.sleeve.end - se.sleeve.start, width: s.widthAB, position: { x: se.sleeve.start, y: 0, z: LANE_Z_CENTER_AB }, color: '#f06b43' },
+            { id: `b`, name: `Back`, length: se.back.end - se.back.start, width: s.widthAB, position: { x: se.back.start, y: 0, z: LANE_Z_CENTER_AB }, color: '#f06b43' },
+            { id: `cl`, name: `Collar`, length: se.collar.end - se.collar.start, width: s.widthCD, position: { x: se.collar.start, y: 0, z: LANE_Z_CENTER_CD }, color: '#14b8a6' },
+            { id: `f`, name: `Front`, length: se.front.end - se.front.start, width: s.widthCD, position: { x: se.front.start, y: 0, z: LANE_Z_CENTER_CD }, color: '#14b8a6' },
+            { id: `a1`, name: `Assembly AB`, length: se.assemblyAB.end - se.assemblyAB.start, width: s.widthAB, position: { x: se.assemblyAB.start, y: 0, z: LANE_Z_CENTER_AB }, color: '#f06b43' },
+            { id: `a2`, name: `Assembly CD`, length: se.assemblyCD.end - se.assemblyCD.start, width: s.widthCD, position: { x: se.assemblyCD.start, y: 0, z: LANE_Z_CENTER_CD }, color: '#14b8a6' }
+          ];
+          setSections3D(allSecs);
         });
       }
     };
@@ -1667,6 +1663,41 @@ export default function WarRoom() {
   const filterLow = idleMachineFilter.toLowerCase();
 
   return (
+    <>
+    {/* Status Legend - position:fixed, never rotates with 3D scene */}
+    <div style={{
+      position: "fixed",
+      bottom: "20px",
+      left: "650px",
+      background: "rgba(10,15,25,0.92)",
+      border: "1px solid rgba(255,255,255,0.12)",
+      padding: "10px 14px",
+      borderRadius: "10px",
+      zIndex: 99999,
+      display: "flex",
+      flexDirection: "column",
+      gap: "6px",
+      fontSize: "10px",
+      color: "#fff",
+      pointerEvents: "none",
+      userSelect: "none",
+      backdropFilter: "blur(8px)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+        <div style={{ width: "10px", height: "10px", background: "#ef4444", borderRadius: "3px", flexShrink: 0 }} />
+        <span>PRODUCING</span>
+        <span style={{ opacity: 0.45, fontSize: "8px" }}>({meta.fromStyle})</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+        <div style={{ width: "10px", height: "10px", background: "#f59e0b", borderRadius: "3px", flexShrink: 0 }} />
+        <span>CHANGEOVER</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+        <div style={{ width: "10px", height: "10px", background: "#22c55e", borderRadius: "3px", flexShrink: 0 }} />
+        <span>READY</span>
+        <span style={{ opacity: 0.45, fontSize: "8px" }}>({meta.style})</span>
+      </div>
+    </div>
     <div
       style={{
         width: "100%",
@@ -2271,7 +2302,6 @@ export default function WarRoom() {
             background: "#080a0f",
             borderRadius: "24px",
             position: "relative",
-            overflow: "hidden",
             border: "1px solid rgba(255,255,255,0.05)",
           }}
         >
@@ -2281,59 +2311,30 @@ export default function WarRoom() {
               top: "15px",
               right: "15px",
               display: "flex",
-              gap: "8px",
+              flexDirection: "column",
+              gap: "6px",
               zIndex: 10,
             }}
           >
             <div
               style={{
-                background: "rgba(0,0,0,0.6)",
+                background: "rgba(0,0,0,0.75)",
                 color: "#fff",
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "11px",
-                fontWeight: "bold",
-                border: "1px solid rgba(255,255,255,0.1)",
+                padding: "8px 16px",
+                borderRadius: "10px",
+                fontSize: "12px",
+                fontWeight: "900",
+                border: "1px solid rgba(255,255,255,0.15)",
+                display: "flex",
+                gap: "10px",
+                alignItems: "center",
               }}
             >
-              SMV: {obMetrics.totalSMV}
+              <span style={{ color: "#94a3b8", fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Total SMV</span>
+              <span style={{ color: "#f8fafc" }}>{obMetrics.totalSMV}</span>
             </div>
           </div>
-          <div
-            style={{
-              position: "absolute",
-              bottom: "20px",
-              left: "20px",
-              background: "rgba(255,255,255,0.9)",
-              padding: "10px",
-              borderRadius: "8px",
-              zIndex: 10,
-              display: "flex",
-              flexDirection: "column",
-              gap: "2px",
-              fontSize: "9px",
-              color: "#000",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-              <div
-                style={{ width: "8px", height: "8px", background: "#ef4444" }}
-              />{" "}
-              PRODUCING <span style={{ opacity: 0.5, fontSize: "8px" }}>({meta.fromStyle})</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-              <div
-                style={{ width: "8px", height: "8px", background: "#f59e0b" }}
-              />{" "}
-              CHANGEOVER
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-              <div
-                style={{ width: "8px", height: "8px", background: "#22c55e" }}
-              />{" "}
-              READY <span style={{ opacity: 0.5, fontSize: "8px" }}>({meta.style})</span>
-            </div>
-          </div>
+
           <Canvas
             camera={{ position: [0, 20, 50], fov: 45 }}
             shadows
@@ -2354,7 +2355,8 @@ export default function WarRoom() {
                 generatedSections={sections3D}
                 activeSection={activeSection}
               />
-              {displayLayout.map((m) => (
+              {/* Always render ALL machines from masterData so every section is visible */}
+              {masterData.map((m) => (
                 <group
                   key={m.id}
                   position={[m.position.x, m.position.y, m.position.z]}
@@ -2364,22 +2366,26 @@ export default function WarRoom() {
                     path={getModelUrl(m.operation?.machine_type)}
                     mType={m.operation?.machine_type}
                     statusColor={
-                      m.operation?.qcStatus === "QC_APPROVED"
-                        ? STATUS.approved
-                        : (m.operation?.qcStatus === "RUNNING" || m.operation?.machineArranged === "Yes")
-                          ? STATUS.changeover
-                          : STATUS.producing
+                      m.operation?.qcStatus === "QC_APPROVED" ||
+                      m.operation?.machineArranged === "Yes"
+                        ? STATUS.approved          // green — ready for new style
+                        : m.operation?.qcStatus === "RUNNING" ||
+                          m.operation?.machineArranged === "In Progress"
+                          ? STATUS.changeover       // amber — changeover happening
+                          : STATUS.producing        // red — still on old style
                     }
                     isPulsing={m.operation?.qcStatus === "RUNNING"}
                     opLabel={m.operation?.op_name || extractOpName(m.operation)}
                     smv={m.smv || m.operation?.smv || extractOpSMV(m.operation)}
-
-                    secColor="#72b3c2"
+                    secColor={
+                      SEC_HEX[(m.section || "").toLowerCase().split(" ")[0]] ||
+                      SEC_HEX.general
+                    }
                     rotation={[m.rotation.x, m.rotation.y, m.rotation.z]}
                     oldStyle={meta.fromStyle}
                     newStyle={meta.style}
                     isInspectionItem={m.isInspection}
-                    showStatusLights={m.section !== 'Assembly 4'}
+                    showStatusLights={m.section !== 'Assembly 4' && !(m.operation?.machine_type || '').toLowerCase().includes('supermarket')}
                     allocatedLine={m.operation?.allocatedLine}
                     section={m.section || m.operation?.section}
                   />
@@ -2682,5 +2688,6 @@ export default function WarRoom() {
         </div>
       </div>
     </div>
+    </>
   );
 }

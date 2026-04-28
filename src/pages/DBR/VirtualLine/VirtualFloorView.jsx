@@ -156,14 +156,24 @@ export default function VirtualFloorView() {
     const metadataUnsubs = useRef({}); 
     const excelCache = useRef({}); 
 
+    // Compute cumulative Z offset using same gaps as Sewing view
     const solveZOffset = (lineName) => {
         const lineNum = parseInt(lineName.replace(/\D/g, '')) || 1;
-        const relativeIdx = (lineNum <= 6) ? (lineNum - 1) : (lineNum - 7);
-        const baseSpecs = getLayoutSpecs("Line 1");
-        const minZ = LANE_Z_CENTER_AB - (baseSpecs.specs.widthAB / 2);
-        const maxZ = LANE_Z_CENTER_CD + (baseSpecs.specs.widthCD / 2);
-        const zStep = (maxZ - minZ) + 3.7;
-        return relativeIdx * zStep;
+        const floorPrefix = lineNum <= 6 ? 1 : 7;
+        const { specs } = getLayoutSpecs("Line 1");
+        const minZ = LANE_Z_CENTER_AB - (specs.widthAB / 2);
+        const maxZ = LANE_Z_CENTER_CD + (specs.widthCD / 2);
+        const lineWidth = maxZ - minZ;
+        const FT = 0.3048;
+        let zO = 0;
+        for (let i = floorPrefix; i < lineNum; i++) {
+            const ln = `Line ${i + 1}`;
+            let gap = 3.5 * FT;
+            if (ln === "Line 3") gap = 6.29 * FT;
+            if (ln === "Line 6") gap = 3.15 * FT;
+            zO += lineWidth + gap;
+        }
+        return zO;
     };
 
     const handleTargetChange = (lineName, val) => {
@@ -492,13 +502,23 @@ export default function VirtualFloorView() {
 
     const floorSections = useMemo(() => {
         const { specs } = getLayoutSpecs("Line 1");
-        const minZ = LANE_Z_CENTER_AB - (specs.widthAB / 2), maxZ = LANE_Z_CENTER_CD + (specs.widthCD / 2);
-        const zStep = (maxZ - minZ) + 3.7;
+        const FT = 0.3048;
+        const minZ = LANE_Z_CENTER_AB - (specs.widthAB / 2);
+        const maxZ = LANE_Z_CENTER_CD + (specs.widthCD / 2);
+        const lineWidth = maxZ - minZ;
         const numLines = activeFloor === "Floor 1" ? 6 : 3;
+        const floorPrefix = activeFloor === "Floor 1" ? 1 : 7;
         const all = [];
+        let zO = 0;
         for (let i = 0; i < numLines; i++) {
-            const zO = i * zStep;
-            const ln = activeFloor === "Floor 1" ? `Line ${i + 1}` : `Line ${i + 7}`;
+            const lineNum = floorPrefix + i;
+            const ln = `Line ${lineNum}`;
+            if (i > 0) {
+                let gap = 3.5 * FT;
+                if (ln === "Line 3") gap = 6.29 * FT;
+                if (ln === "Line 6") gap = 3.15 * FT;
+                zO += lineWidth + gap;
+            }
             if (activeLine !== "All Lines" && ln !== activeLine) continue;
             const { specs: s, sections: se } = getLayoutSpecs(ln);
             const status = lineStatuses.find(st => st.line_no === ln);
@@ -517,18 +537,19 @@ export default function VirtualFloorView() {
     }, [activeFloor, activeLine, lineStatuses]);
 
     const cameraConfig = useMemo(() => {
-        if (activeLine === "All Lines") return activeFloor === "Floor 1" ? { position: [-90, 80, 12], fov: 32 } : { position: [-60, 50, 8], fov: 28 };
-        const num = parseInt(activeLine.split(' ')[1]);
-        const i = activeFloor === "Floor 1" ? num - 1 : num - 7;
+        const FT = 0.3048;
         const { specs } = getLayoutSpecs("Line 1");
-        const zStep = (LANE_Z_CENTER_CD + (specs.widthCD / 2) - (LANE_Z_CENTER_AB - (specs.widthAB / 2))) + 3.7;
-        return { position: [-30, 40, (LANE_Z_CENTER_AB + LANE_Z_CENTER_CD) / 2 + i * zStep], fov: 25 };
+        const minZ = LANE_Z_CENTER_AB - (specs.widthAB / 2);
+        const maxZ = LANE_Z_CENTER_CD + (specs.widthCD / 2);
+        const lineWidth = maxZ - minZ;
+        if (activeLine === "All Lines") return activeFloor === "Floor 1" ? { position: [-90, 80, 12], fov: 32 } : { position: [-60, 50, 8], fov: 28 };
+        const zO = solveZOffset(activeLine);
+        return { position: [-30, 40, (LANE_Z_CENTER_AB + LANE_Z_CENTER_CD) / 2 + zO], fov: 25 };
     }, [activeFloor, activeLine]);
 
     return (
         <div className="absolute inset-0 flex flex-row bg-slate-950 overflow-hidden">
             <div className="flex-1 relative bg-[#0a0a0c]">
-
                 <Scene3D showMachines={true} machines={activeMachines} sections={floorSections} isOverview={activeLine === "All Lines"} cameraPosition={cameraConfig.position} cameraFov={cameraConfig.fov} showStatusLights={false} />
             </div>
 

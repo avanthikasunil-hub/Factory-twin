@@ -13,6 +13,7 @@ const Z_LENGTH = 500;
 export const CuttingView: React.FC = () => {
     const [activeFloor, setActiveFloor] = useState("Floor 1");
     const [isEditMode, setIsEditMode] = useState(false);
+    const [isSaved, setIsSaved] = useState(false);
     const [editTool, setEditTool] = useState<"move" | "rotate" | "delete" | "add">("move");
     const [selectedAddType, setSelectedAddType] = useState("gerber");
     const [selectedAddLabel, setSelectedAddLabel] = useState("Gerber Cutter");
@@ -195,33 +196,22 @@ export const CuttingView: React.FC = () => {
         fetchLayout();
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // ── AUTO-SAVE: Whenever layout changes, persist to Firestore ──
-    useEffect(() => {
-        if (!serverLayoutLoaded) return;
-
-        const cuttingMachines = machineLayout.filter(m =>
-            m.id.startsWith('gerber-') ||
-            m.id.startsWith('mc-zone0-') ||
-            m.id.startsWith('bandknife-') ||
-            m.id.startsWith('spreading-table-') ||
-            m.id.startsWith('fusing-custom-') ||
-            m.id.startsWith('straight-knife-') ||
-            m.id.startsWith('manual-spreader-') ||
-            m.id.startsWith('supermarket-zone') ||
-            m.id.startsWith('human-') ||
-            m.id.startsWith('op-') ||
-            (m.section && m.section.toLowerCase().includes('cutting')) ||
-            (m.operation?.section && m.operation.section.toLowerCase().includes('cutting'))
-        );
-
-        if (cuttingMachines.length === 0) return;
-
-        useLineStore.getState().syncDigitalTwinLayout("CUTTING", cuttingMachines);
-    }, [machineLayout, serverLayoutLoaded]);
+    // Auto-save removed: layout is only saved when the user explicitly clicks Save.
 
 
     return (
         <div className="relative w-full h-full flex flex-col overflow-hidden bg-background">
+            {/* SAVE SUCCESS BANNER */}
+            {isSaved && (
+                <div className="absolute inset-x-0 top-0 z-[100] flex items-center justify-center pt-4 pointer-events-none animate-in fade-in slide-in-from-top-2">
+                    <div className="flex items-center gap-3 bg-emerald-600 text-white px-8 py-3.5 rounded-2xl shadow-2xl shadow-emerald-600/40 border border-emerald-400/50">
+                        <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span className="text-sm font-black uppercase tracking-[0.15em]">Layout Saved — Changes Persisted</span>
+                    </div>
+                </div>
+            )}
             <div className="w-full bg-slate-950/80 backdrop-blur-3xl border-b border-white/5 flex flex-col z-[60] shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
                 <div className="h-14 px-8 flex items-center justify-between border-b border-white/5">
                     <div className="flex items-center gap-6">
@@ -274,12 +264,24 @@ export const CuttingView: React.FC = () => {
                                     const cuttingMachines = machineLayout.filter(m =>
                                         m.id.startsWith('gerber-') ||
                                         m.id.startsWith('mc-zone0-') ||
+                                        m.id.startsWith('bandknife-') ||
+                                        m.id.startsWith('spreading-table-') ||
+                                        m.id.startsWith('fusing-custom-') ||
+                                        m.id.startsWith('straight-knife-') ||
+                                        m.id.startsWith('manual-spreader-') ||
+                                        m.id.startsWith('supermarket-zone') ||
+                                        m.id.startsWith('storage-fusing-') ||
+                                        m.id.startsWith('cutting-fusing-') ||
+                                        m.id.startsWith('human-') ||
+                                        m.id.startsWith('op-') ||
                                         (m.section && m.section.toLowerCase().includes('cutting')) ||
                                         (m.operation?.section && m.operation.section.toLowerCase().includes('cutting'))
                                     );
                                     try {
                                         await useLineStore.getState().syncDigitalTwinLayout("CUTTING", cuttingMachines);
-                                        toast.success("✅ Layout saved!");
+                                        setIsSaved(true);
+                                        setTimeout(() => setIsSaved(false), 3000);
+                                        toast.success("✅ Cutting layout saved!");
                                     } catch (err) {
                                         toast.error("❌ Save failed: " + err);
                                     }
@@ -357,6 +359,8 @@ export const CuttingView: React.FC = () => {
                                         <option value="snls">SNLS Sewing Machine</option>
                                         <option value="iron">Iron Press</option>
                                         <option value="supermarket">Supermarket Rack</option>
+                                        <option value="pillar-1">Pillar 1 (2.5x1.7ft)</option>
+                                        <option value="pillar-2">Pillar 2 (3.5x1.7ft)</option>
                                     </select><ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                                 </div>
                             </div>

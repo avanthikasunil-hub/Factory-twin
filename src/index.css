@@ -184,4 +184,30 @@
       box-shadow: 0 0 40px hsl(var(--primary) / 0.5);
     }
   }
+
+  /* Mobile utilities */
+  .mobile-scroll {
+    -webkit-overflow-scrolling: touch;
+    overflow-x: auto;
+  }
+}
+
+/* Prevent horizontal overflow on mobile */
+@media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  /* Tables scroll horizontally on mobile */
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent fixed sidebars from showing on mobile */
+  .desktop-only {
+    display: none !important;
+  }
 }

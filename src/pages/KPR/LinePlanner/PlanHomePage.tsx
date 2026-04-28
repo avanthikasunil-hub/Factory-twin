@@ -53,7 +53,7 @@ const PlanHomePage = () => {
           transition={{ duration: 0.5 }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/')}
           className="absolute top-8 left-8 flex items-center justify-center w-10 h-10 rounded-full glass-card border border-border/50 hover:border-primary/40 text-muted-foreground hover:text-foreground transition-all duration-300"
         >
           <ChevronLeft className="w-5 h-5" />

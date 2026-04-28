@@ -121,7 +121,7 @@ const ViewLinesPage = () => {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate(-1)}
+              onClick={() => navigate('/kpr/line-planner')}
               className="hover:bg-secondary rounded-full w-10 h-10 transition-all hover:scale-110"
             >
               <ArrowLeft className="w-5 h-5" />

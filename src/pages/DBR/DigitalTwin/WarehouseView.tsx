@@ -783,6 +783,7 @@ const DraggableWarehouseItem = ({ item, isSelected, editTool, onSelect, onMove, 
 /* ───── 4. MAIN VIEW ───── */
 export const WarehouseView = () => {
   const [isLayoutMode, setIsLayoutMode] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
   const [editTool, setEditTool] = useState<"move" | "rotate" | "delete" | "add">("move");
   const [selectedAddType, setSelectedAddType] = useState("rack");
   const [selectedAddLabel, setSelectedAddLabel] = useState("Rack");
@@ -875,6 +876,8 @@ export const WarehouseView = () => {
   const handleSave = async () => {
     try {
       await useLineStore.getState().syncDigitalTwinLayout("WAREHOUSE", addedItems);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
       toast.success("✅ Warehouse layout saved!");
     } catch (err) {
       toast.error("❌ Save failed: " + err);
@@ -883,6 +886,17 @@ export const WarehouseView = () => {
 
   return (
     <Wrapper>
+      {/* SAVE SUCCESS BANNER */}
+      {isSaved && (
+        <div className="absolute inset-x-0 top-0 z-[100] flex items-center justify-center pt-4 pointer-events-none animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3 bg-emerald-600 text-white px-8 py-3.5 rounded-2xl shadow-2xl shadow-emerald-600/40 border border-emerald-400/50">
+            <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="text-sm font-black uppercase tracking-[0.15em]">Layout Saved — Changes Persisted</span>
+          </div>
+        </div>
+      )}
       {/* ── TOOLBAR (top-right) MIRRORING CUTTING VIEW ── */}
       <div className="absolute top-6 right-6 z-[60] flex items-center gap-3">
         {isLayoutMode && (
@@ -963,6 +977,8 @@ export const WarehouseView = () => {
                 <option value="scanner-station">QR Scanner Station</option>
                 <option value="inspection-machine">Inspection Machine</option>
                 <option value="pallet">Pallet</option>
+                <option value="pillar-1">Pillar 1 (2.5x1.7ft)</option>
+                <option value="pillar-2">Pillar 2 (3.5x1.7ft)</option>
               </select>
               <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
             </div>
@@ -1118,6 +1134,38 @@ export const WarehouseView = () => {
               content = <InspectionMachine position={[0,0,0]} rotation={[0, 0, 0]} scale={[2, 2, 2]} />;
             } else if (item.type === "pallet") {
               content = <FabricRollPallet position={[0,0,0]} rotation={[0, 0, 0]} rollColor="#f97316" />;
+            } else if (item.type === "pillar-1") {
+              const pLength = 2.5 * 0.3048;
+              const pWidth = 1.7 * 0.3048;
+              const pHeight = 9.0 * 0.3048;
+              content = (
+                  <group>
+                      <mesh position={[0, pHeight / 2, 0]}>
+                          <boxGeometry args={[pLength, pHeight, pWidth]} />
+                          <meshStandardMaterial color="#334155" roughness={0.8} />
+                      </mesh>
+                      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                          <planeGeometry args={[pLength, pWidth]} />
+                          <meshBasicMaterial color="#eab308" transparent opacity={0.2} />
+                      </mesh>
+                  </group>
+              );
+            } else if (item.type === "pillar-2") {
+              const pLength = 3.5 * 0.3048;
+              const pWidth = 1.7 * 0.3048;
+              const pHeight = 9.0 * 0.3048;
+              content = (
+                  <group>
+                      <mesh position={[0, pHeight / 2, 0]}>
+                          <boxGeometry args={[pLength, pHeight, pWidth]} />
+                          <meshStandardMaterial color="#334155" roughness={0.8} />
+                      </mesh>
+                      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                          <planeGeometry args={[pLength, pWidth]} />
+                          <meshBasicMaterial color="#eab308" transparent opacity={0.2} />
+                      </mesh>
+                  </group>
+              );
             }
             
             return (

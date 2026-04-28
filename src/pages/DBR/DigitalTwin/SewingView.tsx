@@ -23,6 +23,7 @@ export const SewingView: React.FC<SewingViewProps> = ({
   cameraConfig,
 }) => {
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
   const [editTool, setEditTool] = useState<"move" | "rotate" | "delete" | "add">("move");
   const [selectedAddType, setSelectedAddType] = useState("snls");
   const [selectedAddLabel, setSelectedAddLabel] = useState("SNLS");
@@ -97,34 +98,11 @@ export const SewingView: React.FC<SewingViewProps> = ({
 
   const [serverLayoutLoaded, setServerLayoutLoaded] = useState(false);
 
-  // ── ON MOUNT: Load layout from Firestore ──
+  // ── ON MOUNT: Skip Firestore load since layout is generated fresh each time ──
   useEffect(() => {
-    const fetchLayout = async () => {
-      try {
-        const { db } = await import("@/firebase");
-        const { doc, getDoc } = await import("firebase/firestore");
-        const layoutRef = doc(db, "modifiedLayouts", "SEWING");
-        const layoutSnap = await getDoc(layoutRef);
-        
-        if (layoutSnap.exists()) {
-          const data = layoutSnap.data();
-          if (data.machineLayout) {
-            const current = useLineStore.getState().machineLayout;
-            const otherMachines = current.filter((m: any) =>
-              m.section !== "Cuff" && m.section !== "Sleeve" && m.section !== "Back" &&
-              m.section !== "Collar" && m.section !== "Front" && !m.section?.includes("Assembly")
-            );
-            useLineStore.getState().setMachineLayout([...otherMachines, ...data.machineLayout]);
-            setLoadedMachines(data.machineLayout);
-          }
-        }
-      } catch (err) {
-        console.error("Error loading sewing layout from Firestore:", err);
-      } finally {
-        setServerLayoutLoaded(true);
-      }
-    };
-    fetchLayout();
+    // Nothing to fetch — machines come from DigitalTwinPage's generateSewingLayout.
+    // Firestore read was removed to eliminate the blocking async round-trip on every mount.
+    setServerLayoutLoaded(true);
   }, []);
 
   const handleSave = async () => {
@@ -134,14 +112,28 @@ export const SewingView: React.FC<SewingViewProps> = ({
     );
     try {
       await useLineStore.getState().syncDigitalTwinLayout("SEWING", sewingMachines);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
       toast.success("✅ Sewing layout saved!");
     } catch (err) {
-      toast.error("Save failed: " + err);
+      toast.error("❌ Save failed: " + err);
     }
   };
 
   return (
     <div className="relative w-full h-full flex flex-col overflow-hidden">
+
+      {/* ── SAVE SUCCESS BANNER ── */}
+      {isSaved && (
+        <div className="absolute inset-x-0 top-0 z-[100] flex items-center justify-center pt-4 pointer-events-none animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3 bg-emerald-600 text-white px-8 py-3.5 rounded-2xl shadow-2xl shadow-emerald-600/40 border border-emerald-400/50">
+            <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="text-sm font-black uppercase tracking-[0.15em]">Layout Saved — Changes Persisted</span>
+          </div>
+        </div>
+      )}
 
       {/* ── TOP-RIGHT TOOLBAR ── */}
       <div className="absolute top-6 right-6 z-[60] flex items-center gap-3">
@@ -244,6 +236,8 @@ export const SewingView: React.FC<SewingViewProps> = ({
                 <option value="supermarket">Supermarket</option>
                 <option value="human">Standing Worker</option>
                 <option value="sitting-human">Sitting Worker</option>
+                <option value="pillar-1">Pillar 1 (2.5x1.7ft)</option>
+                <option value="pillar-2">Pillar 2 (3.5x1.7ft)</option>
               </select>
               <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
             </div>
@@ -300,6 +294,7 @@ export const SewingView: React.FC<SewingViewProps> = ({
         isOverview={activeLine === "All Lines"}
         cameraPosition={cameraConfig.pos as any}
         cameraFov={cameraConfig.fov}
+        hideLabels={activeLine === "All Lines"}
       />
     </div>
   );
