@@ -190,7 +190,7 @@ export const getMachineZoneDims = (type) => {
     else if (t.includes('helper') || t.includes('work table') || t.includes('table') || t.includes('trolley')) { l = 4.5 * FT; w = 2.5 * FT; }
     else if (t.includes('inspection')) { l = 5.0 * FT; w = 3.0 * FT; }
     else if (t.includes('fusing') || t.includes('rotary')) { l = 4.5 * FT; w = 3.0 * FT; }
-    else if (t.includes('blocking')) { l = 4.0 * FT; w = 2.5 * FT; }
+    else if (t.includes('blocking')) { l = 2.5 * FT; w = 4.0 * FT; }
     else if (t.includes('supermarket')) { l = 6.0 * FT; w = 2.5 * FT; }
 
     return { length: l, width: w };

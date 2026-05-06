@@ -116,7 +116,7 @@ export const getMachineZoneDims = (type = '') => {
   } else if (t.includes('fusing') || t.includes('rotary')) {
     l = 4.5 * FT; w = 3.0 * FT; h = 4.0 * FT;
   } else if (t.includes('blocking')) {
-    l = 4 * FT; w = 2.5 * FT; h = 4.0 * FT;
+    l = 2.5 * FT; w = 4.0 * FT; h = 4.0 * FT;
   } else if (t.includes('supermarket')) {
     l = 6.5 * FT; w = 2.5 * FT; h = 7.0 * FT;
   } else if (t.includes('wrapping') || t.includes('wrap')) {

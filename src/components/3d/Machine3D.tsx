@@ -183,7 +183,7 @@ const getTargetDimensionsMeters = (type: string, data?: any) => {
   } else if (t.includes('cuttingf')) {
     l = 4 * FT; w = 2.5 * FT; h = 4.0 * FT;
   } else if (t.includes('blocking')) {
-    l = 4 * FT; w = 2.5 * FT; h = 4.0 * FT;
+    l = 2.5 * FT; w = 4.0 * FT; h = 4.0 * FT;
   } else if (t.includes('straightknife')) {
     l = 1.0 * FT; w = 1.0 * FT; h = 2.0 * FT;
   } else if (t.includes('supermarket')) {
@@ -344,7 +344,8 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
 
       // 2. Pre-calculation rotation for specific models to ensure grounding logic sees the right footprint
       let isRotaryFusing = mType.includes('rotary') && !mType.includes('fusing_custom');
-      if (isRotaryFusing) {
+      let isBlocking = mType.includes('blocking');
+      if (isRotaryFusing || isBlocking) {
         clonedScene.rotation.y = -Math.PI / 2;
       }
 
@@ -363,15 +364,18 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
 
       // Scaling logic - Swap length and width for rotary fusing to match internal rotation
       isRotaryFusing = mType.includes('rotary') && !mType.includes('fusing_custom');
-      const scaleX = size.x > 0.001 ? ((isRotaryFusing ? targetDims.width : targetDims.length) * scaleFactor) / size.x : 1;
+      isBlocking = mType.includes('blocking');
+      const needsDimSwap = isRotaryFusing || isBlocking;
+
+      const scaleX = size.x > 0.001 ? ((needsDimSwap ? targetDims.width : targetDims.length) * scaleFactor) / size.x : 1;
       const scaleY = size.y > 0.001 ? (targetDims.height * scaleFactor) / size.y : 1;
-      const scaleZ = size.z > 0.001 ? ((isRotaryFusing ? targetDims.length : targetDims.width) * scaleFactor) / size.z : 1;
+      const scaleZ = size.z > 0.001 ? ((needsDimSwap ? targetDims.length : targetDims.width) * scaleFactor) / size.z : 1;
 
       setComputedScale([scaleX, scaleY, scaleZ]);
 
       if (machineData.centerModel) {
         // Enforce 0 internal rotation for layout consistency (90 deg from previous system)
-        if (!isRotaryFusing) {
+        if (!needsDimSwap) {
           clonedScene.rotation.y = mType.includes('fusing_custom') ? -Math.PI / 2 : 0;
         }
 
