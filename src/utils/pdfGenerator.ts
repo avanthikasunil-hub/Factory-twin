@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import type { LineData, MachinePosition, SectionLayout } from '@/types';
 
 /**
@@ -414,5 +415,117 @@ export const generateLinePDF = (line: LineData, mode: 'whole' | 'sections' = 'wh
 
   const suffix = mode === 'whole' ? 'FULL_LAYOUT' : 'SECTION_WISE';
   const fileName = `${line.lineNo}_${line.styleNo || 'N-A'}_${suffix}.pdf`.replace(/\s+/g, '_').toUpperCase();
+  doc.save(fileName);
+};
+
+export const generateMachineRequirementPDF = (line: LineData) => {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4' 
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 15;
+  
+  // Header details
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.text(`MACHINE REQUIREMENTS: LINE ${line.lineNo.replace(/LINE\s*/i, '').trim()}`, margin, 20);
+  
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  const timestamp = line.createdAt ? new Date(line.createdAt).toLocaleDateString() : new Date().toLocaleDateString();
+  
+  doc.text(`STYLE: ${line.styleNo || 'N/A'}`, margin, 32);
+  doc.text(`BUYER: ${line.buyer || 'N/A'}`, margin, 38);
+  doc.text(`DATE: ${timestamp}`, margin, 44);
+
+  // Right aligned details
+  doc.text(`TARGET: ${line.targetOutput} / SHIFT`, pageWidth - margin, 32, { align: 'right' });
+  doc.text(`EFFICIENCY: ${line.efficiency}%`, pageWidth - margin, 38, { align: 'right' });
+  doc.text(`WORKING HOURS: ${line.workingHours} HRS`, pageWidth - margin, 44, { align: 'right' });
+
+  // Calculate machine quantities
+  const machines = line.machineLayout || [];
+  
+  // Filter for production machines only (no pathways, supermarkets, boards, inspection)
+  let prodMachines = machines.filter(
+    (m) =>
+      m.operation &&
+      !m.operation.machine_type.toLowerCase().includes('pathway') &&
+      !m.operation.machine_type.toLowerCase().includes('supermarket') &&
+      !m.id.toLowerCase().includes('board') &&
+      !m.operation.machine_type.toLowerCase().includes('inspection') &&
+      !m.operation.machine_type.toLowerCase().includes('checking') &&
+      !m.isInspection
+  );
+
+  // Remove the last 2 helper tables in assembly
+  const assemblyHelperIndices: number[] = [];
+  prodMachines.forEach((m, idx) => {
+    const sec = (m.section || '').toLowerCase();
+    const type = (m.operation?.machine_type || '').toLowerCase();
+    if (sec.includes('assembly') && (type.includes('helper') || type.includes('table') || type.includes('manual'))) {
+      assemblyHelperIndices.push(idx);
+    }
+  });
+
+  const indicesToRemove = new Set(assemblyHelperIndices.slice(-2));
+  prodMachines = prodMachines.filter((_, idx) => !indicesToRemove.has(idx));
+
+  // Aggregate machine counts
+  const machineCounts: Record<string, number> = {};
+  prodMachines.forEach((m) => {
+    let mType = m.operation?.machine_type || 'Unknown';
+    mType = mType.toUpperCase();
+    machineCounts[mType] = (machineCounts[mType] || 0) + 1;
+  });
+
+  const tableData = Object.keys(machineCounts).map((type) => ({
+    type,
+    qty: machineCounts[type],
+  }));
+
+  // Sort descending by quantity
+  tableData.sort((a, b) => b.qty - a.qty);
+
+  // Prepare autoTable rows
+  const rows = tableData.map((item, index) => [
+    (index + 1).toString(),
+    item.type,
+    item.qty.toString()
+  ]);
+
+  const totalQuantity = tableData.reduce((sum, item) => sum + item.qty, 0);
+  
+  rows.push([
+    '',
+    'TOTAL MACHINES REQUIRED',
+    totalQuantity.toString()
+  ]);
+
+  autoTable(doc, {
+    startY: 55,
+    head: [['#', 'MACHINE TYPE', 'QUANTITY']],
+    body: rows,
+    theme: 'grid',
+    headStyles: { fillColor: [44, 62, 80], textColor: 255, fontStyle: 'bold' },
+    columnStyles: {
+      0: { cellWidth: 15, halign: 'center' },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 40, halign: 'center', fontStyle: 'bold' }
+    },
+    didParseCell: function (data) {
+      if (data.row.index === rows.length - 1) {
+        data.cell.styles.fillColor = [240, 240, 240];
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.textColor = [0, 0, 0];
+      }
+    }
+  });
+
+  const conNo = (line as any).coneNo || (line as any).conNo || (line as any).con_no || 'UNKNOWN_CON';
+  const fileName = `${conNo} M-C REQ.pdf`.toUpperCase();
   doc.save(fileName);
 };

@@ -6,7 +6,7 @@ import {
   Undo2, Redo2, Move, AlertCircle, X, ChevronDown, ChevronUp, Settings, Filter,
   Users, Scissors, TrendingUp, Info, RefreshCw, Plus, Layers, FileDown, AlertTriangle
 } from 'lucide-react';
-import { generateLinePDF } from '@/utils/pdfGenerator';
+import { generateLinePDF, generateMachineRequirementPDF } from '@/utils/pdfGenerator';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -388,16 +388,19 @@ const LinePlannerPage = () => {
                   className="text-[13px] px-3 font-bold border-primary/30 hover:bg-primary/10 transition-all active:scale-95"
                 >
                   <FileDown className="w-4 h-4 mr-2" />
-                  PDF
+                  Export
                   <ChevronDown className="w-3 h-3 ml-2 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[180px]">
+              <DropdownMenuContent align="end" className="w-[220px]">
                 <DropdownMenuItem onClick={() => currentLine && generateLinePDF(currentLine, 'whole')}>
-                   Full Layout Blueprint
+                   Full Layout Blueprint (PDF)
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => currentLine && generateLinePDF(currentLine, 'sections')}>
-                   Section Layout Blueprint
+                   Section Layout Blueprint (PDF)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => currentLine && generateMachineRequirementPDF(currentLine as any)}>
+                   Machine Requirements (PDF)
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
