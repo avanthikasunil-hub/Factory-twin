@@ -3,7 +3,7 @@ import { Scene3D } from "@/components/3d/Scene3D";
 import { getLayoutSpecs, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD } from "@/utils/layoutGenerator";
 import { SectionLayout, MachinePosition } from "@/types";
 import { GarmentConveyor } from "@/components/3d/GarmentConveyor";
-import { Layout, Filter, Settings, ChevronDown, Edit2, Save, Play, CheckCircle, Search, Bell, Undo2, Redo2 } from "lucide-react";
+import { Layout, Filter, Settings, ChevronDown, Edit2, Save, Play, CheckCircle, Search, Bell, Undo2, Redo2, Truck, Activity, Scissors, Zap, Package, ArrowRight, ClipboardList, LogIn, LogOut, WashingMachine, Hash, Layers, ShieldCheck, SearchCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLineStore } from "@/store/useLineStore";
 import { API_BASE_URL } from "@/config";
@@ -17,6 +17,75 @@ interface FinishingViewProps {
     onFloorChange?: (floor: string) => void;
     onLineChange?: (line: string) => void;
 }
+
+/* ───── 1. FINISHING MATERIAL FLOW COMPONENT ───── */
+const FINISHING_FLOW_STEPS = [
+  { id: 'input', label: 'Garment Input from Sewing', icon: <LogIn size={14} />, color: '#6366f1' },
+  { id: 'out_checking', label: 'Outside Checking', icon: <SearchCheck size={14} />, color: '#818cf8' },
+  { id: 'in_checking', label: 'Inside Checking', icon: <SearchCheck size={14} />, color: '#a78bfa' },
+  { id: 'trimming', label: 'Thread Sucking / Trimming', icon: <Scissors size={14} />, color: '#3b82f6' },
+  { id: 'spot_wash', label: 'Spotwash Area (If req)', icon: <WashingMachine size={14} />, color: '#0ea5e9' },
+  { id: 'collar_press', label: 'Collar Pressing', icon: <Zap size={14} />, color: '#f43f5e' },
+  { id: 'pressing', label: 'Pressing', icon: <Zap size={14} />, color: '#fbbf24' },
+  { id: 'buttoning', label: 'Buttoning', icon: <Settings size={14} />, color: '#f97316' },
+  { id: 'body_press', label: 'Body Pressing (MC)', icon: <Zap size={14} />, color: '#ec4899' },
+  { id: 'eol', label: 'End-line Inspection (EOL)', icon: <ShieldCheck size={14} />, color: '#2dd4bf' },
+  { id: 'presentation', label: 'Presentation Pressing', icon: <Zap size={14} />, color: '#a855f7' },
+  { id: 'folding', label: 'Folding', icon: <Layers size={14} />, color: '#64748b' },
+  { id: 'final_check', label: 'Final Checking', icon: <Search size={14} />, color: '#22c55e' },
+  { id: 'tagging', label: 'Tag Attaching', icon: <Hash size={14} />, color: '#94a3b8' },
+  { id: 'packing', label: 'Packing for finishing', icon: <Package size={14} />, color: '#6366f1' },
+  { id: 'dispatch', label: 'Dispatch', icon: <Truck size={14} />, color: '#10b981' },
+];
+
+const FinishingMaterialFlow = () => {
+  return (
+    <div className="absolute top-24 left-6 z-[70] w-72 bg-slate-950/80 backdrop-blur-2xl p-6 rounded-[2rem] border border-white/10 shadow-2xl animate-in fade-in slide-in-from-left-4 max-h-[calc(100vh-120px)] flex flex-col">
+      <div className="flex items-center gap-3 mb-6 shrink-0">
+        <div className="p-2 bg-violet-500/20 rounded-xl text-violet-400">
+          <ClipboardList size={18} />
+        </div>
+        <div className="flex flex-col">
+          <h3 className="text-[11px] font-black uppercase text-white tracking-[0.2em] leading-none mb-1">Finishing Flow</h3>
+          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Process Lifecycle</span>
+        </div>
+      </div>
+
+      <div className="relative overflow-y-auto pr-2 custom-scrollbar flex-1">
+        <div className="space-y-3 relative pb-4">
+            {/* Connection Line */}
+            <div className="absolute left-[15px] top-4 bottom-4 w-[2px] bg-gradient-to-b from-violet-500/50 via-slate-700/30 to-emerald-500/50" />
+
+            {FINISHING_FLOW_STEPS.map((step, idx) => (
+            <div key={step.id} className="group relative flex items-center gap-4 cursor-pointer">
+                {/* Step Node */}
+                <div 
+                className="relative z-10 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110"
+                style={{ background: `${step.color}20`, border: `2px solid ${step.color}` }}
+                >
+                <div className="text-white" style={{ color: step.color }}>
+                    {step.icon}
+                </div>
+                {/* Glow effect */}
+                <div className="absolute inset-0 rounded-full blur-[8px] opacity-20 group-hover:opacity-40 transition-opacity" style={{ background: step.color }} />
+                </div>
+
+                {/* Step Label */}
+                <div className="flex flex-col">
+                <span className="text-[9px] font-black uppercase text-slate-400 group-hover:text-white transition-colors tracking-widest leading-none mb-0.5">
+                    Step {idx + 1}
+                </span>
+                <span className="text-[10px] font-bold text-white/90 group-hover:text-white transition-colors">
+                    {step.label}
+                </span>
+                </div>
+            </div>
+            ))}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const FinishingView: React.FC<FinishingViewProps> = ({
     activeFloor: propFloor,
@@ -32,6 +101,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
     const [isSaved, setIsSaved] = useState(false);
     const [selectedAddType, setSelectedAddType] = useState("Iron");
     const [selectedAddLabel, setSelectedAddLabel] = useState("Ironing M/C");
+    const [showMaterialFlow, setShowMaterialFlow] = useState(true);
 
     const {
         machineLayout,
@@ -263,7 +333,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
 
                     arr.push({
                         id: `finishing-cabin-l${lineNum}`,
-                        operation: { op_no: `F-CABIN`, op_name: 'Supervisor Cabin', machine_type: 'Cabin', smv: 0, section: 'Finishing' },
+                        operation: { op_no: `F-CABIN`, op_name: 'SPOTWASH CABIN', machine_type: 'Cabin', smv: 0, section: 'Finishing' },
                         position: { x: machineX + 11.0, z: centerZ + 2.9, y: 0 },
                         rotation: { x: 0, y: 0, z: 0 },
                         lane: 'B', section: 'Finishing', centerModel: true
@@ -296,6 +366,41 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                         } as any);
                     }
                 }
+            }
+
+            if (lineNum === 1 || lineNum === 6) {
+                arr.push({
+                    id: `finishing-pillar-l${lineNum}-1`,
+                    operation: { op_no: `F-PIL-${lineNum}-1`, op_name: 'Pillar', machine_type: 'pillar-1', smv: 0, section: 'Finishing' },
+                    position: { x: machineX + 4.5, z: centerZ + 1.7, y: 0 },
+                    rotation: { x: 0, y: 0, z: 0 },
+                    lane: 'B', section: 'Finishing', centerModel: true
+                } as any);
+                arr.push({
+                    id: `finishing-pillar-l${lineNum}-2`,
+                    operation: { op_no: `F-PIL-${lineNum}-2`, op_name: 'Pillar', machine_type: 'pillar-1', smv: 0, section: 'Finishing' },
+                    position: { x: machineX + 8.5, z: centerZ + 1.7, y: 0 },
+                    rotation: { x: 0, y: 0, z: 0 },
+                    lane: 'B', section: 'Finishing', centerModel: true
+                } as any);
+            }
+
+            // ADD PILLARS IN THE GAP BETWEEN LINE 2 AND LINE 3
+            if (lineNum === 2) {
+                arr.push({
+                    id: `finishing-pillar-gap-L2L3-1`,
+                    operation: { op_no: `F-PIL-GAP-1`, op_name: 'Pillar', machine_type: 'pillar-2', smv: 0, section: 'Finishing' },
+                    position: { x: machineX + 4.5, z: centerZ + 4.9, y: 0 },
+                    rotation: { x: 0, y: 0, z: 0 },
+                    lane: 'B', section: 'Finishing', centerModel: true
+                } as any);
+                arr.push({
+                    id: `finishing-pillar-gap-L2L3-2`,
+                    operation: { op_no: `F-PIL-GAP-2`, op_name: 'Pillar', machine_type: 'pillar-2', smv: 0, section: 'Finishing' },
+                    position: { x: machineX + 8.5, z: centerZ + 4.9, y: 0 },
+                    rotation: { x: 0, y: 0, z: 0 },
+                    lane: 'B', section: 'Finishing', centerModel: true
+                } as any);
             }
         }
         return arr;
@@ -562,6 +667,16 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                             </div>
                         )}
                         <button
+                          onClick={() => setShowMaterialFlow(!showMaterialFlow)}
+                          className={cn(
+                            "flex items-center gap-2 px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl border",
+                            showMaterialFlow ? "bg-violet-600 text-white border-violet-500 shadow-violet-600/30" : "bg-white/10 text-white hover:bg-violet-600 border-white/5"
+                          )}
+                        >
+                          <Activity size={14} />
+                          Material Flow
+                        </button>
+                        <button
                             onClick={() => setIsEditMode(!isEditMode)}
                             className={cn(
                                 "flex items-center gap-2 px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all transform active:scale-95 shadow-xl",
@@ -642,7 +757,7 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                                             <option value="Macpi">Body Press M/C</option>
                                             <option value="Folding">Folding M/C</option>
                                             <option value="finishing">Buttoning</option>
-                                            <option value="spotwash">Spot Wash</option>
+                                            <option value="spotwash">Spotwash Area</option>
                                             <option value="Thread">Thread Sucking</option>
                                             <option value="Inspection">EOL Inspection</option>
                                         </optgroup>
@@ -655,8 +770,9 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                                             <option value="Helper Table">Checking Table</option>
                                             <option value="Checking">Tag Attaching Area</option>
                                             <option value="Helper Table">Packing Station</option>
+                                            <option value="cabin">Spotwash Cabin</option>
                                             <option value="pillar-1">Pillar 1 (2.5x1.7ft)</option>
-                                            <option value="pillar-2">Pillar 2 (3.5x1.7ft)</option>
+                                            <option value="pillar-2">Pillar 2 (1.7x3.5ft)</option>
                                         </optgroup>
                                     </select><ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                                 </div>
@@ -731,6 +847,9 @@ export const FinishingView: React.FC<FinishingViewProps> = ({
                         />
                     ))}
                 </Scene3D>
+
+                {/* ── MATERIAL FLOW OVERLAY ── */}
+                {showMaterialFlow && <FinishingMaterialFlow />}
 
             </div>
         </div>

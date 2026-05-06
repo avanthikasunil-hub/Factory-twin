@@ -5,11 +5,12 @@ import {
   Environment,
   useTexture,
   useCursor,
-  PivotControls
+  PivotControls,
+  Line
 } from "@react-three/drei";
 import * as THREE from "three";
 import styled from "styled-components";
-import { Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle } from "lucide-react";
+import { Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle, Package, ArrowRight, Scan, ShieldAlert, Database, SearchCode, Ruler, LayoutGrid, MapPin, Truck as TruckIcon, Activity as ActivityIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLineStore } from "@/store/useLineStore";
 import { API_BASE_URL } from "@/config";
@@ -40,7 +41,7 @@ const PALETTE = [
 const SPECS = {
   rackHeight: 5.2,
   rackDepth: 1.5,
-  bayWidth: 2.8,
+  bayWidth: 4.45,
   levels: [0.6, 2.2, 3.8],
   postColor: "#001f3f",
   beamColor: "#c2410c",
@@ -51,36 +52,36 @@ const tubeGeom = new THREE.CylinderGeometry(0.05, 0.05, 1.27, 8);
 const tubeMat = new THREE.MeshStandardMaterial({ color: "#cbd5e1" });
 
 /* ───── 2. POSITION HELPERS ───── */
-const getStandardPositions = (x: number, z: number) => [[x - 3.5, 0, z + 3], [x + 3.5, 0, z + 3], [x - 3.5, 0, z - 3], [x + 3.5, 0, z - 3]];
+const getStandardPositions = (x: number, z: number) => [[x - 5.15, 0, z + 3.7625], [x + 5.15, 0, z + 3.7625], [x - 5.15, 0, z - 3.7625], [x + 5.15, 0, z - 3.7625]];
 const getRTIPositions = (x: number, z: number) => [
-  [x - 3.5, 0, z + 12], [x + 3.5, 0, z + 12], [x - 3.5, 0, z + 6], [x + 3.5, 0, z + 6],
-  [x - 3.5, 0, z], [x + 3.5, 0, z], [x - 3.5, 0, z - 6], [x + 3.5, 0, z - 6], [x - 3.5, 0, z - 12], [x + 3.5, 0, z - 12]
+  [x - 5.15, 0, z + 19.05], [x + 5.15, 0, z + 19.05], [x - 5.15, 0, z + 9.525], [x + 5.15, 0, z + 9.525],
+  [x - 5.15, 0, z], [x + 5.15, 0, z], [x - 5.15, 0, z - 9.525], [x + 5.15, 0, z - 9.525], [x - 5.15, 0, z - 19.05], [x + 5.15, 0, z - 19.05]
 ];
 const getWidePositions = (x: number, z: number) => [
-  [x - 10.5, 0, z + 3], [x - 3.5, 0, z + 3], [x + 3.5, 0, z + 3], [x + 10.5, 0, z + 3],
-  [x - 10.5, 0, z - 3], [x - 3.5, 0, z - 3], [x + 3.5, 0, z - 3], [x + 10.5, 0, z - 3]
+  [x - 15.45, 0, z + 3.7625], [x - 5.15, 0, z + 3.7625], [x + 5.15, 0, z + 3.7625], [x + 15.45, 0, z + 3.7625],
+  [x - 15.45, 0, z - 3.7625], [x - 5.15, 0, z - 3.7625], [x + 5.15, 0, z - 3.7625], [x + 15.45, 0, z - 3.7625]
 ];
 const getInterliningPositions = (x: number, z: number) => [
-  [x - 10.5, 0, z + 3], [x - 3.5, 0, z + 3], [x + 3.5, 0, z + 3],
-  [x - 10.5, 0, z - 3], [x - 3.5, 0, z - 3], [x + 3.5, 0, z - 3], [x + 10.5, 0, z - 3]
+  [x - 15.45, 0, z + 3.7625], [x - 5.15, 0, z + 3.7625], [x + 5.15, 0, z + 3.7625],
+  [x - 15.45, 0, z - 3.7625], [x - 5.15, 0, z - 3.7625], [x + 5.15, 0, z - 3.7625], [x + 15.45, 0, z - 3.7625]
 ];
 
 const ZONE_LAYOUT = {
-  RTI: { positions: getRTIPositions(-30, 35) },
-  F1: { positions: getStandardPositions(-30, 5) },
-  F3: { positions: getStandardPositions(-30, -10) },
-  F5: { positions: getStandardPositions(-30, -25) },
-  F7: { positions: getStandardPositions(-30, -40) },
-  Q: { positions: getStandardPositions(-10, 25) },
-  F2: { positions: getStandardPositions(-10, 5) },
-  F4: { positions: getStandardPositions(-10, -10) },
-  F6: { positions: getStandardPositions(-10, -25) },
-  F8: { positions: getStandardPositions(-10, -40) },
-  INT: { positions: getInterliningPositions(25, 25) },
-  F9: { positions: getWidePositions(25, 5) },
-  F10: { positions: getWidePositions(25, -10) },
-  F11: { positions: getWidePositions(25, -25) },
-  F12: { positions: getWidePositions(25, -40) },
+  RTI: { positions: getRTIPositions(-30, 40.1115) },
+  F1: { positions: getStandardPositions(-30, -0.226) },
+  F3: { positions: getStandardPositions(-30, -25.276) },
+  F5: { positions: getStandardPositions(-30, -50.326) },
+  F7: { positions: getStandardPositions(-30, -75.376) },
+  Q: { positions: getStandardPositions(-1.1, 24.824) },
+  F2: { positions: getStandardPositions(-1.1, -0.226) },
+  F4: { positions: getStandardPositions(-1.1, -25.276) },
+  F6: { positions: getStandardPositions(-1.1, -50.326) },
+  F8: { positions: getStandardPositions(-1.1, -75.376) },
+  INT: { positions: getInterliningPositions(40.6, 24.824) },
+  F9: { positions: getWidePositions(40.6, -0.226) },
+  F10: { positions: getWidePositions(40.6, -25.276) },
+  F11: { positions: getWidePositions(40.6, -50.326) },
+  F12: { positions: getWidePositions(40.6, -75.376) },
 };
 
 /* ───── 3. SUB-COMPONENTS ───── */
@@ -167,7 +168,7 @@ const FloatingLabel = ({ text, position = [0, 3, 0], bgColor = "#fbbf24", textCo
   );
 };
 
-const FabricRollPallet = ({ position, rotation = [0, 0, 0], rollColor = "#64748b", emptySlot = null, name = "" }: any) => {
+const FabricRollPallet = ({ position, rotation = [0, 0, 0], scale = [1, 1, 1], rollColor = "#64748b", emptySlot = null, name = "" }: any) => {
   const [hovered, setHovered] = useState(false);
   useCursor(hovered && !!name);
 
@@ -193,6 +194,7 @@ const FabricRollPallet = ({ position, rotation = [0, 0, 0], rollColor = "#64748b
     <group
       position={new THREE.Vector3(...position)}
       rotation={new THREE.Euler(...rotation)}
+      scale={new THREE.Vector3(...scale)}
       onPointerOver={(e) => { e.stopPropagation(); if (name) setHovered(true); }}
       onPointerOut={() => setHovered(false)}
     >
@@ -207,7 +209,7 @@ const FabricRollPallet = ({ position, rotation = [0, 0, 0], rollColor = "#64748b
         </mesh>
       ))}
       {rolls}
-      {hovered && name && <FloatingLabel text={name} position={[0, 1.8, 0]} bgColor="#0284c7" textColor="#ffffff" scale={1.2} />}
+      {hovered && name && <FloatingLabel text={name} position={[0, 1.8, 0]} bgColor="#0284c7" textColor="#ffffff" scale={1.2 / scale[1]} />}
     </group>
   );
 };
@@ -215,7 +217,8 @@ const FabricRollPallet = ({ position, rotation = [0, 0, 0], rollColor = "#64748b
 const DoubleRack = ({ position, label, rollColor, emptySlots = [] }: any) => {
   const [hovered, setHovered] = useState(false);
   useCursor(hovered);
-  const twinDepth = 2.8;
+  const twinDepth = 6.325;
+  const pZ = twinDepth / 4;
 
   return (
     <group
@@ -252,17 +255,17 @@ const DoubleRack = ({ position, label, rollColor, emptySlots = [] }: any) => {
           ))}
           {idx === 0 ? (
             <>
-              {!emptySlots.includes(0) && <FabricRollPallet position={[-SPECS.bayWidth / 2, -0.6, 0.65]} rollColor={rollColor} />}
-              {!emptySlots.includes(1) && <FabricRollPallet position={[SPECS.bayWidth / 2, -0.6, 0.65]} rollColor={rollColor} />}
-              {!emptySlots.includes(2) && <FabricRollPallet position={[-SPECS.bayWidth / 2, -0.6, -0.65]} rollColor={rollColor} />}
-              {!emptySlots.includes(3) && <FabricRollPallet position={[SPECS.bayWidth / 2, -0.6, -0.65]} rollColor={rollColor} />}
+              {!emptySlots.includes(0) && <FabricRollPallet position={[-SPECS.bayWidth / 2, -0.6, pZ]} rollColor={rollColor} scale={[1.589, 1.5, 2.259]} />}
+              {!emptySlots.includes(1) && <FabricRollPallet position={[SPECS.bayWidth / 2, -0.6, pZ]} rollColor={rollColor} scale={[1.589, 1.5, 2.259]} />}
+              {!emptySlots.includes(2) && <FabricRollPallet position={[-SPECS.bayWidth / 2, -0.6, -pZ]} rollColor={rollColor} scale={[1.589, 1.5, 2.259]} />}
+              {!emptySlots.includes(3) && <FabricRollPallet position={[SPECS.bayWidth / 2, -0.6, -pZ]} rollColor={rollColor} scale={[1.589, 1.5, 2.259]} />}
             </>
           ) : (
             <>
-              <FabricRollPallet position={[-SPECS.bayWidth / 2, -0.6, 0.65]} rollColor={rollColor} />
-              <FabricRollPallet position={[SPECS.bayWidth / 2, -0.6, 0.65]} rollColor={rollColor} />
-              <FabricRollPallet position={[-SPECS.bayWidth / 2, -0.6, -0.65]} rollColor={rollColor} />
-              <FabricRollPallet position={[SPECS.bayWidth / 2, -0.6, -0.65]} rollColor={rollColor} />
+              <FabricRollPallet position={[-SPECS.bayWidth / 2, -0.6, pZ]} rollColor={rollColor} scale={[1.589, 1.5, 2.259]} />
+              <FabricRollPallet position={[SPECS.bayWidth / 2, -0.6, pZ]} rollColor={rollColor} scale={[1.589, 1.5, 2.259]} />
+              <FabricRollPallet position={[-SPECS.bayWidth / 2, -0.6, -pZ]} rollColor={rollColor} scale={[1.589, 1.5, 2.259]} />
+              <FabricRollPallet position={[SPECS.bayWidth / 2, -0.6, -pZ]} rollColor={rollColor} scale={[1.589, 1.5, 2.259]} />
             </>
           )}
         </group>
@@ -273,7 +276,7 @@ const DoubleRack = ({ position, label, rollColor, emptySlots = [] }: any) => {
   );
 };
 
-const ZoneBoundary = ({ positions, zoneName, rackWidth = 5.8, rackDepth = 3.0 }: any) => {
+const ZoneBoundary = ({ positions, zoneName, rackWidth = 8.9, rackDepth = 6.325 }: any) => {
   const boundary = useMemo(() => {
     if (!positions || positions.length === 0) return null;
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -740,8 +743,72 @@ const QRScannerStation = ({ position, rotation = [0, 0, 0], scale = [1, 1, 1] }:
   );
 };
 
-/* ───── 3.5. DRAGGABLE WRAPPER ───── */
-const DraggableWarehouseItem = ({ item, isSelected, editTool, onSelect, onMove, onRotate, onDelete, children }: any) => {
+/* ───── 3.6. MATERIAL FLOW COMPONENT ───── */
+const MATERIAL_FLOW_STEPS = [
+  { id: 'receiving', label: 'Fabric Roll Receiving', icon: <TruckIcon size={14} />, color: '#6366f1' },
+  { id: 'transfer', label: 'Fabric Roll Transfer', icon: <ArrowRight size={14} />, color: '#818cf8' },
+  { id: 'scanning', label: 'Scanning & GRN Sticker', icon: <Scan size={14} />, color: '#a78bfa' },
+  { id: 'quarantine', label: 'Quarantine Storage', icon: <ShieldAlert size={14} />, color: '#f43f5e' },
+  { id: 'stock', label: 'Stock Entry (StockGrid)', icon: <Database size={14} />, color: '#2dd4bf' },
+  { id: 'inspection', label: 'Inspection 4.0', icon: <SearchCode size={14} />, color: '#3b82f6' },
+  { id: 'shrinkage', label: 'Fabric Testing', icon: <Ruler size={14} />, color: '#fbbf24' },
+  { id: 'allocation', label: 'Rack Allocation', icon: <LayoutGrid size={14} />, color: '#f97316' },
+  { id: 'tracking', label: 'Location Tracking (Final Scan)', icon: <MapPin size={14} />, color: '#ec4899' },
+  { id: 'ready', label: 'Ready to Issue (Against Order)', icon: <CheckCircle size={14} />, color: '#22c55e' },
+];
+
+const WarehouseMaterialFlow = () => {
+  return (
+    <div className="absolute top-24 left-6 z-[60] w-72 bg-slate-950/80 backdrop-blur-2xl p-6 rounded-[2rem] border border-white/10 shadow-2xl animate-in fade-in slide-in-from-left-4 overflow-hidden">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 bg-violet-500/20 rounded-xl text-violet-400">
+          <ActivityIcon size={18} />
+        </div>
+        <div className="flex flex-col">
+          <h3 className="text-[11px] font-black uppercase text-white tracking-[0.2em] leading-none mb-1">Material Flow</h3>
+          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Warehouse Lifecycle</span>
+        </div>
+      </div>
+
+      <div className="relative space-y-3">
+        {/* Connection Line */}
+        <div className="absolute left-[15px] top-4 bottom-4 w-[2px] bg-gradient-to-b from-violet-500/50 via-slate-700/30 to-emerald-500/50" />
+
+        {MATERIAL_FLOW_STEPS.map((step, idx) => (
+          <div key={step.id} className="group relative flex items-center gap-4 cursor-pointer">
+            {/* Step Node */}
+            <div 
+              className="relative z-10 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110"
+              style={{ background: `${step.color}20`, border: `2px solid ${step.color}` }}
+            >
+              <div className="text-white" style={{ color: step.color }}>
+                {step.icon}
+              </div>
+              {/* Glow effect */}
+              <div className="absolute inset-0 rounded-full blur-[8px] opacity-20 group-hover:opacity-40 transition-opacity" style={{ background: step.color }} />
+            </div>
+
+            {/* Step Label */}
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black uppercase text-slate-400 group-hover:text-white transition-colors tracking-widest leading-none mb-1">
+                Step {idx + 1}
+              </span>
+              <span className="text-[11px] font-bold text-white/90 group-hover:text-white transition-colors">
+                {step.label}
+              </span>
+            </div>
+
+            {/* Hover Tooltip/Detail (Optional) */}
+            <div className="absolute left-full ml-4 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap bg-slate-900 px-3 py-1.5 rounded-lg border border-white/10 text-[9px] font-bold text-slate-400">
+               Click to view details
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+const DraggableWarehouseItem = ({ item, isSelected, isPrimarySelected, editTool, onSelect, onMove, onRotate, onDelete, children }: any) => {
   return (
     <group 
       position={item.position} 
@@ -749,10 +816,10 @@ const DraggableWarehouseItem = ({ item, isSelected, editTool, onSelect, onMove, 
       onClick={(e) => { 
         e.stopPropagation(); 
         if (editTool === 'delete') onDelete(item.id); 
-        else onSelect(item.id); 
+        else onSelect(item.id, e.shiftKey); 
       }}
     >
-      {isSelected && (editTool === 'move' || editTool === 'rotate') ? (
+      {isSelected && isPrimarySelected && (editTool === 'move' || editTool === 'rotate') ? (
         <PivotControls
           disableRotations={editTool !== 'rotate'}
           disableAxes={editTool !== 'move'}
@@ -782,18 +849,81 @@ const DraggableWarehouseItem = ({ item, isSelected, editTool, onSelect, onMove, 
 
 /* ───── 4. MAIN VIEW ───── */
 export const WarehouseView = () => {
+  const getInitialDefaultItems = () => {
+    const arr: any[] = [];
+    // Racks
+    Object.entries(ZONE_LAYOUT).forEach(([zone, cfg]) =>
+      cfg.positions.forEach((pos, i) => arr.push({
+        id: `${zone}-R${i + 1}`,
+        type: 'rack',
+        position: pos,
+        rotation: [0, 0, 0],
+        label: `${zone}-R${i + 1}`,
+        rollColor: zone.startsWith("Q") ? PALETTE[13] : PALETTE[i % PALETTE.length],
+        emptySlots: `${zone}-R${i + 1}` === "F2-R2" ? [1] : []
+      }))
+    );
+
+    // Inspection Machines
+    arr.push(
+      { id: 'inspection-1', type: 'inspection-machine', position: [0.542, 0, 38.284], rotation: [-Math.PI / 2, Math.PI, Math.PI / 2], label: "Inspection Machine 1" },
+      { id: 'inspection-2', type: 'inspection-machine', position: [-6.458, 0, 37.784], rotation: [-Math.PI / 2, Math.PI, -Math.PI / 2], label: "Inspection Machine 2" },
+      { id: 'table-1', type: 'work-table', position: [23.542, 0, 38.284], rotation: [0, Math.PI / 2, 0], label: "Shrinkage Table 1" },
+      { id: 'table-2', type: 'work-table', position: [14.542, 0, 38.284], rotation: [0, -Math.PI / 2, 0], label: "Shrinkage Table 2" },
+      { id: 'pallet-1', type: 'pallet', position: [22, 0, 34.332], rotation: [0, 0, 0], label: "Pallet 1", rollColor: PALETTE[5] },
+      { id: 'pallet-2', type: 'pallet', position: [8, 0, 34.332], rotation: [0, 0, 0], label: "Pallet 2", rollColor: PALETTE[13] }
+    );
+
+    // Personnel
+    arr.push(
+      { id: 'human-1', type: 'human', position: [-11.458, 0, 38.084], rotation: [0, Math.PI / 2, 0], label: "Inspector 1" },
+      { id: 'human-2', type: 'human', position: [6.542, 0, 38.284], rotation: [0, -Math.PI / 2, 0], label: "QC Inspector" },
+      { id: 'human-3', type: 'human', position: [26.342, 0, 38.284], rotation: [0, -Math.PI / 2, 0], label: "Table Assistant" },
+      { id: 'human-4', type: 'human', position: [17.542, 0, 38.284], rotation: [0, -Math.PI / 2, 0], label: "Process Operator" },
+      { id: 'human-5', type: 'human', position: [-4.458, 0, 45.284], rotation: [0, Math.PI / 2, 0], label: "QR Assistant" },
+      { id: 'scanner-op', type: 'human', position: [-28.458, 0, 17.284], rotation: [0, Math.PI, 0], label: "Handheld Scanner Op" }
+    );
+    // 7 Pillars evenly spaced across the Z axis (15m gaps)
+    const pillarZ = [30.0, 15.0, 0.0, -15.0, -30.0, -45.0, -60.0];
+    pillarZ.forEach((z, i) => {
+      arr.push({
+        id: `warehouse-pillar-f7-${i + 1}`,
+        type: 'pillar-1',
+        position: [-38.586, 0, z],
+        rotation: [0, Math.PI / 2, 0],
+        label: `Pillar ${i + 1}`
+      });
+    });
+    return arr;
+  };
+
   const [isLayoutMode, setIsLayoutMode] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [editTool, setEditTool] = useState<"move" | "rotate" | "delete" | "add">("move");
   const [selectedAddType, setSelectedAddType] = useState("rack");
   const [selectedAddLabel, setSelectedAddLabel] = useState("Rack");
   const [placingItem, setPlacingItem] = useState(false);
-  const [addedItems, setAddedItems] = useState<any[]>([]);
-  const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  const [addedItems, setAddedItems] = useState<any[]>(() => getInitialDefaultItems());
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [showMaterialFlow, setShowMaterialFlow] = useState(true);
 
   // Local Undo/Redo tracking for Warehouse
-  const [history, setHistory] = useState<any[][]>([[]]);
+  const [history, setHistory] = useState<any[][]>(() => [[getInitialDefaultItems()]]);
   const [historyIndex, setHistoryIndex] = useState(0);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   const pushHistory = (newItems: any[]) => {
     const newHistory = history.slice(0, historyIndex + 1);
@@ -814,8 +944,32 @@ export const WarehouseView = () => {
           const data = layoutSnap.data();
           const savedItems = data.machineLayout || [];
           if (savedItems.length > 0) {
-            setAddedItems(savedItems);
-            setHistory([savedItems]);
+            const defaultItems = getInitialDefaultItems();
+            const updatedDefaults = defaultItems.map((defItem: any) => {
+              const saved = savedItems.find((s: any) => s.id === defItem.id);
+              let finalItem = saved ? { ...defItem, ...saved } : defItem;
+              
+              // Apply explicit workspace baseline rules if needed
+              if (finalItem.type === 'rack' || finalItem.id.startsWith('warehouse-pillar')) {
+                const freshDefault = defaultItems.find(d => d.id === finalItem.id);
+                if (freshDefault) finalItem.position = freshDefault.position;
+              }
+              
+              if (finalItem.id === 'inspection-1') return { ...finalItem, position: [0.542, 0, 38.284] };
+              if (finalItem.id === 'inspection-2') return { ...finalItem, position: [-6.458, 0, 37.784] };
+              if (finalItem.id === 'table-1') return { ...finalItem, position: [23.542, 0, 38.284] };
+              if (finalItem.id === 'table-2') return { ...finalItem, position: [14.542, 0, 38.284] };
+              if (finalItem.id === 'pallet-1') return { ...finalItem, position: [22, 0, 34.332] };
+              if (finalItem.id === 'pallet-2') return { ...finalItem, position: [8, 0, 34.332] };
+              
+              return finalItem;
+            });
+
+            const dynamicItems = savedItems.filter((s: any) => !defaultItems.some((d: any) => d.id === s.id));
+            const merged = [...updatedDefaults, ...dynamicItems];
+
+            setAddedItems(merged);
+            setHistory([merged]);
           }
         }
       } catch (err) {
@@ -825,8 +979,8 @@ export const WarehouseView = () => {
     fetchLayout();
   }, []);
 
-  const undo = () => { if (historyIndex > 0) { setHistoryIndex(historyIndex - 1); setAddedItems(history[historyIndex - 1]); setSelectedItem(null); } };
-  const redo = () => { if (historyIndex < history.length - 1) { setHistoryIndex(historyIndex + 1); setAddedItems(history[historyIndex + 1]); setSelectedItem(null); } };
+  const undo = () => { if (historyIndex > 0) { setHistoryIndex(historyIndex - 1); setAddedItems(history[historyIndex - 1]); setSelectedItems([]); } };
+  const redo = () => { if (historyIndex < history.length - 1) { setHistoryIndex(historyIndex + 1); setAddedItems(history[historyIndex + 1]); setSelectedItems([]); } };
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
 
@@ -842,27 +996,55 @@ export const WarehouseView = () => {
       setAddedItems(newItems);
       pushHistory(newItems);
     } else if (isLayoutMode) {
-      setSelectedItem(null);
+      setSelectedItems([]);
     }
   };
 
-  const handleMove = (id: string, pos: [number, number, number]) => {
-    const newItems = addedItems.map(i => i.id === id ? { ...i, position: pos } : i);
+  const handleMove = (id: string, newPos: [number, number, number]) => {
+    const item = addedItems.find(i => i.id === id);
+    if (!item) return;
+    const deltaX = newPos[0] - item.position[0];
+    const deltaZ = newPos[2] - item.position[2];
+
+    const newItems = addedItems.map(i => {
+      if (selectedItems.includes(i.id)) {
+        return {
+          ...i,
+          position: [i.position[0] + deltaX, i.position[1], i.position[2] + deltaZ]
+        };
+      }
+      return i;
+    });
+
     setAddedItems(newItems);
     pushHistory(newItems);
   };
 
-  const handleRotate = (id: string, rot: [number, number, number]) => {
-    const newItems = addedItems.map(i => i.id === id ? { ...i, rotation: rot } : i);
+  const handleRotate = (id: string, newRot: [number, number, number]) => {
+    const item = addedItems.find(i => i.id === id);
+    if (!item) return;
+    const deltaY = newRot[1] - item.rotation[1];
+
+    const newItems = addedItems.map(i => {
+      if (selectedItems.includes(i.id)) {
+        return {
+          ...i,
+          rotation: [i.rotation[0], i.rotation[1] + deltaY, i.rotation[2]]
+        };
+      }
+      return i;
+    });
+
     setAddedItems(newItems);
     pushHistory(newItems);
   };
 
   const handleDelete = (id: string) => {
-    const newItems = addedItems.filter(i => i.id !== id);
+    const toDelete = selectedItems.includes(id) ? selectedItems : [id];
+    const newItems = addedItems.filter(i => !toDelete.includes(i.id));
     setAddedItems(newItems);
     pushHistory(newItems);
-    if (selectedItem === id) setSelectedItem(null);
+    setSelectedItems([]);
   };
 
   const racks = useMemo(() => {
@@ -942,6 +1124,17 @@ export const WarehouseView = () => {
           {isLayoutMode ? "Exit Edit" : "Modify Layout"}
         </button>
 
+        <button
+          onClick={() => setShowMaterialFlow(!showMaterialFlow)}
+          className={cn(
+            "flex items-center gap-2 px-6 py-2.5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all shadow-2xl border",
+            showMaterialFlow ? "bg-violet-600 text-white border-violet-500 shadow-violet-600/30" : "bg-slate-900/80 backdrop-blur-md text-white hover:bg-violet-600 border-white/10 hover:border-violet-500"
+          )}
+        >
+          <ActivityIcon size={14} />
+          Material Flow
+        </button>
+
         {isLayoutMode && (
           <button
             onClick={handleSave}
@@ -975,10 +1168,11 @@ export const WarehouseView = () => {
                 <option value="monitoring-tv">Monitoring TV</option>
                 <option value="human">Human Operator</option>
                 <option value="scanner-station">QR Scanner Station</option>
+                <option value="qr-workstation">QR Sticker Station</option>
                 <option value="inspection-machine">Inspection Machine</option>
                 <option value="pallet">Pallet</option>
-                <option value="pillar-1">Pillar 1 (2.5x1.7ft)</option>
-                <option value="pillar-2">Pillar 2 (3.5x1.7ft)</option>
+                <option value="pillar-1">Pillar 1 (2.5x1.7m)</option>
+                <option value="pillar-2">Pillar 2 (1.7x3.5m)</option>
               </select>
               <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
             </div>
@@ -995,20 +1189,25 @@ export const WarehouseView = () => {
         </div>
       )}
 
+      {/* ── MATERIAL FLOW OVERLAY ── */}
+      {showMaterialFlow && <WarehouseMaterialFlow />}
+
       {/* ── SELECTION STATUS FOOTER ── */}
-      {isLayoutMode && selectedItem && (
+      {isLayoutMode && selectedItems.length > 0 && (
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[60] bg-slate-950/90 backdrop-blur-2xl px-8 py-4 rounded-3xl border border-violet-500/30 shadow-2xl flex items-center gap-6 animate-in slide-in-from-bottom-4">
           <div className="flex flex-col">
             <span className="text-[10px] font-black uppercase text-violet-400 tracking-widest leading-none mb-1">Active Selection</span>
-            <span className="text-white font-bold text-sm">1 Item Selected</span>
+            <span className="text-white font-bold text-sm">{selectedItems.length} {selectedItems.length === 1 ? 'Item' : 'Items'} Selected</span>
           </div>
           <div className="h-8 w-px bg-white/10" />
           <div className="flex items-center gap-2">
             {editTool === "rotate" && (
               <button 
                 onClick={() => {
-                  const item = addedItems.find(i => i.id === selectedItem);
-                  if (item) handleRotate(selectedItem, [item.rotation[0], item.rotation[1] + Math.PI / 2, item.rotation[2]]);
+                  selectedItems.forEach(id => {
+                    const item = addedItems.find(i => i.id === id);
+                    if (item) handleRotate(id, [item.rotation[0], item.rotation[1] + Math.PI / 2, item.rotation[2]]);
+                  });
                 }}
                 className="bg-violet-600 hover:bg-violet-500 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
               >
@@ -1016,11 +1215,11 @@ export const WarehouseView = () => {
               </button>
             )}
             {editTool === "delete" && (
-              <button onClick={() => handleDelete(selectedItem)} className="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+              <button onClick={() => handleDelete(selectedItems[0])} className="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
                 Delete Selected
               </button>
             )}
-            <button onClick={() => setSelectedItem(null)} className="text-slate-400 hover:text-white text-[10px] font-black uppercase tracking-widest px-4 py-2">
+            <button onClick={() => setSelectedItems([])} className="text-slate-400 hover:text-white text-[10px] font-black uppercase tracking-widest px-4 py-2">
               Clear
             </button>
           </div>
@@ -1044,145 +1243,156 @@ export const WarehouseView = () => {
             <meshStandardMaterial color="#fdf5e6" opacity={0.6} transparent />
           </mesh>
 
-          {/* Zone Boundaries */}
-          {Object.entries(ZONE_LAYOUT).map(([zone, cfg]) => (
-            <ZoneBoundary key={`boundary-${zone}`} positions={cfg.positions} zoneName={zone} />
-          ))}
-
-          {/* Double Racks */}
-          {racks.map((r, idx) => (
-            <DoubleRack
-              key={r.id}
-              position={r.pos}
-              label={r.id}
-              rollColor={r.id.startsWith("Q") ? PALETTE[13] : PALETTE[idx % PALETTE.length]}
-              emptySlots={r.id === "F2-R2" ? [1] : []}
-            />
-          ))}
-
-          {/* Inspection Machines */}
-          <InspectionMachine position={[17, 0, 52]} rotation={[-Math.PI / 2, Math.PI, Math.PI / 2]} scale={[2, 2, 2]} name="Inspection Machine 1" />
-          <InspectionMachine position={[10, 0, 51.5]} rotation={[-Math.PI / 2, Math.PI, -Math.PI / 2]} scale={[2, 2, 2]} name="Inspection Machine 2" />
-          
-          {/* Pallets */}
-          <FabricRollPallet position={[22, 0, 45]} rollColor={PALETTE[5]} rotation={[0, 0, 0]} name="Pallet 1" />
-          <FabricRollPallet position={[8, 0, 45]} rollColor={PALETTE[13]} rotation={[0, 0, 0]} name="Pallet 2" />
-
-          {/* Tables */}
-          <IndustrialWorkTable position={[40, 0, 52]} rotation={[0, Math.PI / 2, 0]} scale={[2.5, 2.5, 2.5]} name="Shrinkage Table 1" />
-          <group position={[40, 1.6, 52]}>
-            <FabricSquare position={[0.3, 0.7, 0.3]} color={PALETTE[2]} />
-            <FabricSquare position={[-0.3, 0.7, -0.3]} color={PALETTE[3]} />
-          </group>
-          <IndustrialWorkTable position={[31, 0, 52]} rotation={[0, -Math.PI / 2, 0]} scale={[2.5, 2.5, 2.5]} name="Shrinkage Table 2" />
-          <group position={[31, 1.6, 52]}>
-            <FabricSquare position={[0, 0.7, 0]} color={PALETTE[7]} />
-          </group>
-
-          {/* Operators */}
-          <StandingOperator position={[5, 0, 51.8]} rotation={[0, Math.PI / 2, 0]} name="Inspector 1" />
-          <StandingOperator position={[23, 0, 52]} rotation={[0, -Math.PI / 2, 0]} name="QC Inspector" />
-          <StandingOperator position={[42.8, 0, 52]} rotation={[0, -Math.PI / 2, 0]} name="Table Assistant" />
-          <StandingOperator position={[34, 0, 52]} rotation={[0, -Math.PI / 2, 0]} name="Process Operator" />
-          <StandingOperator position={[12, 0, 59]} rotation={[0, Math.PI / 2, 0]} name="QR Assistant" />
-          <ScannerOperator position={[-12, 0, 31]} rotation={[0, Math.PI, 0]} name="Handheld Scanner Op" />
-
-          {/* Equipment */}
-          <QRScannerStation position={[14, 0, 59]} rotation={[0, -Math.PI / 2, 0]} scale={[1.2, 1.2, 1.2]} />
-          <MonitoringTV position={[5, 0, 63]} rotation={[0, Math.PI, 0]} scale={[1.4, 1.4, 1.4]} name="Main Dashboard" />
-          <MonitoringTV position={[-9, 0, 62]} rotation={[0, Math.PI / 2, 0]} scale={[1.4, 1.4, 1.4]} name="Process Monitor" />
-
-          {/* Logistics */}
-          <AccurateAGV position={[-21.5, 0, 55]} rotation={[0, 0, 0]} scale={[2, 2, 2]} name="AGV 1" />
-          <AccurateAGV position={[14, 0, 40]} rotation={[0, Math.PI, 0]} scale={[2, 2, 2]} name="AGV 2" />
-          <HybridConveyor position={[-14.0, 0, 58.5]} rotation={[0, -Math.PI / 2, 0]} />
-          <QRWorkstation position={[-11.0, 0, 70]} rotation={[0, -Math.PI / 2, 0]} scale={[2, 2, 2]} />
-          <AutoScannerShed position={[-14.0, 0, 67.5]} />
-          <Truck position={[-14, 0, 90]} />
-
-          {/* Static Pallet Stack */}
-          <group position={[-15.5, 0, 59.3]} rotation={[0, -Math.PI / 2, 0]}>
-            {[0, 1, 2, 3].map((i) => (
-              <FabricRollPallet
-                key={`stack-${i}`}
-                position={[i * 1.6, 0, 0]}
-                rotation={[0, Math.PI / 2, 0]}
-                rollColor={PALETTE[(i + 10) % PALETTE.length]}
-              />
+          {/* Layout (Zones, Equipment, and Logistics) */}
+          <>
+            {/* Zone Boundaries */}
+            {Object.entries(ZONE_LAYOUT).map(([zone, cfg]) => (
+              <ZoneBoundary key={`boundary-${zone}`} positions={cfg.positions} zoneName={zone} />
             ))}
-          </group>
 
-          {/* User Added Items */}
-          {addedItems.map((item) => {
-            let content = null;
-            if (item.type === "rack") {
-              // Supermarket/Rack logic mapping internally
-              content = <DoubleRack position={[0,0,0]} label="RACK" rollColor="#1e40af" />;
-            } else if (item.type === "supermarket") { // legacy check for already saved options
-              content = <DoubleRack position={[0,0,0]} label="RACK" rollColor="#1e40af" />;
-            } else if (item.type === "agv") {
-              content = <AccurateAGV position={[0,0,0]} rotation={[0, 0, 0]} scale={[2, 2, 2]} />;
-            } else if (item.type === "work-table") {
-              content = <IndustrialWorkTable position={[0,0,0]} rotation={[0, 0, 0]} scale={[2.5, 2.5, 2.5]} />;
-            } else if (item.type === "monitoring-tv") {
-              content = <MonitoringTV position={[0,0,0]} rotation={[0, 0, 0]} scale={[1.4, 1.4, 1.4]} />;
-            } else if (item.type === "human") {
-              content = <StandingOperator position={[0,0,0]} rotation={[0, 0, 0]} />;
-            } else if (item.type === "scanner-station") {
-              content = <QRScannerStation position={[0,0,0]} rotation={[0, 0, 0]} scale={[1.2, 1.2, 1.2]} />;
-            } else if (item.type === "inspection-machine") {
-              content = <InspectionMachine position={[0,0,0]} rotation={[0, 0, 0]} scale={[2, 2, 2]} />;
-            } else if (item.type === "pallet") {
-              content = <FabricRollPallet position={[0,0,0]} rotation={[0, 0, 0]} rollColor="#f97316" />;
-            } else if (item.type === "pillar-1") {
-              const pLength = 2.5 * 0.3048;
-              const pWidth = 1.7 * 0.3048;
-              const pHeight = 9.0 * 0.3048;
-              content = (
+            {/* Equipment */}
+            <MonitoringTV position={[-11.458, 0, 49.284]} rotation={[0, Math.PI, 0]} scale={[1.4, 1.4, 1.4]} name="Main Dashboard" />
+            <MonitoringTV position={[-25.458, 0, 48.284]} rotation={[0, Math.PI / 2, 0]} scale={[1.4, 1.4, 1.4]} name="Process Monitor" />
+
+            {/* Logistics */}
+            <AccurateAGV position={[-21.5, 0, 45.856]} rotation={[0, 0, 0]} scale={[2, 2, 2]} name="AGV 1" />
+            <AccurateAGV position={[14, 0, 30.856]} rotation={[0, Math.PI, 0]} scale={[2, 2, 2]} name="AGV 2" />
+            <HybridConveyor position={[-14.0, 0, 49.356]} rotation={[0, -Math.PI / 2, 0]} />
+
+            <AutoScannerShed position={[-14.0, 0, 58.356]} />
+            <Truck position={[-14, 0, 80.856]} />
+
+            {/* Static Pallet Stack */}
+            <group position={[-15.5, 0, 50.156]} rotation={[0, -Math.PI / 2, 0]}>
+              {[0, 1, 2, 3].map((i) => (
+                <FabricRollPallet
+                  key={`stack-${i}`}
+                  position={[i * 1.6, 0, 0]}
+                  rotation={[0, Math.PI / 2, 0]}
+                  rollColor={PALETTE[(i + 10) % PALETTE.length]}
+                />
+              ))}
+            </group>
+
+            {/* User Added and Default Items */}
+            {addedItems.map((item) => {
+              let content = null;
+              if (item.type === "rack" || item.type === "supermarket") {
+                content = (
+                  <DoubleRack 
+                    position={[0,0,0]} 
+                    label={item.label || "RACK"} 
+                    rollColor={item.rollColor || "#1e40af"} 
+                    emptySlots={item.emptySlots || []} 
+                  />
+                );
+              } else if (item.type === "agv") {
+                content = <AccurateAGV position={[0,0,0]} rotation={[0, 0, 0]} scale={[2, 2, 2]} />;
+              } else if (item.type === "work-table") {
+                content = (
                   <group>
-                      <mesh position={[0, pHeight / 2, 0]}>
-                          <boxGeometry args={[pLength, pHeight, pWidth]} />
-                          <meshStandardMaterial color="#334155" roughness={0.8} />
-                      </mesh>
-                      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                          <planeGeometry args={[pLength, pWidth]} />
-                          <meshBasicMaterial color="#eab308" transparent opacity={0.2} />
-                      </mesh>
+                    <IndustrialWorkTable position={[0,0,0]} rotation={[0, 0, 0]} scale={[2.5, 2.1, 2.5]} name={item.label} />
+                    <group position={[0, 0.3, 0]}>
+                      <FabricSquare position={[0.3, 1.6, 0.3]} color={PALETTE[2]} />
+                      <FabricSquare position={[-0.3, 1.6, -0.3]} color={PALETTE[3]} />
+                    </group>
                   </group>
+                );
+              } else if (item.type === "monitoring-tv") {
+                content = <MonitoringTV position={[0,0,0]} rotation={[0, 0, 0]} scale={[1.4, 1.4, 1.4]} />;
+              } else if (item.type === "human") {
+                content = item.id === 'scanner-op' ? (
+                  <ScannerOperator position={[0,0,0]} rotation={[0, 0, 0]} name={item.label} />
+                ) : (
+                  <StandingOperator position={[0,0,0]} rotation={[0, 0, 0]} name={item.label} />
+                );
+              } else if (item.type === "scanner-station") {
+                content = <QRScannerStation position={[0,0,0]} rotation={[0, 0, 0]} scale={[1.2, 1.2, 1.2]} />;
+              } else if (item.type === "qr-workstation") {
+                content = <QRWorkstation position={[0,0,0]} rotation={[0, 0, 0]} scale={[2, 2, 2]} />;
+              } else if (item.type === "inspection-machine") {
+                content = <InspectionMachine position={[0,0,0]} rotation={[0, 0, 0]} scale={[2, 1.6, 2]} name={item.label} />;
+              } else if (item.type === "pallet") {
+                content = <FabricRollPallet position={[0,0,0]} rotation={[0, 0, 0]} rollColor={item.rollColor || "#f97316"} name={item.label} />;
+              } else if (item.type === "pillar-1") {
+                const pLength = 2.5;
+                const pWidth = 1.7;
+                const pHeight = 9.0;
+                content = (
+                    <group>
+                        <mesh position={[0, pHeight / 2, 0]}>
+                            <boxGeometry args={[pLength, pHeight, pWidth]} />
+                            <meshBasicMaterial transparent={true} opacity={0} depthWrite={false} />
+                        </mesh>
+                        <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                            <planeGeometry args={[pLength, pWidth]} />
+                            <meshBasicMaterial color="#eab308" transparent opacity={0.2} />
+                        </mesh>
+                        <Line
+                            points={[
+                                [-pLength / 2, 0.02, -pWidth / 2],
+                                [pLength / 2, 0.02, -pWidth / 2],
+                                [pLength / 2, 0.02, pWidth / 2],
+                                [-pLength / 2, 0.02, pWidth / 2],
+                                [-pLength / 2, 0.02, -pWidth / 2],
+                            ]}
+                            color="#eab308"
+                            lineWidth={2}
+                        />
+                    </group>
+                );
+              } else if (item.type === "pillar-2") {
+                const pLength = 1.7;
+                const pWidth = 3.5;
+                const pHeight = 9.0;
+                content = (
+                    <group>
+                        <mesh position={[0, pHeight / 2, 0]}>
+                            <boxGeometry args={[pLength, pHeight, pWidth]} />
+                            <meshBasicMaterial transparent={true} opacity={0} depthWrite={false} />
+                        </mesh>
+                        <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                            <planeGeometry args={[pLength, pWidth]} />
+                            <meshBasicMaterial color="#eab308" transparent opacity={0.2} />
+                        </mesh>
+                        <Line
+                            points={[
+                                [-pLength / 2, 0.02, -pWidth / 2],
+                                [pLength / 2, 0.02, -pWidth / 2],
+                                [pLength / 2, 0.02, pWidth / 2],
+                                [-pLength / 2, 0.02, pWidth / 2],
+                                [-pLength / 2, 0.02, -pWidth / 2],
+                            ]}
+                            color="#eab308"
+                            lineWidth={2}
+                        />
+                    </group>
+                );
+              }
+              
+              return (
+                <DraggableWarehouseItem
+                  key={item.id}
+                  item={item}
+                  isSelected={selectedItems.includes(item.id)}
+                  isPrimarySelected={selectedItems[0] === item.id}
+                  editTool={isLayoutMode ? editTool : null}
+                  onSelect={(id: string, isMulti: boolean) => {
+                    if (isMulti) {
+                      setSelectedItems(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                    } else {
+                      setSelectedItems([id]);
+                    }
+                  }}
+                  onMove={handleMove}
+                  onRotate={handleRotate}
+                  onDelete={handleDelete}
+                >
+                  {content}
+                </DraggableWarehouseItem>
               );
-            } else if (item.type === "pillar-2") {
-              const pLength = 3.5 * 0.3048;
-              const pWidth = 1.7 * 0.3048;
-              const pHeight = 9.0 * 0.3048;
-              content = (
-                  <group>
-                      <mesh position={[0, pHeight / 2, 0]}>
-                          <boxGeometry args={[pLength, pHeight, pWidth]} />
-                          <meshStandardMaterial color="#334155" roughness={0.8} />
-                      </mesh>
-                      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                          <planeGeometry args={[pLength, pWidth]} />
-                          <meshBasicMaterial color="#eab308" transparent opacity={0.2} />
-                      </mesh>
-                  </group>
-              );
-            }
-            
-            return (
-              <DraggableWarehouseItem
-                key={item.id}
-                item={item}
-                isSelected={selectedItem === item.id}
-                editTool={isLayoutMode ? editTool : null}
-                onSelect={(id: string) => setSelectedItem(id)}
-                onMove={handleMove}
-                onRotate={handleRotate}
-                onDelete={handleDelete}
-              >
-                {content}
-              </DraggableWarehouseItem>
-            );
-          })}
+            })}
+          </>
 
         </Suspense>
       </Canvas>

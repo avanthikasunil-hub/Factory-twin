@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Save, Factory, Eye, Activity, Target,
   Undo2, Redo2, Move, AlertCircle, X, ChevronDown, ChevronUp, Settings, Filter,
-  Users, Scissors, TrendingUp, Info, RefreshCw, Plus, Layers, FileDown
+  Users, Scissors, TrendingUp, Info, RefreshCw, Plus, Layers, FileDown, AlertTriangle
 } from 'lucide-react';
 import { generateLinePDF } from '@/utils/pdfGenerator';
 import {
@@ -35,7 +35,7 @@ const LinePlannerPage = () => {
     setLineParameters, visibleSection, setVisibleSection, undo, redo,
     canUndo, canRedo, isMoveMode, setMoveMode, selectedMachines,
     isDraggingActive, setDraggingActive, layoutError, warnings, clearWarnings,
-    layoutAlerts, dismissLayoutAlert, fetchAndApplyOB, preparatoryOps, moveToLayout
+    layoutAlerts, dismissLayoutAlert, fetchAndApplyOB, preparatoryOps, moveToLayout, reassignSectionOperations
   } = useLineStore();
 
   const [localTarget, setLocalTarget] = useState(targetOutput.toString());
@@ -93,6 +93,12 @@ const LinePlannerPage = () => {
       });
     }
   };
+
+  const bottlenecks = useMemo(() => {
+    return operations
+      .filter(op => op.isBottleneck)
+      .sort((a, b) => (b.utilization || 0) - (a.utilization || 0));
+  }, [operations]);
 
   useEffect(() => {
     if (warnings.length > 0 && !layoutError) {
@@ -209,8 +215,8 @@ const LinePlannerPage = () => {
     const assemblyMachines = prodMachines.filter(m =>
       (m.section || '').toLowerCase().includes('assembly')
     );
-    const assemblyOps = operations.filter(op =>
-      (op.section || '').toLowerCase().includes('assembly')
+    const assemblyOps = (Array.isArray(operations) ? operations : []).filter(op =>
+      (op?.section || '').toLowerCase().includes('assembly')
     );
 
     // Build per-opName machine count across ALL assembly lanes
@@ -231,6 +237,7 @@ const LinePlannerPage = () => {
     let assemblyTotalCount = assemblyMachines.length;
 
     assemblyOps.forEach(op => {
+      if (!op) return;
       const opKey = (op.op_name || '').toLowerCase().trim();
       const count = assemblyOpCount[opKey] || 0;
       if (count === 0 || op.smv <= 0) return;
@@ -285,6 +292,7 @@ const LinePlannerPage = () => {
       totalOperators: prodMachines.filter(m => !m.isInspection).length,
       totalStyleSMV,
       lineCapacity: 1800,
+      bottleneckOpName: assemblyBottleneck
     };
   }, [operations, machineLayout, workingHours, efficiency, targetOutput, currentLine]);
 
@@ -405,23 +413,31 @@ const LinePlannerPage = () => {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="bg-red-600 text-white px-6 py-3 flex items-center justify-between shadow-xl z-20 border-b border-red-500/40"
+            className="bg-red-600 text-white px-6 py-4 flex items-center justify-between shadow-xl z-20 border-b border-red-500/40"
           >
-            <div className="flex items-center gap-3">
-              <div className="p-1.5 rounded-full bg-white/20 animate-pulse">
+            <div className="flex items-center gap-5">
+              <div className="p-2 rounded-full bg-white/20 animate-pulse">
                 <AlertCircle className="w-5 h-5" />
               </div>
               <div className="flex flex-col">
-                <span className="font-black text-[11px] uppercase tracking-[0.2em]">
+                <span className="font-black text-[11px] uppercase tracking-[0.2em] opacity-80">
                   Space Violation
                 </span>
-                <p className="text-[12px] font-bold opacity-90 leading-tight">{alert.message}</p>
+                <p className="text-[14px] font-bold leading-tight">{alert.message}</p>
               </div>
+
+              {alert.suggestions && alert.suggestions.length > 0 && (
+                <div className="flex items-center gap-3 ml-4 pl-6 border-l border-white/20">
+                  <span className="text-[10px] font-black uppercase tracking-widest opacity-80 whitespace-nowrap">
+                    Space available in: <span className="text-white bg-white/20 px-2 py-1 rounded-md ml-1">{alert.suggestions.join(', ').toUpperCase()}</span>
+                  </span>
+                </div>
+              )}
             </div>
             <Button
               variant="ghost" size="icon"
               onClick={() => dismissLayoutAlert(alert.id)}
-              className="h-8 w-8 text-white/50 hover:text-white hover:bg-white/10 rounded-full"
+              className="h-8 w-8 text-white/50 hover:text-white hover:bg-white/10 rounded-full ml-4"
             >
               <X className="w-5 h-5" />
             </Button>
@@ -527,6 +543,7 @@ const LinePlannerPage = () => {
               </div>
             )}
 
+
             {/* Line Statistics */}
             <div className="text-left py-2">
               <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-6 px-1">Line Statistics</h2>
@@ -583,6 +600,11 @@ const LinePlannerPage = () => {
                           <div key={name} className="flex items-center justify-between p-4 rounded-2xl border-2 bg-card border-border/60 hover:border-primary/40 shadow-sm transition-all">
                             <div className="flex flex-col flex-1 overflow-hidden mr-2">
                               <span className="font-black text-foreground text-[13px] uppercase tracking-tight truncate">{name}</span>
+                              {m.bottleneckOpName && (
+                                <span className="text-[10px] font-bold text-red-500 truncate mt-0.5">
+                                  {m.bottleneckOpName}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-5 text-right flex-shrink-0">
                               <span className="font-black text-muted-foreground/30 text-[10px] uppercase tracking-tighter">{m.count} MC</span>
@@ -604,7 +626,14 @@ const LinePlannerPage = () => {
                                 ? <ChevronUp className="w-4 h-4 text-primary" />
                                 : <ChevronDown className="w-4 h-4 text-primary" />}
                             </div>
-                            <span className="font-black text-foreground text-[13px] uppercase tracking-tight">Assembly Zone</span>
+                            <div className="flex flex-col flex-1 min-w-0">
+                              <span className="font-black text-foreground text-[13px] uppercase tracking-tight">Assembly Zone</span>
+                              {stats.bottleneckOpName && (
+                                <span className="text-[10px] font-bold text-red-500 truncate">
+                                  {stats.bottleneckOpName}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-5 text-right flex-shrink-0">
                             <span className="font-black text-muted-foreground/30 text-[10px] uppercase tracking-tighter">

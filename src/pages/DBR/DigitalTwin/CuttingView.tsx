@@ -2,13 +2,73 @@ import React, { useMemo, useState, useEffect } from "react";
 import { Scene3D } from "@/components/3d/Scene3D";
 import { SectionLayout, MachinePosition } from "@/types";
 import { useLineStore } from "@/store/useLineStore";
-import { Layout, Settings, Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle } from "lucide-react";
+import { Layout, Settings, Edit2, Save, Undo2, Redo2, ChevronDown, Play, CheckCircle, Scissors, Ruler, Layers, Zap, Hash, Archive, Truck, Activity, ArrowRight, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { API_BASE_URL } from "@/config";
 import { toast } from "sonner";
 
 const FT = 0.3048;
 const Z_LENGTH = 500;
+
+/* ───── 1. MATERIAL FLOW COMPONENT ───── */
+const CUTTING_FLOW_STEPS = [
+  { id: 'issue', label: 'Fabric Issue', icon: <Truck size={14} />, color: '#6366f1' },
+  { id: 'relaxation', label: 'Fabric Relaxation', icon: <Activity size={14} />, color: '#818cf8' },
+  { id: 'spreading', label: 'Spreading (Auto & Manual)', icon: <Layers size={14} />, color: '#a78bfa' },
+  { id: 'marker', label: 'Marker Placement', icon: <Ruler size={14} />, color: '#3b82f6' },
+  { id: 'cutting', label: 'Cutting (Auto/Straight/Band)', icon: <Scissors size={14} />, color: '#f43f5e' },
+  { id: 'trimming', label: 'Trimming (If required)', icon: <Scissors size={14} />, color: '#fbbf24' },
+  { id: 'fusing', label: 'Fusing (If required)', icon: <Zap size={14} />, color: '#f97316' },
+  { id: 'bundling', label: 'Bundling & Ticketing', icon: <Hash size={14} />, color: '#ec4899' },
+  { id: 'supermarket', label: 'Storage in Supermarket', icon: <Archive size={14} />, color: '#22c55e' },
+];
+
+const CuttingMaterialFlow = () => {
+  return (
+    <div className="absolute top-24 left-6 z-[70] w-72 bg-slate-950/80 backdrop-blur-2xl p-6 rounded-[2rem] border border-white/10 shadow-2xl animate-in fade-in slide-in-from-left-4 overflow-hidden">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 bg-violet-500/20 rounded-xl text-violet-400">
+          <ClipboardList size={18} />
+        </div>
+        <div className="flex flex-col">
+          <h3 className="text-[11px] font-black uppercase text-white tracking-[0.2em] leading-none mb-1">Cutting Flow</h3>
+          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Process Lifecycle</span>
+        </div>
+      </div>
+
+      <div className="relative space-y-3">
+        {/* Connection Line */}
+        <div className="absolute left-[15px] top-4 bottom-4 w-[2px] bg-gradient-to-b from-violet-500/50 via-slate-700/30 to-emerald-500/50" />
+
+        {CUTTING_FLOW_STEPS.map((step, idx) => (
+          <div key={step.id} className="group relative flex items-center gap-4 cursor-pointer">
+            {/* Step Node */}
+            <div 
+              className="relative z-10 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110"
+              style={{ background: `${step.color}20`, border: `2px solid ${step.color}` }}
+            >
+              <div className="text-white" style={{ color: step.color }}>
+                {step.icon}
+              </div>
+              {/* Glow effect */}
+              <div className="absolute inset-0 rounded-full blur-[8px] opacity-20 group-hover:opacity-40 transition-opacity" style={{ background: step.color }} />
+            </div>
+
+            {/* Step Label */}
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black uppercase text-slate-400 group-hover:text-white transition-colors tracking-widest leading-none mb-1">
+                Step {idx + 1}
+              </span>
+              <span className="text-[11px] font-bold text-white/90 group-hover:text-white transition-colors">
+                {step.label}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 export const CuttingView: React.FC = () => {
     const [activeFloor, setActiveFloor] = useState("Floor 1");
@@ -17,6 +77,7 @@ export const CuttingView: React.FC = () => {
     const [editTool, setEditTool] = useState<"move" | "rotate" | "delete" | "add">("move");
     const [selectedAddType, setSelectedAddType] = useState("gerber");
     const [selectedAddLabel, setSelectedAddLabel] = useState("Gerber Cutter");
+    const [showMaterialFlow, setShowMaterialFlow] = useState(true);
 
     const {
         machineLayout,
@@ -36,7 +97,7 @@ export const CuttingView: React.FC = () => {
     } = useLineStore();
 
     // Dimensions for layout calculation
-    const z0_w = 8.18, z0_l = 61.7, gap01 = 2.4;
+    const z0_w = 8.18, z0_l = 61.7, gap01 = 4.0;
     const z1_w = 9.7, z1_l = 57.6, gap12 = 2.7;
     const z2_w = 10.0, z2_l = 57.6, gap23 = 3.0;
     const z3_w = 10.0, z3_l = 57.6;
@@ -128,7 +189,14 @@ export const CuttingView: React.FC = () => {
             { id: 'fusing-custom-2', operation: { op_no: 'FM-02', op_name: 'Custom Fusing Machine', machine_type: 'fusing_custom', section: 'Cutting Zone 3' }, tableLength: 24.4, tableWidth: 5.7, tableHeight: 5, position: { x: startX + (113 * FT) - (89.66 * FT) - (24.4 * FT) - (7 * FT), y: 0, z: z3Pos + (4.47 * FT) }, rotation: { x: 0, y: 0, z: 0 }, lane: 'A', section: 'Cutting Zone 3', centerModel: true, tableOnly: true } as any,
             { id: 'straight-knife-1', operation: { op_no: 'KNIFE-01', op_name: 'Straight Knife', machine_type: 'straightknife', smv: 0.5, section: 'Cutting Zone 2' }, position: { x: startX + (85 * FT), y: 5.5 * FT, z: z2Pos }, rotation: { x: 0, y: 0, z: 0 }, lane: 'A', section: 'Cutting Zone 2', tableLength: 1.0, tableWidth: 1.0, tableHeight: 2.0, centerModel: true, hideZone: true } as any,
             { id: 'manual-spreader-1', operation: { op_no: 'MSPR-01', op_name: 'Manual Spreader', machine_type: 'manual-spreader', smv: 0, section: 'Cutting Zone 1' }, position: { x: startX + (165 * FT), y: 0, z: z1Pos }, rotation: { x: 0, y: 0, z: 0 }, lane: 'A', section: 'Cutting Zone 1', tableWidth: 7.1, fabricLength: 25, fabricColor: '#1e3a8a' } as any,
-            { id: 'manual-spreader-2', operation: { op_no: 'MSPR-02', op_name: 'Manual Spreader', machine_type: 'manual-spreader', smv: 0, section: 'Cutting Zone 2' }, position: { x: startX + (90 * FT), y: 0, z: z2Pos }, rotation: { x: 0, y: Math.PI, z: 0 }, lane: 'A', section: 'Cutting Zone 2', tableWidth: 7.1, fabricLength: 25, fabricColor: '#991b1b' } as any
+            { id: 'manual-spreader-2', operation: { op_no: 'MSPR-02', op_name: 'Manual Spreader', machine_type: 'manual-spreader', smv: 0, section: 'Cutting Zone 2' }, position: { x: startX + (90 * FT), y: 0, z: z2Pos }, rotation: { x: 0, y: Math.PI, z: 0 }, lane: 'A', section: 'Cutting Zone 2', tableWidth: 7.1, fabricLength: 25, fabricColor: '#991b1b' } as any,
+            ...[3.50, 8.88, 14.41, 20.47, 26.61, 32.22, 37.89, 43.11, 48.40, 53.70].map((x, i) => ({
+                id: `cutting-pillar-gap-z0z1-${i}`,
+                operation: { op_no: `C-PIL-${i}`, op_name: 'Pillar', machine_type: 'pillar-1', smv: 0, section: 'Cutting Zone 0' },
+                position: { x: startX + x - (14 * FT), y: 0, z: z0Pos + 6.09 * FT },
+                rotation: { x: 0, y: 0, z: 0 },
+                lane: 'A', section: 'Cutting Zone 0', centerModel: true
+            } as any))
         ];
     }, [startX, z0Pos, z1Pos, z2Pos, z3Pos]);
 
@@ -171,15 +239,9 @@ export const CuttingView: React.FC = () => {
                     const savedLayout = data.machineLayout || [];
                     
                     if (savedLayout.length > 0) {
-                        const savedMap = new Map(savedLayout.map((m: any) => [m.id, m]));
-                        const merged = baseCuttingMachines.map(base =>
-                            savedMap.has(base.id) ? { ...base, ...savedMap.get(base.id) } : base
-                        );
-                        const baseIds = new Set(baseCuttingMachines.map(m => m.id));
-                        savedLayout.forEach((m: any) => {
-                            if (!baseIds.has(m.id)) merged.push(m);
-                        });
-                        setMachineLayout(merged);
+                        // FORCE RESET TO FIX SPACING: Ignore saved layout's absolute coordinates temporarily.
+                        // The user can re-save the layout from the UI to store the new correct coordinates.
+                        setMachineLayout([...baseCuttingMachines]);
                     } else {
                         setMachineLayout([...baseCuttingMachines]);
                     }
@@ -233,7 +295,7 @@ export const CuttingView: React.FC = () => {
                         <div className="flex flex-col">
                             <span className="text-[9px] font-black uppercase text-violet-400 tracking-widest mb-1.5 opacity-80">Floor Level</span>
                             <div className="flex items-center gap-1.5">
-                                {["Floor 1", "Floor 2"].map(f => (
+                                {["Floor 1"].map(f => (
                                     <button key={f} onClick={() => setActiveFloor(f)} className={cn("px-6 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all", activeFloor === f ? "bg-violet-600 text-white shadow-xl shadow-violet-600/20 scale-105" : "bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5")}>{f}</button>
                                 ))}
                             </div>
@@ -256,6 +318,17 @@ export const CuttingView: React.FC = () => {
                             className={cn("flex items-center gap-2 px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl", isEditMode ? "bg-amber-600 text-white shadow-amber-600/30" : "bg-white/10 text-white hover:bg-violet-600 border border-white/5")}
                         >
                             <Edit2 size={14} />{isEditMode ? "Exit" : "Modify Layout"}
+                        </button>
+
+                        <button
+                          onClick={() => setShowMaterialFlow(!showMaterialFlow)}
+                          className={cn(
+                            "flex items-center gap-2 px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl border",
+                            showMaterialFlow ? "bg-violet-600 text-white border-violet-500 shadow-violet-600/30" : "bg-white/10 text-white hover:bg-violet-600 border-white/5"
+                          )}
+                        >
+                          <Activity size={14} />
+                          Material Flow
                         </button>
                         
                         {isEditMode && (
@@ -360,7 +433,7 @@ export const CuttingView: React.FC = () => {
                                         <option value="iron">Iron Press</option>
                                         <option value="supermarket">Supermarket Rack</option>
                                         <option value="pillar-1">Pillar 1 (2.5x1.7ft)</option>
-                                        <option value="pillar-2">Pillar 2 (3.5x1.7ft)</option>
+                                        <option value="pillar-2">Pillar 2 (1.7x3.5ft)</option>
                                     </select><ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                                 </div>
                             </div>
@@ -415,6 +488,9 @@ export const CuttingView: React.FC = () => {
                         </div>
                     </div>
                 )}
+                {/* ── MATERIAL FLOW OVERLAY ── */}
+                {showMaterialFlow && <CuttingMaterialFlow />}
+
                 <Scene3D showMachines={true} machines={displayMachines} sections={cuttingZones} cameraPosition={[110, 100, 50]} target={[startX + (maxL * FT) / 2, 0, (z0Pos + z3Pos) / 2]} isOverview={true} hideLabels={true} />
             </div>
         </div>

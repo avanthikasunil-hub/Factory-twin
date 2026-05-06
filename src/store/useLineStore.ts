@@ -105,7 +105,7 @@ interface LineStore {
   updateMachineName: (machineId: string, name: string, fullData?: MachinePosition) => void;
   warnings: string[];
   clearWarnings: () => void;
-  layoutAlerts: { id: string; type: 'green' | 'red'; message: string }[];
+  layoutAlerts: { id: string; type: 'green' | 'red'; message: string; suggestions?: string[] }[];
   dismissLayoutAlert: (id: string) => void;
   checkLayoutAlerts: () => void;
   updateLineWithNewOB: (newOperations: Operation[], sourceSheet?: string, preparatoryOps?: Operation[]) => void;
@@ -129,7 +129,30 @@ interface LineStore {
   syncLineToFirebase: (line: LineData) => Promise<void>;
   syncDigitalTwinLayout: (department: 'WAREHOUSE' | 'CUTTING' | 'SEWING' | 'FINISHING', machines: MachinePosition[]) => Promise<void>;
   fetchAllLinesFromFirebase: () => Promise<void>;
+  reassignSectionOperations: (fromSection: string, toSection: string) => void;
 }
+
+// v205: Moved to top level so it's accessible by all store functions
+const getWorldXFootprint = (mType: string, rotY: number): { minX: number; maxX: number } => {
+  const dims = getMachineZoneDims(mType);
+  const hL = dims.length / 2; // half-length along local X
+  const hW = dims.width / 2; // half-width  along local Z
+  // Four body corners in local space
+  const corners = [
+    { lx: -hL, lz: -hW },
+    { lx: hL, lz: -hW },
+    { lx: -hL, lz: hW },
+    { lx: hL, lz: hW },
+  ];
+  let minX = Infinity, maxX = -Infinity;
+  corners.forEach(({ lx, lz }) => {
+    // World X after rotation around Y axis: wx = lx·cos(ry) + lz·sin(ry)
+    const wx = lx * Math.cos(rotY) + lz * Math.sin(rotY);
+    if (wx < minX) minX = wx;
+    if (wx > maxX) maxX = wx;
+  });
+  return { minX, maxX };
+};
 
 const FT = 0.3048;
 
@@ -361,7 +384,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
 
     const lineNo = state.currentLine?.lineNo || "Line 1";
     const factoryId = state.currentLine?.factoryId;
-    const { machines, sections, warnings } = generateLayout(currentOps, targetOutput, workingHours, efficiency, lineNo, factoryId);
+    const { machines, sections, warnings, balancedOps } = generateLayout(currentOps, targetOutput, workingHours, efficiency, lineNo, factoryId);
+    const finalOps = balancedOps || currentOps;
 
     const currentLine = state.currentLine;
     const updatedLine = currentLine ? {
@@ -370,7 +394,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       workingHours,
       efficiency,
       machineLayout: machines,
-      sectionLayout: sections
+      sectionLayout: sections,
+      operations: finalOps
     } : null;
 
     set({
@@ -380,6 +405,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       currentLine: updatedLine,
       machineLayout: machines,
       sectionLayout: sections,
+      operations: finalOps,
       selectedMachine: null,
       selectedMachines: [],
       warnings: warnings || [],
@@ -493,8 +519,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         savedLines: updatedSavedLines
       });
 
-      // Re-evaluate alerts for the new state
-      setTimeout(() => (get() as any).checkLayoutAlerts(), 100);
+      // Re-evaluate alerts for the new state with a slightly longer delay to ensure state settlement
+      setTimeout(() => (get() as any).checkLayoutAlerts(), 500);
     } catch (err) {
       console.error("[useLineStore] Error in generateMachineLayout:", err);
     }
@@ -511,13 +537,14 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     (get() as any).takeSnapshot();
     const targetOutput = inputTargetOutput;
     const workingHours = inputWorkingHours;
-    const { machines, sections, warnings } = generateLayout(operations, targetOutput, workingHours, efficiency, lineNo, factoryId);
+    const { machines, sections, warnings, balancedOps } = generateLayout(operations, targetOutput, workingHours, efficiency, lineNo, factoryId);
+    const finalOps = balancedOps || operations;
 
-    const calculatedTotal = operations.reduce((sum, op) => sum + op.smv, 0);
+    const calculatedTotal = finalOps.reduce((sum, op) => sum + (op?.smv || 0), 0);
     const totalSMV = inputTotalSMV || calculatedTotal;
 
     const line: LineData = {
-      id: uuidv4(), lineNo, styleNo, coneNo, buyer, operations, preparatoryOps,
+      id: uuidv4(), lineNo, styleNo, coneNo, buyer, operations: finalOps, preparatoryOps,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       machineLayout: machines, sectionLayout: sections, totalSMV,
       targetOutput, workingHours, efficiency, sourceSheet,
@@ -527,7 +554,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     set({
       machineLayout: machines,
       sectionLayout: sections,
-      operations,
+      operations: finalOps,
       preparatoryOps,
       currentLine: line,
       selectedMachine: null,
@@ -563,7 +590,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
 
     const lineNo = currentLine?.lineNo || "Line 1";
     const factoryId = currentLine?.factoryId;
-    const { machines, sections, warnings } = generateLayout(
+    const { machines, sections, warnings, balancedOps } = generateLayout(
       newOperations,
       targetOutput,
       workingHours,
@@ -571,19 +598,21 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       lineNo,
       factoryId
     );
+    const finalOps = balancedOps || newOperations;
 
-    const newTotalSMV = newOperations.reduce((sum, op) => sum + op.smv, 0);
+    const newTotalSMV = finalOps.reduce((sum, op) => sum + (op?.smv || 0), 0);
 
-    set({
-      operations: newOperations,
+    const updateObj: any = {
+      operations: finalOps,
       machineLayout: machines,
       sectionLayout: sections,
+      totalSMV: newTotalSMV,
       warnings: warnings || [],
-      layoutAlerts: [],   // ← keep clear after generation
+      layoutAlerts: [],
       currentLine: currentLine
         ? {
           ...currentLine,
-          operations: newOperations,
+          operations: finalOps,
           preparatoryOps: preparatoryOpsToUse,
           machineLayout: machines,
           sectionLayout: sections,
@@ -592,9 +621,11 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
           updatedAt: new Date().toISOString(),
         }
         : null,
-    });
-    // Re-evaluate alerts for the new state
-    setTimeout(() => (get() as any).checkLayoutAlerts(), 0);
+    };
+
+    set(updateObj);
+    // Re-evaluate alerts for the new state - give it enough time for all stores to settle
+    setTimeout(() => (get() as any).checkLayoutAlerts(), 500);
 
     toast.success(`Layout updated from new OB (${sourceSheet || "default sheet"})`);
   },
@@ -790,7 +821,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     // Tolerance: only flag overflows larger than this (metres).
     // Large enough to absorb floating-point packing drift but small enough
     // to catch a genuine drag across a section boundary (~1 machine width).
-    const TOLERANCE = 0.5;
+    const TOLERANCE = 0.1;
 
     // Human-readable section name formatter
     const cap = (s: string): string => {
@@ -811,29 +842,6 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       return mapping[key] || s.charAt(0).toUpperCase() + s.slice(1).replace(/([a-z])([A-Z])/g, '$1 $2');
     };
 
-    // Compute the rotation-aware X footprint (minWorldX, maxWorldX) of a machine.
-    // Only the four corners of the machine body are used — no human/operator
-    // depth added — because we only care about length-wise (X) overflow.
-    const getWorldXFootprint = (mType: string, rotY: number): { minX: number; maxX: number } => {
-      const dims = getMachineZoneDims(mType);
-      const hL = dims.length / 2; // half-length along local X
-      const hW = dims.width / 2; // half-width  along local Z
-      // Four body corners in local space
-      const corners = [
-        { lx: -hL, lz: -hW },
-        { lx: hL, lz: -hW },
-        { lx: -hL, lz: hW },
-        { lx: hL, lz: hW },
-      ];
-      let minX = Infinity, maxX = -Infinity;
-      corners.forEach(({ lx, lz }) => {
-        // World X after rotation around Y axis: wx = lx·cos(ry) + lz·sin(ry)
-        const wx = lx * Math.cos(rotY) + lz * Math.sin(rotY);
-        if (wx < minX) minX = wx;
-        if (wx > maxX) maxX = wx;
-      });
-      return { minX, maxX };
-    };
 
     const specs = getLayoutSpecs(get().currentLine?.lineNo, get().currentLine?.factoryId);
     const sections = specs.sections as Record<string, { start: number; end: number }>;
@@ -868,6 +876,36 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     const anyAssemblyBounds = abBounds ?? cdBounds;
 
     const violatingSectionNames = new Set<string>();
+
+    // --- Special Check: Front Section machines vs Supermarket Overlap ---
+    // This is a safety guard to ensure machines (especially inspection) don't bleed into the supermarket.
+    const allFrontMachines = layout.filter(m => 
+      (m.section || '').toLowerCase().includes('front') && 
+      !(m.operation?.machine_type?.toLowerCase()?.includes('supermarket') || (m.id || '').toLowerCase().includes('supermarket'))
+    );
+    const allFrontSupermarkets = layout.filter(m => 
+      (m.section || '').toLowerCase().includes('front') && 
+      (m.operation?.machine_type?.toLowerCase()?.includes('supermarket') || 
+       (m.id || '').toLowerCase().includes('supermarket') || 
+       (m.id || '').toLowerCase().includes('super-'))
+    );
+
+    if (allFrontSupermarkets.length > 0 && allFrontMachines.length > 0) {
+      allFrontMachines.forEach(m => {
+        const foot = getWorldXFootprint(m.operation?.machine_type || 'default', m.rotation?.y || 0);
+        const mMaxX = m.position.x + foot.maxX;
+
+        allFrontSupermarkets.forEach(sm => {
+          const sFoot = getWorldXFootprint(sm.operation?.machine_type || 'supermarket', sm.rotation?.y || 0);
+          const sMinX = sm.position.x + sFoot.minX;
+
+          // If ANY front machine overlaps into supermarket space (with a small tolerance)
+          if (mMaxX > sMinX + 0.02) {
+            violatingSectionNames.add('Front');
+          }
+        });
+      });
+    }
 
     layout.forEach(m => {
       // Skip non-production / structural elements
@@ -910,29 +948,45 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       }
     });
 
+    // Calculate space available in other sections for suggestions
+    const sectionSpaceInfo: Record<string, number> = {};
+    Object.entries(boundsMap).forEach(([name, bounds]) => {
+      const secMachines = layout.filter(m => (m.section || '').toLowerCase() === name.toLowerCase());
+      if (secMachines.length === 0) {
+        sectionSpaceInfo[name] = bounds.end - bounds.start;
+      } else {
+        const maxX = Math.max(...secMachines.map(m => {
+           const { maxX: fMaxX } = getWorldXFootprint(m.operation.machine_type, m.rotation?.y || 0);
+           return m.position.x + fMaxX;
+        }));
+        sectionSpaceInfo[name] = bounds.end - maxX;
+      }
+    });
+
     if (violatingSectionNames.size === 0) {
-      // No violations — clear any stale alert
       set({ layoutAlerts: [], layoutError: null });
       return;
     }
 
-    // Build a readable message: "Cuff", "Cuff & Sleeve", "Cuff, Sleeve & Assembly 1"
-    const parts = Array.from(violatingSectionNames);
-    let message: string;
-    if (parts.length === 1) {
-      message = parts[0];
-    } else if (parts.length === 2) {
-      message = `${parts[0]} & ${parts[1]}`;
-    } else {
-      const last = parts[parts.length - 1];
-      message = `${parts.slice(0, -1).join(', ')} & ${last}`;
-    }
-
-    set({
-      layoutAlerts: [{ id: 'global-space-violation', type: 'red', message }],
-      layoutError: null,
-      warnings: [],
+    const alerts = Array.from(violatingSectionNames).map(name => {
+      const suggestions: string[] = [];
+      const lowName = name.toLowerCase();
+      if (lowName === 'front' || lowName === 'collar') {
+         ['Back', 'Sleeve', 'Cuff'].forEach(target => {
+            if (sectionSpaceInfo[target.toLowerCase()] > 1.0) {
+              suggestions.push(target);
+            }
+         });
+      }
+      return {
+        id: `violation-${lowName}`,
+        type: 'red' as const,
+        message: `Section Overflow: ${name}`,
+        suggestions: suggestions.length > 0 ? suggestions : undefined
+      };
     });
+
+    set({ layoutAlerts: alerts, layoutError: null });
   },
 
   moveSelectedMachines: (deltaX, deltaZ) => {
@@ -1417,6 +1471,98 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       }
     } catch (err) {
       console.error("[FirebaseSync] Error fetching lines from Firebase:", err);
+    }
+  },
+
+  reassignSectionOperations: (fromSection: string, toSection: string) => {
+    (get() as any).takeSnapshot();
+    const state = get();
+    const ops = [...state.operations];
+    const layout = state.machineLayout;
+    const targetFromSec = fromSection.toLowerCase().trim();
+    
+    const specs = getLayoutSpecs(state.currentLine?.lineNo, state.currentLine?.factoryId);
+    const boundsMap = specs.sections as Record<string, { start: number; end: number }>;
+    const TOLERANCE = 0.1;
+
+    console.log(`[reassignSectionOperations] Moving from: ${targetFromSec} to: ${toSection}`);
+
+    const isViolating = (m: MachinePosition) => {
+      const sec = (m.section || '').toLowerCase().trim();
+      const isMatch = sec === targetFromSec || (targetFromSec === 'assembly' && sec.includes('assembly'));
+      if (!isMatch) return false;
+      
+      const bounds = boundsMap[sec];
+      if (!bounds || m.hasManualPosition) return false;
+
+      const { minX: footMinX, maxX: footMaxX } = getWorldXFootprint(m.operation.machine_type, m.rotation?.y || 0);
+      const machineMaxX = m.position.x + footMaxX;
+      const machineMinX = m.position.x + footMinX;
+
+      let violating = machineMaxX > bounds.end + TOLERANCE || machineMinX < bounds.start - TOLERANCE;
+
+      if (!violating && sec === 'front') {
+         const allSupermarkets = layout.filter(sm => 
+            (sm.section || '').toLowerCase().includes('front') && 
+            ((sm.operation?.machine_type || '').toLowerCase().includes('supermarket') || (sm.id || '').toLowerCase().includes('super-'))
+         );
+         allSupermarkets.forEach(sm => {
+            const sFoot = getWorldXFootprint(sm.operation?.machine_type || 'supermarket', sm.rotation?.y || 0);
+            const sMinX = sm.position.x + sFoot.minX;
+            if (machineMaxX > sMinX + 0.02) violating = true;
+         });
+      }
+      return violating;
+    };
+
+    const violatingOpNames = new Set(
+      layout
+        .filter(m => isViolating(m) && !m.operation.machine_type.toLowerCase().includes('inspection'))
+        .map(m => m.operation.op_name.toLowerCase().trim())
+    );
+
+    if (violatingOpNames.size > 0) {
+      console.log(`[reassignSectionOperations] Moving operations:`, Array.from(violatingOpNames));
+      const newOps = ops.map(op => {
+        const opName = op.op_name.toLowerCase().trim();
+        const opSec = (op.section || '').toLowerCase().trim();
+        const isFromTargetSec = opSec === targetFromSec || (targetFromSec === 'assembly' && opSec.includes('assembly'));
+        
+        if (isFromTargetSec && violatingOpNames.has(opName)) {
+          return { ...op, section: toSection };
+        }
+        return op;
+      });
+      
+      toast.success(`Moved ${violatingOpNames.size} operations to ${toSection}`);
+      (get() as any).updateLineWithNewOB(newOps);
+    } else {
+      const sectionOps = ops
+        .filter(op => {
+          const sec = (op.section || '').toLowerCase().trim();
+          const isMatch = sec === targetFromSec || (targetFromSec === 'assembly' && sec.includes('assembly'));
+          return isMatch && !op.machine_type.toLowerCase().includes('inspection');
+        })
+        .sort((a, b) => (b.seqIndex || 0) - (a.seqIndex || 0));
+
+      const namesToMove = Array.from(new Set(sectionOps.map(op => op.op_name.toLowerCase().trim()))).slice(0, 3);
+
+      if (namesToMove.length > 0) {
+        const newOps = ops.map(op => {
+          const opName = op.op_name.toLowerCase().trim();
+          const opSec = (op.section || '').toLowerCase().trim();
+          const isFromTargetSec = opSec === targetFromSec || (targetFromSec === 'assembly' && opSec.includes('assembly'));
+          
+          if (isFromTargetSec && namesToMove.includes(opName)) {
+            return { ...op, section: toSection };
+          }
+          return op;
+        });
+        toast.success(`Moved last ${namesToMove.length} operations of ${fromSection} to ${toSection}`);
+        (get() as any).updateLineWithNewOB(newOps);
+      } else {
+        toast.error(`No movable operations found in ${fromSection}`);
+      }
     }
   }
 

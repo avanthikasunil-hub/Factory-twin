@@ -268,6 +268,49 @@ export default function DigitalTwinPage() {
             };
           });
           allMachines.push(...lineMachines);
+
+          // INJECT PILLARS FOR LINE 6 (Within Line 6 itself, between Cuff and Collar)
+          if (ln === "Line 6") {
+            const pathwayZ_Line6 = currentZO - 2.2401; // Calculated midpoint between L6 AB and L6 CD
+            const pillarX = [3.50, 8.88, 14.41, 20.47, 26.61, 32.22, 37.89, 43.11, 48.40];
+            pillarX.forEach((x, idx) => {
+              allMachines.push({
+                id: `Line 6-pillar-L6-${idx}`,
+                operation: { op_no: `P6-${idx}`, op_name: "Pillar", machine_type: "pillar-1", smv: 0, section: "Line 6 Pathway" },
+                position: { x, y: 0, z: pathwayZ_Line6 },
+                rotation: { x: 0, y: 0, z: 0 },
+                lane: 'C',
+                section: "Line 6 Pathway",
+                machineIndex: idx,
+                centerModel: true,
+                showOperator: false
+              });
+            });
+          }
+        }
+
+        // INJECT PILLARS BETWEEN LINE 2 AND LINE 3
+        const pillarX = [3.50, 8.88, 14.41, 20.47, 26.61, 32.22, 37.89, 43.11, 48.40];
+        // Z calculation: Center of pathway between Line 2 CD and Line 3 AB
+        // Line 2 ZO = 7.9597, Line 3 ZO = 16.7696
+        // Line 2 CD Center = 7.9597. Edge = 7.9597 + 1.5559 = 9.5156
+        // Line 3 AB Center = 16.7696 - 3.92 = 12.8496. Edge = 12.8496 - 1.417 = 11.4326
+        // Pathway center = (9.5156 + 11.4326) / 2 = 10.4741
+        if (activeFloor === "Floor 1" && (activeLine === "All Lines" || activeLine === "Line 2" || activeLine === "Line 3")) {
+          const pathwayZ = 10.4741;
+          pillarX.forEach((x, idx) => {
+            allMachines.push({
+              id: `Line 2-pillar-pathway-L2L3-${idx}`,
+              operation: { op_no: `P-${idx}`, op_name: "Pillar", machine_type: "pillar-2", smv: 0, section: "Line 2 Pathway" },
+              position: { x, y: 0, z: pathwayZ },
+              rotation: { x: 0, y: 0, z: 0 },
+              lane: 'C',
+              section: "Line 2 Pathway",
+              machineIndex: idx,
+              centerModel: true,
+              showOperator: false
+            });
+          });
         }
 
         setActiveMachines(allMachines);

@@ -456,7 +456,7 @@ export const generateVirtualFloorLayout = (
 
         const mIdx = countIdx ?? sectionCounters[sectionName || op.section]++;
         layout.push({
-            id: `machine-${op.id || uuidv4()}-${mIdx}`,
+            id: `machine-${op.op_no || op.op_name || 'unknown'}-${mIdx}`,
             operation: op,
             position: { x: xPos, y: 0, z },
             rotation: { x: 0, y: ry, z: 0 },

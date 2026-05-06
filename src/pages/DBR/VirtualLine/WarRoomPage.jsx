@@ -55,41 +55,37 @@ import fuzzy from "fuzzy";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Activity,
-  ClipboardList,
-  CheckCircle2,
-  Circle,
-  Zap,
-  ChevronRight,
-  ArrowLeft,
-  Layout,
-  Monitor,
-  Filter,
-  Settings,
-  Search,
   Package,
   Server,
+  ArrowLeft,
+  ArrowRight,
+  ClipboardList,
+  Zap,
+  CheckCircle2,
+  Circle,
+  ChevronRight,
+  Scissors,
+  Search,
+  Settings,
+  ShieldCheck
 } from "lucide-react";
 
 /* ───── HELPER FUNCTIONS FOR OB COMPARISON ───── */
 function normalizeOpName(name) {
   if (!name) return "";
-  return name
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s]/gi, "")
-    .replace(/\s+/g, " ");
+  // Ultra-clean: lowercase and remove ALL non-alphanumeric characters
+  return name.toString().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function fuzzyCompare(opName, operations) {
   if (!opName || !operations || operations.length === 0) return false;
-  const normalized = normalizeOpName(opName);
-  const opList = operations.map((o) =>
-    normalizeOpName(o.operation || o.op_name),
-  );
-  const match = fuzzy.filter(normalized, opList, { threshold: 0.8 });
-  return match.length > 0;
+  const target = normalizeOpName(opName);
+  if (!target) return false;
+  
+  return operations.some((o) => {
+    const fName = normalizeOpName(o.operation || o.op_name || o.Operation || o.OperationName);
+    return fName === target;
+  });
 }
 
 function compareOBs(fromOps, toOps) {
@@ -98,12 +94,13 @@ function compareOBs(fromOps, toOps) {
   if (!toOps || toOps.length === 0) return { external: [], internal: [] };
   if (!fromOps || fromOps.length === 0) {
     return {
-      external: toOps.map((op) => ({
+      external: [],
+      internal: toOps.map((op) => ({
         ...op,
+        uniqueKey: `${op.op_no}-${normalizeOpName(op.operation || op.op_name)}`,
         machineArranged: op.machineArranged || "",
         folderArranged: op.folderArranged || "",
       })),
-      internal: [],
     };
   }
   for (const op of toOps) {
@@ -301,16 +298,7 @@ const getTargetDims = (type) => {
   return getMachineZoneDims(type);
 };
 
-const MATERIAL_CACHE = {
-  chair: new THREE.MeshStandardMaterial({ color: "#1e1e1e", roughness: 0.4 }),
-  metal: new THREE.MeshStandardMaterial({
-    color: "#94a3b8",
-    roughness: 0.3,
-    metalness: 0.8,
-  }),
-  coat: new THREE.MeshStandardMaterial({ color: "#bae6fd", roughness: 0.9 }),
-  ppeBlue: new THREE.MeshStandardMaterial({ color: "#38bdf8", roughness: 0.9 }),
-};
+
 
 /* ───── 1. REUSABLE BASE COMPONENTS ───── */
 
@@ -1029,6 +1017,13 @@ const SectionFloors = ({ generatedSections, activeSection }) => {
 
 /* ───── 3. MAIN COMPONENT ───── */
 
+const formatSeconds = (sec) => {
+  if (!sec) return "00:00";
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}m ${s}s`;
+};
+
 export default function WarRoom() {
   const [activeLines, setActiveLines] = useState([]);
   const [selectedLineId, setSelectedLineId] = useState("");
@@ -1039,6 +1034,7 @@ export default function WarRoom() {
   const [sections3D, setSections3D] = useState([]);
   const [activeSection, setActiveSection] = useState("All");
   const [assignmentOp, setAssignmentOp] = useState(null);
+
 
   // Helper: Normalize names for matching
   const normalizeLineName = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -1274,7 +1270,8 @@ export default function WarRoom() {
         currentLine.conNo ||
         "",
       ).trim();
-      setMeta({
+
+      const nextMeta = {
         style:
           currentLine.toStyle ||
           currentLine.summaryData?.toStyle ||
@@ -1284,13 +1281,20 @@ export default function WarRoom() {
           currentLine.fromStyle || currentLine.summaryData?.fromStyle || "---",
         line: currentLine.line || currentLine.summaryData?.line || (activeLineLabel?.includes('Line') ? activeLineLabel : 'Line 1'),
         con,
-        fromCon:
-          currentLine.fromCon || currentLine.summaryData?.fromCon || "---",
-        fromBuyer:
-          currentLine.fromBuyer || currentLine.summaryData?.fromBuyer || "---",
-        toBuyer:
-          currentLine.toBuyer || currentLine.summaryData?.toBuyer || "---",
+        fromCon: currentLine.fromCon || currentLine.summaryData?.fromCon || "---",
+        fromBuyer: currentLine.fromBuyer || currentLine.summaryData?.fromBuyer || "---",
+        toBuyer: currentLine.toBuyer || currentLine.summaryData?.toBuyer || "---",
+      };
+
+      // Only update if values actually changed to prevent downstream effect ripple
+      setMeta(prev => {
+        const isSame = prev.style === nextMeta.style && 
+                       prev.fromStyle === nextMeta.fromStyle && 
+                       prev.line === nextMeta.line && 
+                       prev.con === nextMeta.con;
+        return isSame ? prev : nextMeta;
       });
+
       const fromStyleName =
         currentLine.fromStyle || currentLine.summaryData?.fromStyle || "---";
       setFromOps([]);
@@ -1449,7 +1453,229 @@ export default function WarRoom() {
     };
     findAndListen();
     return () => { if(unsub) unsub(); };
-  }, [meta.style, meta.con, meta.line, viewMode, activeLines]);
+  }, [meta.style, meta.con, meta.line, viewMode]);
+
+  // ─── Operation Card Renderer ───────────────────────
+  const renderOperationCard = (op, idx, isExternal) => {
+    const isArranged = ["RUNNING", "CHANGEOVER_DONE", "QC_APPROVED"].includes(op.qcStatus);
+    const assignedMc = isArranged
+      ? gridData.find((m) => m.mc_serial_no === op.assignedMachineSerial)
+      : null;
+    const sourceLine = assignedMc
+      ? assignedMc.final_new_line || assignedMc.line || assignedMc["Current Line"] || "Buffer"
+      : null;
+
+    return (
+      <div
+        key={op.uniqueKey || idx}
+        style={{
+          padding: "14px",
+          background: op.machineArranged === "Yes" ? "rgba(34, 197, 94, 0.05)" : "rgba(30, 41, 59, 0.4)",
+          borderRadius: "14px",
+          border: op.machineArranged === "Yes" ? "1px solid rgba(34, 197, 94, 0.2)" : "1px solid rgba(255,255,255,0.03)",
+          transition: "all 0.3s ease",
+        }}
+      >
+        <div style={{ marginBottom: "8px" }}>
+          <div style={{ color: "#f8fafc", fontSize: "11px", fontWeight: "bold" }}>
+            {op.operation || op.op_name}
+          </div>
+          <div
+            style={{
+              color: "#94a3b8",
+              fontSize: "9px",
+              fontWeight: "800",
+              marginTop: "3px",
+              textTransform: "uppercase",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <span>{op.machine || op.machine_type}</span>
+            <span style={{ color: "#fff", opacity: 0.6 }}>
+              SMV: {typeof op.smv === "number" ? op.smv.toFixed(2) : op.smv || "0.00"}
+            </span>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            padding: "8px",
+            background: "rgba(0,0,0,0.2)",
+            borderRadius: "8px",
+            border: "1px solid rgba(255,255,255,0.03)",
+          }}
+        >
+          {/* MC ALLOCATED DISPLAY */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "9px", color: "#64748b", fontWeight: "900" }}>MC ALLOCATED:</span>
+            <span style={{ fontSize: "9px", fontWeight: "900", color: op.machineArranged === "Yes" ? "#10b981" : "#94a3b8" }}>
+              {op.machineArranged === "Yes" ? "YES" : "NO"}
+            </span>
+          </div>
+
+          {/* TIME TAKEN DISPLAY */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              borderTop: "1px solid rgba(255,255,255,0.05)",
+              paddingTop: "4px",
+            }}
+          >
+            <span style={{ fontSize: "9px", color: "#64748b", fontWeight: "900" }}>TIME TAKEN:</span>
+            <span style={{ fontSize: "9px", fontWeight: "900", color: "#fff", opacity: 0.8 }}>
+              {formatSeconds(op.totalTimeSeconds)}
+            </span>
+          </div>
+
+          {/* REASON DISPLAY / INPUT */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+              borderTop: "1px solid rgba(255,255,255,0.05)",
+              paddingTop: "6px",
+            }}
+          >
+            <span style={{ fontSize: "9px", color: "#64748b", fontWeight: "900", textTransform: "uppercase" }}>
+              Reason for Delay if any:
+            </span>
+            {(() => {
+              const rawReason = op.reasonForDelay?.trim() || "";
+              const displayReason = (rawReason.toUpperCase() === "OTHERS" && op.otherReason?.trim())
+                ? `OTHERS - ${op.otherReason.trim().toUpperCase()}`
+                : rawReason;
+
+              return (
+                <input
+                  key={`${op.uniqueKey}-${displayReason}`}
+                  type="text"
+                  placeholder=""
+                  defaultValue={displayReason}
+                  onBlur={async (e) => {
+                    const newVal = e.target.value;
+                    if (!obRef || !fullObData) return;
+                    if (newVal === displayReason) return;
+                    let reasonForDelay = newVal;
+                    let otherReason = "";
+                    if (newVal.toUpperCase().startsWith("OTHERS - ")) {
+                      reasonForDelay = "OTHERS";
+                      otherReason = newVal.substring(9).trim();
+                    }
+                    const newFullData = JSON.parse(JSON.stringify(fullObData));
+                    let matchFound = false;
+                    if (newFullData.parsedOBData) {
+                      Object.values(newFullData.parsedOBData).forEach((group) => {
+                        if (Array.isArray(group)) {
+                          group.forEach((sec) => {
+                            if (sec.operations && Array.isArray(sec.operations)) {
+                              sec.operations.forEach((o) => {
+                                if (normalizeOpName(o.operation) === normalizeOpName(op.operation || op.op_name)) {
+                                  o.reasonForDelay = reasonForDelay;
+                                  o.otherReason = otherReason;
+                                  matchFound = true;
+                                }
+                              });
+                            }
+                          });
+                        }
+                      });
+                    }
+                    if (matchFound) {
+                      setFullObData(newFullData);
+                      try { await updateDoc(obRef, { parsedOBData: newFullData.parsedOBData }); }
+                      catch (err) { console.error("Firebase update failed:", err); }
+                    }
+                  }}
+                  style={{
+                    background: displayReason ? "rgba(245, 158, 11, 0.1)" : "rgba(0,0,0,0.3)",
+                    border: displayReason ? "1px solid rgba(245, 158, 11, 0.3)" : "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: "4px",
+                    padding: "6px 8px",
+                    fontSize: "9px",
+                    color: displayReason ? "#fbbf24" : "#fff",
+                    fontWeight: displayReason ? "bold" : "normal",
+                    outline: "none",
+                    width: "100%",
+                    boxSizing: "border-box",
+                    transition: "all 0.3s ease"
+                  }}
+                />
+              );
+            })()}
+          </div>
+
+          {/* SOURCE LINE DROPDOWN (Strictly for External) */}
+          {isExternal && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                borderTop: "1px solid rgba(255,255,255,0.05)",
+                paddingTop: "4px",
+              }}
+            >
+              <span style={{ fontSize: "9px", color: "#64748b", fontWeight: "900" }}>FROM LINE:</span>
+              <div style={{ width: "80px" }}>
+                <Select
+                  className="war-room-select"
+                  classNamePrefix="rs-select"
+                  options={liveLineOptions}
+                  placeholder="Select"
+                  value={
+                    op.allocatedLine
+                      ? { value: op.allocatedLine, label: op.allocatedLine }
+                      : sourceLine && sourceLine !== "Buffer"
+                        ? { value: sourceLine, label: sourceLine }
+                        : null
+                  }
+                  onChange={async (sel) => {
+                    const newVal = sel?.value || "";
+                    if (!obRef || !fullObData) return;
+                    const newFullData = JSON.parse(JSON.stringify(fullObData));
+                    let matchFound = false;
+                    if (newFullData.parsedOBData) {
+                      Object.values(newFullData.parsedOBData).forEach((group) => {
+                        if (Array.isArray(group)) {
+                          group.forEach((sec) => {
+                            if (sec.operations && Array.isArray(sec.operations)) {
+                              sec.operations.forEach((o) => {
+                                if (normalizeOpName(o.operation) === normalizeOpName(op.operation || op.op_name)) {
+                                  o.allocatedLine = newVal;
+                                  matchFound = true;
+                                }
+                              });
+                            }
+                          });
+                        }
+                      });
+                    }
+                    if (matchFound) {
+                      setFullObData(newFullData);
+                      try { await updateDoc(obRef, { parsedOBData: newFullData.parsedOBData }); }
+                      catch (err) { console.error("Firebase update failed:", err); }
+                    }
+                  }}
+                  styles={{
+                    menu: (base) => ({ ...base, background: "#1e293b", fontSize: "10px" }),
+                    option: (base, state) => ({ ...base, background: state.isFocused ? "#334155" : "transparent", color: "#fff" }),
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // ─── Comparative OB memoization ────────────────────
   const { externalOps, internalOps } = useMemo(() => {
@@ -1475,24 +1701,15 @@ export default function WarRoom() {
 
     const { external, internal } = compareOBs(fromOps, ops);
 
-    // Include ALL external operations + any internal ones that have ANY status marked in machineArranged.
-    const combined = [
-      ...external,
-      ...internal.filter(op =>
-        typeof op.machineArranged !== "undefined" &&
-        op.machineArranged !== null &&
-        op.machineArranged !== ""
-      )
-    ];
-
-    const externalRes =
-      combined.length === 0 && ops.length > 0 ? ops.slice(0, 30) : combined;
+    // Keep them strictly separated as per user request
+    const externalRes = external;
+    const internalRes = internal;
 
     return {
       externalOps: externalRes,
-      internalOps: internal,
+      internalOps: internalRes,
     };
-  }, [fullObData, fromOps]);
+  }, [fullObData, fromOps, activeSection]);
 
   const sceneCenter = useMemo(() => {
     if (!sections3D || !sections3D.length) return [0, 0, 0];
@@ -1507,19 +1724,32 @@ export default function WarRoom() {
       if (z - w / 2 < minZ) minZ = z - w / 2;
       if (z + w / 2 > maxZ) maxZ = z + w / 2;
     });
-    return [(minX + maxX) / 2, 0.5, (minZ + maxZ) / 2];
+    const center = [(minX + maxX) / 2, 0.5, (minZ + maxZ) / 2];
+    if (isNaN(center[0]) || isNaN(center[2])) return [0, 0.5, 0];
+    return center;
   }, [sections3D]);
 
   const totalReadyGlobal = useMemo(() => {
-    return (masterData || []).filter(
-      (m) =>
-        m.operation?.qcStatus === "QC_APPROVED" ||
-        m.operation?.machineArranged === "Yes",
-    ).length;
+    return (masterData || []).filter((m) => {
+      const type = (m.operation?.machine_type || m.operation?.machine || "").toLowerCase();
+      const isActual = !type.includes("inspection") && 
+                       !type.includes("supermarket") && 
+                       !type.includes("helper");
+      return (
+        isActual &&
+        (m.operation?.qcStatus === "QC_APPROVED" ||
+          m.operation?.machineArranged === "Yes")
+      );
+    }).length;
   }, [masterData]);
 
   const globalTotalMachines = useMemo(() => {
-    return (masterData || []).length;
+    return (masterData || []).filter((m) => {
+      const type = (m.operation?.machine_type || m.operation?.machine || "").toLowerCase();
+      return !type.includes("inspection") && 
+             !type.includes("supermarket") && 
+             !type.includes("helper");
+    }).length;
   }, [masterData]);
 
   const updateDisplayLayout = (data, sectionName) => {
@@ -1859,24 +2089,16 @@ export default function WarRoom() {
             </div>
           </div>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <div
-            style={{
-              color: "#64748b",
-              fontSize: "10px",
-              fontWeight: "900",
-              textTransform: "uppercase",
-            }}
-          >
-            {isLiveChangeover ? "Active Changeover" : "Normal Production"}
+
+        <div className="flex items-center gap-2">
+
+            <button
+              onClick={() => (window.location.href = "/dbr/floor-plan")}
+              className="flex items-center gap-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-2xl border border-white/10 transition-all text-[11px] font-black uppercase tracking-widest"
+            >
+              <ArrowLeft size={16} /> Exit
+            </button>
           </div>
-          <div style={{ color: "#fff", fontWeight: "900", fontSize: "24px" }}>
-            {(() => {
-              const l = activeLines.find((x) => x.id === activeLineLabel || (x.line || x.summaryData?.line) === activeLineLabel);
-              return (l?.line || l?.summaryData?.line || activeLineLabel || "WAR ROOM").toUpperCase();
-            })()}
-          </div>
-        </div>
       </div>
 
       <div
@@ -1950,7 +2172,7 @@ export default function WarRoom() {
                 </span>
               </button>
                {sections
-                .filter((s) => !s.toLowerCase().includes("supermarket"))
+                .filter((s) => !s.toLowerCase().includes("supermarket") && !s.toLowerCase().includes("inspection"))
                 .map((name) => {
                   const sectionOps = masterData.filter(
                     (m) => {
@@ -1960,7 +2182,12 @@ export default function WarRoom() {
                                      (tn === 'assembly' && ms.includes('assembly')) || 
                                      (ms.includes(tn) || tn.includes(ms));
                        
-                       return isMatch;
+                       const type = (m.operation?.machine_type || m.operation?.machine || "").toLowerCase();
+                       const isActual = !type.includes("inspection") && 
+                                        !type.includes("supermarket") && 
+                                        !type.includes("helper");
+
+                       return isMatch && isActual;
                     }
                   );
                   const ready = sectionOps.filter(
@@ -2060,235 +2287,107 @@ export default function WarRoom() {
                 .war-room-select .rs-select__single-value { color: #fff !important; }
                 .war-room-select .rs-select__indicator { padding: 0 4px !important; }
               `}</style>
-              {externalOps.length === 0 ? (
-                <div
-                  style={{
-                    padding: "20px",
-                    textAlign: "center",
-                    color: "#64748b",
-                    fontSize: "10px",
-                    fontWeight: "bold",
-                  }}
-                >
-                  No operations found.
-                </div>
-              ) : (
-                externalOps
-                  .map((op, idx) => {
-                    const isArranged = ["RUNNING", "CHANGEOVER_DONE", "QC_APPROVED"].includes(op.qcStatus);
-                    const assignedMc = isArranged
-                      ? gridData.find(
-                        (m) => m.mc_serial_no === op.assignedMachineSerial,
-                      )
-                      : null;
-                    const sourceLine = assignedMc
-                      ? assignedMc.final_new_line ||
-                      assignedMc.line ||
-                      assignedMc["Current Line"] ||
-                      "Buffer"
-                      : null;
-                    // Normalize line label: e.g. "LINE 5" → "Line 5"
-                    const fromLabel = sourceLine
-                      ? sourceLine.replace(/line\s*/i, "Line ")
-                      : op.assignedMachineSerial || "—";
+              {(() => {
+                const allOps = [...externalOps, ...internalOps];
+                const hasComparison = fromOps && fromOps.length > 0;
+                
+                if (allOps.length === 0) {
+                  return (
+                    <div style={{ padding: "20px", textAlign: "center", color: "#64748b", fontSize: "10px", fontWeight: "bold" }}>
+                      No operations found in OB.
+                    </div>
+                  );
+                }
 
-                    return (
-                      <div
-                        key={idx}
-                        style={{
-                          padding: "14px",
-                          background:
-                            op.machineArranged === "Yes"
-                              ? "rgba(34, 197, 94, 0.05)"
-                              : "rgba(30, 41, 59, 0.4)",
-                          borderRadius: "14px",
-                          border:
-                            op.machineArranged === "Yes"
-                              ? "1px solid rgba(34, 197, 94, 0.2)"
-                              : "1px solid rgba(255,255,255,0.03)",
-                          transition: "all 0.3s ease",
-                        }}
-                      >
-                        <div style={{ marginBottom: "8px" }}>
-                          <div
-                            style={{
-                              color: "#f8fafc",
-                              fontSize: "11px",
-                              fontWeight: "bold",
-                            }}
-                          >
-                            {op.operation || op.op_name}
-                          </div>
-                          <div
-                            style={{
-                              color: "#94a3b8",
-                              fontSize: "9px",
-                              fontWeight: "800",
-                              marginTop: "3px",
-                              textTransform: "uppercase",
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                            }}
-                          >
-                            <span>{op.machine || op.machine_type}</span>
-                            <span style={{ color: "#fff", opacity: 0.6 }}>
-                              SMV:{" "}
-                              {typeof op.smv === "number"
-                                ? op.smv.toFixed(2)
-                                : op.smv || "0.00"}
-                            </span>
-                          </div>
-                        </div>
+                // Group by section
+                const groups = {};
+                allOps.forEach(op => {
+                  const s = op.section || "General";
+                  if (!groups[s]) groups[s] = [];
+                  groups[s].push(op);
+                });
 
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "8px",
-                            padding: "8px",
-                            background: "rgba(0,0,0,0.2)",
-                            borderRadius: "8px",
-                            border: "1px solid rgba(255,255,255,0.03)",
-                          }}
-                        >
-                          {/* MC ALLOCATED DISPLAY */}
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: "9px",
-                                color: "#64748b",
-                                fontWeight: "900",
-                              }}
-                            >
-                              MC ALLOCATED:
-                            </span>
-                            <span
-                              style={{
-                                fontSize: "9px",
-                                fontWeight: "900",
-                                color: op.machineArranged === "Yes" ? "#10b981" : "#94a3b8",
-                              }}
-                            >
-                              {op.machineArranged === "Yes" ? "YES" : "NO"}
-                            </span>
-                          </div>
+                // Custom sort order: Collar first, Assembly last
+                const FLOW_ORDER = ["collar", "cuff", "front", "back", "sleeve", "assembly"];
+                const sectionNames = Object.keys(groups).sort((a, b) => {
+                  const idxA = FLOW_ORDER.indexOf(a.toLowerCase());
+                  const idxB = FLOW_ORDER.indexOf(b.toLowerCase());
+                  if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                  if (idxA !== -1) return -1;
+                  if (idxB !== -1) return 1;
+                  return a.localeCompare(b);
+                });
 
-                          {/* SOURCE LINE DROPDOWN (Conditional) */}
-                          {op.machineArranged === "Yes" && (
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                borderTop: "1px solid rgba(255,255,255,0.05)",
-                                paddingTop: "4px",
-                              }}
-                            >
-                              <span
-                                style={{
-                                  fontSize: "9px",
-                                  color: "#64748b",
-                                  fontWeight: "900",
-                                }}
-                              >
-                                FROM LINE:
-                              </span>
-                              <div style={{ width: "80px" }}>
-                                <Select
-                                  className="war-room-select"
-                                  classNamePrefix="rs-select"
-                                  options={liveLineOptions}
-                                  placeholder="Select Line"
-                                  value={
-                                    op.allocatedLine
-                                      ? {
-                                        value: op.allocatedLine,
-                                        label: op.allocatedLine,
-                                      }
-                                      : sourceLine && sourceLine !== "Buffer"
-                                        ? { value: sourceLine, label: sourceLine }
-                                        : null
-                                  }
-                                  onChange={async (sel) => {
-                                    const newVal = sel?.value || "";
-                                    if (!obRef || !fullObData) return;
+                return sectionNames.map((sectionName) => {
+                  const ops = groups[sectionName];
+                  if (!ops || ops.length === 0) return null;
+                  
+                  const isActive = activeSection === sectionName;
 
-                                    // Optimistic update
-                                    const newFullData = JSON.parse(
-                                      JSON.stringify(fullObData),
-                                    );
-                                    let matchFound = false;
-                                    if (newFullData.parsedOBData) {
-                                      Object.values(newFullData.parsedOBData).forEach(
-                                        (group) => {
-                                          if (Array.isArray(group)) {
-                                            group.forEach((sec) => {
-                                              if (
-                                                sec.operations &&
-                                                Array.isArray(sec.operations)
-                                              ) {
-                                                sec.operations.forEach((o) => {
-                                                  if (
-                                                    normalizeOpName(o.operation) ===
-                                                    normalizeOpName(
-                                                      op.operation || op.op_name,
-                                                    )
-                                                  ) {
-                                                    o.allocatedLine = newVal;
-                                                    matchFound = true;
-                                                  }
-                                                });
-                                              }
-                                            });
-                                          }
-                                        },
-                                      );
-                                    }
-
-                                    if (matchFound) {
-                                      setFullObData(newFullData);
-                                      try {
-                                        console.log("Firebase: Updating allocatedLine to", newVal, "for", op.operation || op.op_name);
-                                        await updateDoc(obRef, {
-                                          parsedOBData: newFullData.parsedOBData,
-                                        });
-                                        console.log("Firebase: Update successful.");
-                                      } catch (err) {
-                                        console.error("Firebase update failed:", err);
-                                        // Optional: Revert local state if needed
-                                      }
-                                    }
-                                  }}
-                                  styles={{
-                                    menu: (base) => ({
-                                      ...base,
-                                      background: "#1e293b",
-                                      fontSize: "10px",
-                                    }),
-                                    option: (base, state) => ({
-                                      ...base,
-                                      background: state.isFocused
-                                        ? "#334155"
-                                        : "transparent",
-                                      color: "#fff",
-                                    }),
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                  return (
+                    <div key={sectionName} style={{ 
+                        marginBottom: "20px",
+                        opacity: (activeSection && activeSection !== "All" && !isActive) ? 0.4 : 1,
+                        transition: "opacity 0.3s ease"
+                    }}>
+                      <div style={{ 
+                          padding: "10px 0 5px 0", 
+                          borderBottom: isActive ? "1px solid #6366f1" : "1px solid rgba(255,255,255,0.05)", 
+                          marginBottom: "10px", 
+                          display: "flex", 
+                          justifyContent: "space-between", 
+                          alignItems: "center" 
+                      }}>
+                        <span style={{ 
+                            fontSize: "10px", 
+                            color: isActive ? "#818cf8" : "#94a3b8", 
+                            fontWeight: "900", 
+                            textTransform: "uppercase", 
+                            letterSpacing: "0.1em" 
+                        }}>
+                           {sectionName}
+                        </span>
+                        <span style={{ fontSize: "9px", color: "#64748b", fontWeight: "bold" }}>{ops.length} ops</span>
                       </div>
-                    );
-                  })
-              )}
+                      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                        {ops
+                          .sort((a, b) => {
+                            const isAExt = hasComparison && externalOps.some(e => e.uniqueKey === a.uniqueKey);
+                            const isBExt = hasComparison && externalOps.some(e => e.uniqueKey === b.uniqueKey);
+                            if (isAExt && !isBExt) return -1;
+                            if (!isAExt && isBExt) return 1;
+                            return 0;
+                          })
+                          .map((op, idx) => {
+                            const isExternal = hasComparison && externalOps.some(e => e.uniqueKey === op.uniqueKey);
+                            return (
+                              <div key={op.uniqueKey || idx} style={{ position: "relative" }}>
+                                  {isExternal && (
+                                      <div style={{
+                                          position: "absolute",
+                                          top: "-5px",
+                                          right: "10px",
+                                          background: "#6366f1",
+                                          color: "#fff",
+                                          fontSize: "7px",
+                                          fontWeight: "900",
+                                          padding: "2px 6px",
+                                          borderRadius: "4px",
+                                          zIndex: 2,
+                                          boxShadow: "0 2px 4px rgba(0,0,0,0.3)"
+                                      }}>
+                                          EXTERNAL
+                                      </div>
+                                  )}
+                                  {renderOperationCard(op, idx, isExternal)}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
 
@@ -2687,6 +2786,11 @@ export default function WarRoom() {
           </div>
         </div>
       </div>
+
+      {/* Side panel for operation details - removed as component is missing */}
+
+
+
     </div>
     </>
   );

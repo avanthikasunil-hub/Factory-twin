@@ -254,23 +254,8 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
   if (!rangeRef) return null;
   const sheetRange = XLSX.utils.decode_range(rangeRef);
 
-  // Build ordered list of worksheet row indices that have any content
-  const wsRowIndices: number[] = [];
-  for (let r = sheetRange.s.r; r <= sheetRange.e.r; r++) {
-    let hasContent = false;
-    for (let c = sheetRange.s.c; c <= sheetRange.e.c; c++) {
-      const addr = XLSX.utils.encode_cell({ r, c });
-      if (sheet[addr]?.v != null && String(sheet[addr].v).trim() !== '') {
-        hasContent = true; break;
-      }
-    }
-    if (hasContent) wsRowIndices.push(r);
-  }
-
-  if (wsRowIndices.length === 0) {
-    console.log('[OB Parser] Empty sheet detected');
-    return null;
-  }
+  // --- Locate header row via DIRECT cell reads ---
+  // Optimized: We don't pre-scan every row for content. We scan as we go.
 
   // --- Locate header row via DIRECT cell reads (not sheet_to_json) ---
   let headerWsRow = -1;
@@ -284,11 +269,12 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
   let nonMachinistSmvIndex = -1;
   let bestScore = 0;
 
-  for (let i = 0; i < Math.min(wsRowIndices.length, 500); i++) {
-    const wsRow = wsRowIndices[i];
+  // We scan the first 100 non-empty rows to find the header
+  let searchLimit = Math.min(sheetRange.e.r, 100);
+  for (let wsRow = sheetRange.s.r; wsRow <= searchLimit; wsRow++) {
     const headers = extractHeadersFromWorksheet(sheet, wsRow);
     const rowStr = headers.join(' ').toLowerCase();
-    if (rowStr.includes('total') || rowStr.includes('sum of')) continue;
+    if (!rowStr.trim() || rowStr.includes('total') || rowStr.includes('sum of')) continue;
 
     const tOpNo = findColumnIndex(headers, 'op_no');
     const tMachine = findColumnIndex(headers, 'machine_type');
@@ -315,6 +301,8 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
       machinistSmvIndex = findColumnIndex(headers, 'machinist_smv');
       nonMachinistSmvIndex = findColumnIndex(headers, 'non_machinist_smv');
     }
+    // If we find a very good header, stop early
+    if (bestScore >= 12) break;
   }
 
   if (headerWsRow === -1) {
@@ -351,15 +339,24 @@ const parseSpecificSheet = (sheet: XLSX.WorkSheet) => {
   let calculatedTotalSMV = 0;
   const exactMachineTypes = new Set<string>();
 
+  let emptyRowCounter = 0;
   for (let wsRow = headerWsRow + 1; wsRow <= sheetRange.e.r; wsRow++) {
+    // Optimization: If we hit 20 consecutive empty rows, we're likely done with this sheet
+    if (emptyRowCounter > 20) break;
+
     const row: (string | number)[] = [];
+    let rowHasData = false;
     for (let c = 0; c <= Math.max(sheetRange.e.c, opNameIndex, machineIndex, smvIndex); c++) {
       const v = readCell(wsRow, c);
+      if (v != null && String(v).trim() !== '') rowHasData = true;
       row[c] = v != null ? v : '';
     }
 
-    const rowIsEmpty = row.every(c => c === '' || c == null);
-    if (rowIsEmpty) continue;
+    if (!rowHasData) {
+      emptyRowCounter++;
+      continue;
+    }
+    emptyRowCounter = 0;
 
     const rowStr = row.map(c => String(c).toLowerCase()).join(' ');
 
@@ -540,32 +537,50 @@ export const parseOBExcel = async (
           score: -1
         };
 
+        // PHASE 1: Lightweight scan to pick the best sheet
+        const sheetScores: { name: string; score: number }[] = [];
         for (const sheetName of workbook.SheetNames) {
-          const result = parseSpecificSheet(workbook.Sheets[sheetName]);
-          if (!result) continue;
+          const sheet = workbook.Sheets[sheetName];
+          const rangeRef = sheet['!ref'];
+          if (!rangeRef) continue;
 
-          // Scoring logic:
-          // +1000 base score for having >= 10 operations (definitely a production sheet)
-          // + result.operations.length (prefer more complete sheets)
-          // -500 penalty for suboptimal names (Base, Template, etc.)
-          let score = result.operations.length;
-          if (result.operations.length >= 10) score += 1000;
-          else if (result.operations.length >= 5) score += 500;
+          // Quick score: search only first 30 rows
+          let foundHeader = false;
+          let opCountApprox = 0;
+          const range = XLSX.utils.decode_range(rangeRef);
+          const limit = Math.min(range.e.r, 30);
+          
+          for (let r = 0; r <= limit; r++) {
+            const headers = extractHeadersFromWorksheet(sheet, r);
+            const rowStr = headers.join(' ').toLowerCase();
+            if (rowStr.includes('smv') || rowStr.includes('sam') || rowStr.includes('machine')) {
+              foundHeader = true;
+              // Check next 10 rows for data
+              for (let dr = r + 1; dr <= Math.min(r + 10, range.e.r); dr++) {
+                const dataRow = extractHeadersFromWorksheet(sheet, dr);
+                if (dataRow.some(cell => cell && String(cell).length > 0)) opCountApprox++;
+              }
+              break;
+            }
+          }
 
+          let score = opCountApprox * 10;
+          if (foundHeader) score += 500;
           const lowerSheet = sheetName.toLowerCase();
-          if (SUBOPTIMAL_SHEET_NAMES.some(sub => lowerSheet.includes(sub))) {
-            score -= 800;
-          }
+          if (lowerSheet.includes('ob') || lowerSheet.includes('plan')) score += 300;
+          if (SUBOPTIMAL_SHEET_NAMES.some(sub => lowerSheet.includes(sub))) score -= 800;
 
-          // Bonus for sheets named after lines or containing "OB"
-          if (lowerSheet.includes('line') || lowerSheet.includes('ob') || lowerSheet.includes('sheet')) {
-            score += 200;
-          }
+          sheetScores.push({ name: sheetName, score });
+          if (score > 1000) break; // Good enough
+        }
 
-          console.log(`[OB Parser] Sheet "${sheetName}" score: ${score} (${result.operations.length} ops, SMV: ${result.totalSMV})`);
+        sheetScores.sort((a, b) => b.score - a.score);
+        const winner = sheetScores[0];
 
-          if (score > bestSheet.score) {
-            bestSheet = { name: sheetName, data: result, score };
+        if (winner && winner.score > 0) {
+          const result = parseSpecificSheet(workbook.Sheets[winner.name]);
+          if (result) {
+            bestSheet = { name: winner.name, data: result, score: winner.score };
           }
         }
 

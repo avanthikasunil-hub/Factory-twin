@@ -22,7 +22,7 @@ export const ROT_ROTARY_FUSING = -Math.PI / 2; // Exactly -90 degrees
 
 export const FT = 0.3048;
 
-export const LAYOUT_LOGIC_VERSION = 199;
+export const LAYOUT_LOGIC_VERSION = 203;
 export const FIXED_ASSEMBLY_START = 0;
 
 export interface SectionPreset {
@@ -776,6 +776,18 @@ export const generateLayout = (
             let runX = iStart;
             for (const item of opsToUse) {
                 for (let k = 0; k < item.count; k++) {
+                    // v203: Identify and rename inspection machines within the loop
+                    const isInspectionType = item.operation?.machine_type?.toLowerCase()?.includes('inspection') || 
+                                             item.operation?.op_name?.toLowerCase()?.includes('inspection');
+                    
+                    if (isInspectionType) {
+                        item.operation = {
+                            ...item.operation,
+                            op_name: `${sName.charAt(0).toUpperCase() + sName.slice(1)} Inspection`,
+                            machine_type: 'Inspection'
+                        };
+                    }
+
                     addMachine(
                         item.operation,
                         (isAB_sect ? 'A' : 'C'),
@@ -787,12 +799,6 @@ export const generateLayout = (
                     );
                     runX += iDims.length + INSPECTION_GAP;
                 }
-            }
-
-            const lastM = layout[layout.length - 1];
-            if (lastM) {
-                lastM.isInspection = true;
-                lastM.id = `inspect-${sName}-${uuidv4()}`;
             }
 
             const iEnd = runX;
@@ -1122,7 +1128,9 @@ export const generateLayout = (
         });
     }
 
-    return { machines: layout, sections: sectionLayouts, warnings };
+    const finalBalancedOps = [...balancedPrep, ...balancedAssembly].map(item => item.operation);
+
+    return { machines: layout, sections: sectionLayouts, warnings, balancedOps: finalBalancedOps };
 };
 
 function createDummyOp(name: string, section: string, opNo: string = ' '): Operation {

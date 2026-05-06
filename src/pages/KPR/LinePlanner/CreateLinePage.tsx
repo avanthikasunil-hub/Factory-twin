@@ -12,6 +12,8 @@ import { parseOBExcel } from "@/utils/obParser";
 import { useToast } from "@/hooks/use-toast";
 import type { Operation } from "@/types";
 import { API_BASE_URL } from "../../../config";
+import { collection, query, where, getDocs, limit } from "firebase/firestore";
+import { db, prodDb } from "@/firebase";
 
 const DEFAULT_LINES = [
   "LINE 1", "LINE 2", "LINE 3", "LINE 4", "LINE 5",
@@ -71,7 +73,13 @@ const CreateLinePage = () => {
     if (!line) return;
     fetch(`${API_BASE_URL}/cons?line=${encodeURIComponent(line)}`)
       .then(res => res.json())
-      .then(data => setCons(data))
+      .then(data => {
+        setCons(data);
+        if (data.length === 1) {
+          setBuyer(data[0]);
+          loadConNos(line, data[0]);
+        }
+      })
       .catch(() => { });
   };
 
@@ -80,7 +88,14 @@ const CreateLinePage = () => {
     if (!line || !buyerVal) return;
     fetch(`${API_BASE_URL}/oc-by-buyer?line=${encodeURIComponent(line)}&buyer=${encodeURIComponent(buyerVal)}`)
       .then(res => res.json())
-      .then(data => setCones(data))
+      .then(data => {
+        setCones(data);
+        if (data.length === 1) {
+          setConeNo(data[0]);
+          loadStylesByConNo(line, data[0]);
+          checkAndAutoUploadOB(data[0], buyerVal);
+        }
+      })
       .catch(() => { });
   };
 
@@ -89,7 +104,12 @@ const CreateLinePage = () => {
     if (!line || !oc) return;
     fetch(`${API_BASE_URL}/styles-by-oc?line=${encodeURIComponent(line)}&oc=${encodeURIComponent(oc)}`)
       .then(res => res.json())
-      .then(data => setStyles(data))
+      .then(data => {
+        setStyles(data);
+        if (data.length === 1) {
+          setStyleNo(data[0]);
+        }
+      })
       .catch(() => { });
   };
 
@@ -131,6 +151,108 @@ const CreateLinePage = () => {
       setIsLoading(false);
     }
   }, [updateLineWithNewOB, toast]);
+
+  // ── Auto OB Lookup ─────────────────────────────────────────────────────────
+  const checkAndAutoUploadOB = useCallback(async (selectedConNo: string, selectedBuyer: string) => {
+    if (!selectedConNo) return;
+    const cleanCon = selectedConNo.trim();
+    console.log("[Auto-Upload] Starting lookup. Con:", cleanCon, "Buyer:", selectedBuyer);
+
+    const checkDb = async (targetDb: any, dbName: string) => {
+      console.log(`[Auto-Upload] Checking ${dbName}...`);
+      
+      const fieldVariations = [
+        "conNo", 
+        "summaryData.conNo", 
+        "con_no", 
+        "summaryData.con_no",
+        "conNumber",
+        "ocNo",
+        "OC"
+      ];
+
+      // Run all variations in PARALLEL for speed
+      const promises = fieldVariations.map(field => {
+        const q = query(collection(targetDb, "styleOBmetadata"), where(field, "==", cleanCon), limit(1));
+        return getDocs(q);
+      });
+
+      const results = await Promise.all(promises);
+      const snap = results.find(s => !s.empty);
+
+      if (snap) {
+        console.log(`[Auto-Upload] Match found in ${dbName}`);
+        return snap;
+      }
+
+      // 2. Fallback to 'styles' collection
+      console.log(`[Auto-Upload] No match in ${dbName} styleOBmetadata. Trying 'styles' collection...`);
+      const qStyles = query(collection(targetDb, "styles"), where("conNo", "==", cleanCon), limit(1));
+      const stylesSnap = await getDocs(qStyles);
+      
+      return stylesSnap;
+    };
+
+    try {
+      setIsLoading(true);
+      
+      // Query both databases in PARALLEL
+      const [primaryRes, prodRes] = await Promise.all([
+        checkDb(db, "Primary DB"),
+        checkDb(prodDb, "Ishika DB")
+      ]);
+
+      const querySnapshot = !primaryRes.empty ? primaryRes : prodRes;
+
+      if (!querySnapshot.empty) {
+        console.log(`[Auto-Upload] Found match in database.`);
+        const docData = querySnapshot.docs[0].data();
+        
+        // Deep extract fileUrl and other metadata
+        const fileUrl = docData.fileUrl || docData.obFileUrl || docData.summaryData?.fileUrl;
+        const originalFileName = docData.originalFileName || docData.fileName || docData.summaryData?.fileName || "ob.xlsx";
+        const style = docData.style || docData.styleCode || docData.summaryData?.style || "";
+
+        console.log("[Auto-Upload] Match data:", { style, fileName: originalFileName, hasUrl: !!fileUrl });
+
+        if (fileUrl) {
+          toast({
+            title: "OB Found",
+            description: `Found OB for ${selectedConNo}. Auto-uploading...`,
+          });
+
+          try {
+            const response = await fetch(fileUrl);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const blob = await response.blob();
+            const file = new File([blob], originalFileName, { 
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
+            });
+
+            if (style) setStyleNo(style);
+            await handleFileSelect(file);
+          } catch (fetchErr) {
+            console.error("[Auto-Upload] Fetch error:", fetchErr);
+            toast({
+              title: "Auto-upload Blocked",
+              description: "Found OB but browser blocked the download (CORS). Please upload manually.",
+              variant: "destructive"
+            });
+          }
+        } else {
+            console.log("[Auto-Upload] Found entry but no fileUrl exists.");
+            toast({ title: "OB Found (No File)", description: "Record exists but no file URL was found.", variant: "destructive" });
+        }
+      } else {
+        console.log("[Auto-Upload] No OB found in any database (Checked all variations and fallbacks).");
+      }
+    } catch (error) {
+      console.error("[Auto-Upload] Error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [handleFileSelect, toast]);
 
   // ── Create line ────────────────────────────────────────────────────────────
   const handleCreateLine = useCallback(() => {
@@ -187,7 +309,10 @@ const CreateLinePage = () => {
             <div className="p-2 rounded-xl bg-primary/10"><Factory className="w-6 h-6 text-primary" /></div>
             <div>
               <h1 className="text-2xl font-bold">Create New Line</h1>
-              <p className="text-sm text-muted-foreground">Configure your production line</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-muted-foreground">Configure your production line</p>
+                <span className="px-1.5 py-0.5 rounded bg-primary/20 text-[8px] font-bold text-primary animate-pulse uppercase">Auto-OB v2.1 Active</span>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -237,6 +362,7 @@ const CreateLinePage = () => {
                 setConeNo(val);
                 setStyleNo(""); setStyles([]);
                 loadStylesByConNo(lineNo, val);
+                checkAndAutoUploadOB(val, buyer);
               }}>
                 <SelectTrigger className="w-full h-10 bg-white text-black">
                   <SelectValue placeholder="Select Con No" />

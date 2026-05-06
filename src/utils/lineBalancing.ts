@@ -25,23 +25,56 @@ export const calculateMachineRequirements = (
 
     // STEP 1: EffectiveTime = AvailableTime × Efficiency
     const effectiveTime = availableTime * efficiencyDecimal;
+    const takt = effectiveTime / targetOutput;
 
-    return operations.map(op => {
-        if (op.smv <= 0) return { operation: op, count: 1 };
+    const results = operations.map(op => {
+        if (op.smv <= 0) return { operation: { ...op, utilization: 0 }, count: 1 };
 
-        let takt = effectiveTime / targetOutput;
+        // STEP 3: Machines = ceil(SMV / Takt)
+        const neededMachines = op.smv / takt;
+        let requiredMachines = Math.ceil(neededMachines);
 
         // Feature override: Enforce 2 machines for 'button wrapping'
         if (op.op_name.toLowerCase().includes('button wrapping') || op.op_name.toLowerCase().includes('button_wrapping')) {
-            return { operation: op, count: 2 };
+            requiredMachines = 2;
         }
 
-        // STEP 3: Machines = ceil(SMV / Takt)
-        const requiredMachines = Math.ceil(op.smv / takt);
+        const count = Math.min(100, Math.max(1, requiredMachines));
+        const utilization = neededMachines / count;
 
         return {
-            operation: op,
-            count: Math.min(100, Math.max(1, requiredMachines)) // Cap at 100 to prevent infinite loops
+            operation: { 
+                ...op, 
+                utilization,
+                isBottleneck: utilization > 0.9 // Threshold for potential bottleneck
+            },
+            count
         };
     });
+
+    // Identify the PRIMARY bottleneck (highest utilization)
+    if (results.length > 0) {
+        let maxUtil = -1;
+        let primaryIdx = -1;
+        results.forEach((r, idx) => {
+            if (r.operation.utilization && r.operation.utilization > maxUtil) {
+                maxUtil = r.operation.utilization;
+                primaryIdx = idx;
+            }
+        });
+
+        if (primaryIdx !== -1) {
+            results[primaryIdx].operation.isBottleneck = true;
+            results[primaryIdx].operation.bottleneckSeverity = 'high';
+        }
+
+        // Secondary bottlenecks
+        results.forEach(r => {
+            if (r.operation.isBottleneck && r.operation.bottleneckSeverity !== 'high') {
+                r.operation.bottleneckSeverity = 'medium';
+            }
+        });
+    }
+
+    return results;
 };

@@ -14,6 +14,9 @@ export interface Operation {
   no_of_machines?: number;
   seqIndex?: number;      // v165: Original index in OB sequence for staging logic
   isPreparatory?: boolean; // v165: Explicit flag for manual staging
+  isBottleneck?: boolean; // v2.4: Identified as a capacity constraint
+  bottleneckSeverity?: 'high' | 'medium';
+  utilization?: number;
   // Legacy/Fallback fields from raw data
   operation?: string;
   operation_description?: string;

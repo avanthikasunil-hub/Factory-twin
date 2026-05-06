@@ -61,6 +61,8 @@ type OpStatus = {
     isInternal: boolean;
     selectingDoneLine: boolean;
     selectingBorrowLine: boolean;
+    totalTimeSeconds?: number;
+    reasonForDelay?: string;
 };
 
 export default function CotTracker() {
@@ -598,11 +600,33 @@ export default function CotTracker() {
                                         )}
 
                                         {isDone && (
-                                            <div className="mt-1 flex items-center gap-2 px-1">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Done in {state.doneLine}</span>
+                                            <div className="mt-1 flex flex-col gap-2 px-1">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Done in {state.doneLine}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between text-[9px] font-bold text-slate-500 bg-slate-950/50 p-2 rounded-lg">
+                                                    <span className="uppercase tracking-widest">Time Taken:</span>
+                                                    <span className="text-white">
+                                                        {state.totalTimeSeconds ? 
+                                                            `${Math.floor(state.totalTimeSeconds / 60)}m ${state.totalTimeSeconds % 60}s` : 
+                                                            "0m 0s"
+                                                        }
+                                                    </span>
+                                                </div>
                                             </div>
                                         )}
+
+                                        <div className="mt-2 pt-2 border-t border-white/5 space-y-2">
+                                            <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em]">Delay Reason / Remarks</span>
+                                            <input 
+                                                type="text"
+                                                placeholder="Enter reason if any..."
+                                                defaultValue={state.reasonForDelay || ""}
+                                                onBlur={(e) => updateOp(op.id, { reasonForDelay: e.target.value })}
+                                                className="w-full h-8 bg-slate-950/50 border border-white/5 rounded-lg px-3 text-[10px] text-white outline-none focus:border-indigo-500/50 transition-colors"
+                                            />
+                                        </div>
                                     </motion.div>
                                 );
                             })}

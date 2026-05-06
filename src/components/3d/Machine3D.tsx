@@ -212,7 +212,7 @@ const getTargetDimensionsMeters = (type: string, data?: any) => {
   } else if (t === 'pillar-1') {
     l = 2.5 * FT; w = 1.7 * FT; h = 9.0 * FT;
   } else if (t === 'pillar-2') {
-    l = 3.5 * FT; w = 1.7 * FT; h = 9.0 * FT;
+    l = 1.7 * FT; w = 3.5 * FT; h = 9.0 * FT;
   }
 
   return {
@@ -329,7 +329,8 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
       mType.includes('human') ||
       mType.includes('conveyor') ||
       mType.includes('garment') ||
-      mType.startsWith('board');
+      mType.startsWith('board') ||
+      mType.startsWith('pillar');
 
     if (isSpecialMachine) {
       setComputedScale([1, 1, 1]); // Reset scaling for precision-built / coded models
@@ -630,7 +631,7 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
           <group position={[zoneOffsetX, 0, zoneOffsetZ]}>
             <mesh position={[0, targetDims.height / 2, 0]}>
               <boxGeometry args={[targetDims.length, targetDims.height, targetDims.width]} />
-              <meshStandardMaterial color="#334155" roughness={0.8} />
+              <meshBasicMaterial transparent={true} opacity={0} depthWrite={false} />
             </mesh>
             <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
               <planeGeometry args={[targetDims.length, targetDims.width]} />

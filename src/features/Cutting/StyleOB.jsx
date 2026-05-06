@@ -1,7 +1,7 @@
 // src/features/Cutting/StyleOB.jsx
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { storage, db } from "../../firebase";
+import { storage, db, prodDb } from "../../firebase";
 import {
   ref as storageRef,
   uploadBytes,
@@ -96,6 +96,7 @@ export default function StyleOB() {
   );
   const itemsPerPage = 15;
   const listenersRef = useRef({});
+  const [metadataByConNo, setMetadataByConNo] = useState({});
 
   // Persist selectedSheet & currentPage
   useEffect(() => {
@@ -169,36 +170,51 @@ export default function StyleOB() {
       Object.values(listenersRef.current).forEach((unsub) => unsub && unsub());
       listenersRef.current = {};
 
-      const q = query(collection(db, "styleOBmetadata"));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const metadataUpdates = {};
-        snapshot.docs.forEach((doc) => {
-          metadataUpdates[doc.id] = doc.data();
+      const syncFromDb = (targetDb, dbLabel) => {
+        const q = query(collection(targetDb, "styleOBmetadata"));
+        return onSnapshot(q, (snapshot) => {
+          console.log(`[StyleOB] Metadata sync from ${dbLabel}: ${snapshot.size} docs`);
+          const metadataUpdates = {};
+          const conNoMapUpdate = {};
+          const hashesFromFirestore = new Set();
+          
+          snapshot.docs.forEach((doc) => {
+            const data = doc.data();
+            metadataUpdates[doc.id] = data;
+            
+            // Extract Con No for fallback matching
+            const con = (data.conNo || data.summaryData?.conNo || "").trim();
+            if (con) {
+              conNoMapUpdate[con] = data;
+            }
+
+            if (data.fileUrl || data.obFileUrl) {
+              hashesFromFirestore.add(doc.id);
+            }
+          });
+
+          setActiveUploadHashes(prev => {
+            const merged = new Set(prev);
+            hashesFromFirestore.forEach(h => merged.add(h));
+            return merged;
+          });
+
+          setMetadataByConNo(prev => ({ ...prev, ...conNoMapUpdate }));
+          setRowUploads(prev => ({ ...prev, ...metadataUpdates }));
         });
-        setRowUploads(prev => ({ ...prev, ...metadataUpdates }));
-      });
-      listenersRef.current['collection'] = unsubscribe;
+      };
+
+      console.log("[StyleOB] Starting metadata sync for", sheetName);
+      const unsub1 = syncFromDb(db, "Primary DB");
+      const unsub2 = syncFromDb(prodDb, "Ishika DB");
+      
+      listenersRef.current['db1'] = unsub1;
+      listenersRef.current['db2'] = unsub2;
     };
 
     const fetchStorageFiles = async (sheetName) => {
-      try {
-        const listRef = storageRef(storage, `styleOBUploads/${sheetName}`);
-        const fileList = await listAll(listRef);
-        const hashes = new Set();
-        const uploadsMap = {};
-        
-        fileList.items.forEach(item => {
-          const dotIndex = item.name.lastIndexOf(".");
-          const rowHash = dotIndex > 0 ? item.name.substring(0, dotIndex) : item.name;
-          hashes.add(rowHash);
-          uploadsMap[rowHash] = { hashedName: item.name };
-        });
-
-        setActiveUploadHashes(hashes);
-        setRowUploads(prev => ({ ...prev, ...uploadsMap }));
-      } catch (err) {
-        console.error("Storage list error:", err);
-      }
+        console.log("[StyleOB] Skipping fetchStorageFiles (using Firestore fallback)");
+        return;
     };
 
     (async () => {
@@ -427,7 +443,9 @@ export default function StyleOB() {
     setCurrentPage((prev) => (prev > 1 ? prev - 1 : prev));
   };
   const handleNext = () => {
-    setCurrentPage((prev) => (prev < totalPages ? prev + 1 : prev));
+    if (currentPage < totalPages) {
+        setCurrentPage(prev => prev + 1);
+    }
   };
 
   // Mobile dropdown options
@@ -438,11 +456,21 @@ export default function StyleOB() {
 
   const selectedOption = sheetOptions.find(opt => opt.value === selectedSheet) || sheetOptions[0];
 
+  const safeData = Array.isArray(currentData) ? currentData : [];
+
   return (
     <div className="min-h-screen bg-white text-gray-800 p-4 sm:p-6">
-      <h2 className="text-2xl font-semibold mb-4 text-left text-gray-700">
-        Style OB
-      </h2>
+      <div className="flex flex-col">
+              <h1 className="text-3xl font-black text-slate-900 tracking-tight">
+                Style OB Management
+              </h1>
+              <div className="flex items-center gap-2">
+                <p className="text-slate-500 font-medium tracking-wide">
+                  Process and manage operational bulletins for {selectedSheet || '...'}
+                </p>
+                <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-[8px] font-black text-blue-600 animate-pulse uppercase border border-blue-200">System v2.2 (Multi-DB + ConNo Fallback) Active</span>
+              </div>
+            </div>
 
       {error && (
         <p className="text-red-500 bg-red-200 p-4 rounded-md text-center mb-6">
@@ -548,9 +576,11 @@ export default function StyleOB() {
               </tr>
             </thead>
             <tbody>
-              {currentData.map(({ vals, rowHash }, idx) => {
-                const info = rowUploads[rowHash] || {};
-                const fileUrl = info.fileUrl || null;
+              {safeData.map(({ vals, rowHash }, idx) => {
+                // Try exact hash match first, then fallback to Con No match
+                const conNo = (vals[2] || "").toString().trim();
+                const info = rowUploads[rowHash] || metadataByConNo[conNo] || {};
+                const fileUrl = info.fileUrl || info.obFileUrl || null;
 
                 const globalIndex = startIdx + idx;
                 let isChangeover = false;
