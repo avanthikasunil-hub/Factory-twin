@@ -897,18 +897,27 @@ export const WarehouseView = () => {
     return arr;
   };
 
+  const {
+    warehouseItems: storeWarehouseItems,
+    setWarehouseItems,
+    fetchWarehouseLayout,
+  } = useLineStore();
+
   const [isLayoutMode, setIsLayoutMode] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [editTool, setEditTool] = useState<"move" | "rotate" | "delete" | "add">("move");
   const [selectedAddType, setSelectedAddType] = useState("rack");
   const [selectedAddLabel, setSelectedAddLabel] = useState("Rack");
   const [placingItem, setPlacingItem] = useState(false);
-  const [addedItems, setAddedItems] = useState<any[]>(() => getInitialDefaultItems());
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [showMaterialFlow, setShowMaterialFlow] = useState(true);
 
+  // addedItems is derived from the store; local fallback only used before first load
+  const addedItems: any[] = storeWarehouseItems ?? getInitialDefaultItems();
+  const setAddedItems = (items: any[]) => setWarehouseItems(items);
+
   // Local Undo/Redo tracking for Warehouse
-  const [history, setHistory] = useState<any[][]>(() => [[getInitialDefaultItems()]]);
+  const [history, setHistory] = useState<any[][]>(() => [[]]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
 
@@ -932,52 +941,20 @@ export const WarehouseView = () => {
     setHistoryIndex(newHistory.length - 1);
   };
 
+  // Load warehouse layout from Firebase into the store (runs once per app session)
   useEffect(() => {
-    const fetchLayout = async () => {
-      try {
-        const { db } = await import("@/firebase");
-        const { doc, getDoc } = await import("firebase/firestore");
-        const layoutRef = doc(db, "modifiedLayouts", "WAREHOUSE");
-        const layoutSnap = await getDoc(layoutRef);
-
-        if (layoutSnap.exists()) {
-          const data = layoutSnap.data();
-          const savedItems = data.machineLayout || [];
-          if (savedItems.length > 0) {
-            const defaultItems = getInitialDefaultItems();
-            const updatedDefaults = defaultItems.map((defItem: any) => {
-              const saved = savedItems.find((s: any) => s.id === defItem.id);
-              let finalItem = saved ? { ...defItem, ...saved } : defItem;
-              
-              // Apply explicit workspace baseline rules if needed
-              if (finalItem.type === 'rack' || finalItem.id.startsWith('warehouse-pillar')) {
-                const freshDefault = defaultItems.find(d => d.id === finalItem.id);
-                if (freshDefault) finalItem.position = freshDefault.position;
-              }
-              
-              if (finalItem.id === 'inspection-1') return { ...finalItem, position: [0.542, 0, 38.284] };
-              if (finalItem.id === 'inspection-2') return { ...finalItem, position: [-6.458, 0, 37.784] };
-              if (finalItem.id === 'table-1') return { ...finalItem, position: [23.542, 0, 38.284] };
-              if (finalItem.id === 'table-2') return { ...finalItem, position: [14.542, 0, 38.284] };
-              if (finalItem.id === 'pallet-1') return { ...finalItem, position: [22, 0, 34.332] };
-              if (finalItem.id === 'pallet-2') return { ...finalItem, position: [8, 0, 34.332] };
-              
-              return finalItem;
-            });
-
-            const dynamicItems = savedItems.filter((s: any) => !defaultItems.some((d: any) => d.id === s.id));
-            const merged = [...updatedDefaults, ...dynamicItems];
-
-            setAddedItems(merged);
-            setHistory([merged]);
-          }
-        }
-      } catch (err) {
-        console.error("Error loading warehouse layout from Firestore:", err);
-      }
-    };
-    fetchLayout();
+    fetchWarehouseLayout(getInitialDefaultItems);
   }, []);
+
+  // Sync history whenever storeWarehouseItems loads for the first time
+  const didInitHistory = useRef(false);
+  useEffect(() => {
+    if (storeWarehouseItems !== null && !didInitHistory.current) {
+      didInitHistory.current = true;
+      setHistory([storeWarehouseItems]);
+      setHistoryIndex(0);
+    }
+  }, [storeWarehouseItems]);
 
   const undo = () => { if (historyIndex > 0) { setHistoryIndex(historyIndex - 1); setAddedItems(history[historyIndex - 1]); setSelectedItems([]); } };
   const redo = () => { if (historyIndex < history.length - 1) { setHistoryIndex(historyIndex + 1); setAddedItems(history[historyIndex + 1]); setSelectedItems([]); } };

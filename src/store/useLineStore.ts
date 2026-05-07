@@ -127,9 +127,17 @@ interface LineStore {
 
   // Firebase integration
   syncLineToFirebase: (line: LineData) => Promise<void>;
-  syncDigitalTwinLayout: (department: 'WAREHOUSE' | 'CUTTING' | 'SEWING' | 'FINISHING', machines: MachinePosition[]) => Promise<void>;
+  syncDigitalTwinLayout: (department: 'WAREHOUSE' | 'CUTTING' | 'SEWING' | 'FINISHING', machines: any[]) => Promise<void>;
   fetchAllLinesFromFirebase: () => Promise<void>;
   reassignSectionOperations: (fromSection: string, toSection: string) => void;
+
+  // Persistent department layouts (survive tab switches)
+  warehouseItems: any[] | null;   // null = not yet loaded
+  setWarehouseItems: (items: any[]) => void;
+  fetchWarehouseLayout: (getInitialDefaultItems: () => any[]) => Promise<void>;
+
+  cuttingLayoutLoaded: boolean;
+  setCuttingLayoutLoaded: (loaded: boolean) => void;
 }
 
 // v205: Moved to top level so it's accessible by all store functions
@@ -201,6 +209,40 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   operations: [],
   selectedMachines: [],
   selectedMachine: null,
+
+  // Department layouts - persisted in memory across tab switches
+  warehouseItems: null,
+  setWarehouseItems: (items) => set({ warehouseItems: items }),
+  fetchWarehouseLayout: async (getInitialDefaultItems) => {
+    // Only fetch if not already loaded
+    if (get().warehouseItems !== null) return;
+    try {
+      const layoutRef = doc(db, 'modifiedLayouts', 'WAREHOUSE');
+      const layoutSnap = await getDoc(layoutRef);
+      if (layoutSnap.exists()) {
+        const data = layoutSnap.data();
+        const savedItems = data.machineLayout || [];
+        if (savedItems.length > 0) {
+          const defaultItems = getInitialDefaultItems();
+          const updatedDefaults = defaultItems.map((defItem: any) => {
+            const saved = savedItems.find((s: any) => s.id === defItem.id);
+            return saved ? { ...defItem, ...saved } : defItem;
+          });
+          const dynamicItems = savedItems.filter((s: any) => !defaultItems.some((d: any) => d.id === s.id));
+          set({ warehouseItems: [...updatedDefaults, ...dynamicItems] });
+          return;
+        }
+      }
+      // No saved layout — use defaults
+      set({ warehouseItems: getInitialDefaultItems() });
+    } catch (err) {
+      console.error('[FirebaseSync] Error loading warehouse layout:', err);
+      set({ warehouseItems: getInitialDefaultItems() });
+    }
+  },
+
+  cuttingLayoutLoaded: false,
+  setCuttingLayoutLoaded: (loaded) => set({ cuttingLayoutLoaded: loaded }),
   targetOutput: 1200,
   workingHours: 9,
   visibleSection: null,
@@ -1423,8 +1465,9 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       const factoryFolder = (line.factoryId || 'DBR').toUpperCase();
       console.log(`[FirebaseSync] Saving Layout to Cloud... (ID: ${line.id})`);
       const lineRef = doc(db, "savedLines", factoryFolder, "lines", line.id);
+      const sanitizedLine = JSON.parse(JSON.stringify(line));
       await setDoc(lineRef, {
-        ...line,
+        ...sanitizedLine,
         factoryId: factoryFolder.toLowerCase(),
         updatedAt: new Date().toISOString(),
         firebase_updated: true
@@ -1432,6 +1475,7 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
       console.log(`[FirebaseSync] Layout SAVED successfully to Firestore.`);
     } catch (err) {
       console.error("[FirebaseSync] Error syncing line to Firebase:", err);
+      throw err;
     }
   },
 
@@ -1439,16 +1483,18 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     try {
       console.log(`[FirebaseSync] Saving Departmental Layout to Cloud... (${department})`);
       const layoutRef = doc(db, "modifiedLayouts", department);
+      const sanitizedMachines = JSON.parse(JSON.stringify(machines));
       await setDoc(layoutRef, {
         department,
-        machineLayout: machines,
+        machineLayout: sanitizedMachines,
         updatedAt: new Date().toISOString(),
-        count: machines.length,
+        count: sanitizedMachines.length,
         firebase_updated: true
       });
       console.log(`[FirebaseSync] Departmental Layout SAVED successfully to Firestore.`);
     } catch (err) {
       console.error("[FirebaseSync] Error syncing digital twin layout:", err);
+      throw err;
     }
   },
 
