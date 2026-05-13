@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Factory, Brain, Database, ArrowLeft, Building2, MapPin, Activity, Box } from "lucide-react";
+import { Factory, Brain, Database, ArrowLeft, Building2, MapPin, Activity, Box, Workflow } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -137,7 +137,7 @@ export default function HomeScreenPage() {
                       <CardContent className="p-10 flex flex-col items-center text-center gap-5 min-h-[340px] justify-between">
                         <div className="flex flex-col items-center gap-5">
                           <div className="p-4 rounded-2xl bg-gradient-to-br from-primary to-accent industrial-glow">
-                            <Factory className="w-10 h-10 text-primary-foreground" />
+                            <Workflow className="w-10 h-10 text-primary-foreground" />
                           </div>
                           <h3 className="text-2xl font-semibold">Line Planner</h3>
                           <p className="text-gray-500 text-sm leading-relaxed">
@@ -202,7 +202,7 @@ export default function HomeScreenPage() {
                       <CardContent className="p-10 flex flex-col items-center text-center gap-5 min-h-[340px] justify-between">
                         <div className="flex flex-col items-center gap-5">
                           <div className="p-4 rounded-2xl bg-gradient-to-br from-primary to-accent industrial-glow">
-                            <Factory className="w-10 h-10 text-primary-foreground" />
+                            <Workflow className="w-10 h-10 text-primary-foreground" />
                           </div>
                           <h3 className="text-2xl font-semibold">Line Planner</h3>
                           <p className="text-gray-500 text-sm leading-relaxed">
