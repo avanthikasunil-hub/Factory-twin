@@ -80,13 +80,14 @@ export const CuttingView: React.FC = () => {
     const [showMaterialFlow, setShowMaterialFlow] = useState(true);
 
     const {
+        // Isolated cutting layout (not shared with sewing machineLayout)
+        cuttingItems,
+        setCuttingItems,
+        fetchCuttingLayout,
+        // machineLayout needed to read back edits from Scene3D
         machineLayout,
         setMachineLayout,
-        setPlacingMachine,
-        placingMachine,
-        setMoveMode,
-        setDeleteMode,
-        setRotateMode,
+        // Sewing-specific store actions for the edit toolbar (undo/redo work on cuttingItems via our local history)
         undo,
         redo,
         canUndo,
@@ -94,6 +95,11 @@ export const CuttingView: React.FC = () => {
         selectedMachines,
         deleteSelectedMachines,
         rotateSelectedMachines,
+        setMoveMode,
+        setDeleteMode,
+        setRotateMode,
+        placingMachine,
+        setPlacingMachine,
     } = useLineStore();
 
     // Dimensions for layout calculation
@@ -200,156 +206,84 @@ export const CuttingView: React.FC = () => {
         ];
     }, [startX, z0Pos, z1Pos, z2Pos, z3Pos]);
 
-    // Filter machines that belong to the cutting zone sections
+    // Filter machines from the isolated cutting store slot
     const displayMachines = useMemo(() => {
-        const sections = [
-            'Cutting Zone 0', 'Cutting Zone 1', 'Cutting Zone 2', 'Cutting Zone 3',
-            'Zone 0 Extension', 'Zone 1 Extension', 'Zone 2 Extension',
-            'Storage Area', 'Collar Production'
-        ];
-
-        return machineLayout.filter(m =>
-            sections.includes(m.section as string) ||
-            sections.includes(m.operation?.section as string) ||
-            m.id.startsWith('gerber-') ||
-            m.id.startsWith('mc-zone0-') ||
-            m.id.startsWith('storage-fusing-') ||
-            m.id.startsWith('manual-spreader-') ||
-            m.id.startsWith('cutting-fusing-') ||
-            m.id.startsWith('straight-knife-') ||
-            m.id.startsWith('human-') ||
-            m.id.startsWith('op-') ||
-            m.operation?.machine_type === 'human'
-        );
-    }, [machineLayout]);
+        if (!cuttingItems) return [];
+        return cuttingItems as MachinePosition[];
+    }, [cuttingItems]);
 
     const [serverLayoutLoaded, setServerLayoutLoaded] = useState(false);
-    const { cuttingLayoutLoaded, setCuttingLayoutLoaded } = useLineStore();
+    const { cuttingLayoutLoaded } = useLineStore();
 
-    // ── ON MOUNT: Load layout from Firestore (only once per app session) ──
+    // ── ON MOUNT: Load layout from Firestore into the isolated cuttingItems store slot ──
     useEffect(() => {
-        if (cuttingLayoutLoaded) {
+        if (cuttingLayoutLoaded && cuttingItems !== null) {
             setServerLayoutLoaded(true);
-            return; // Already loaded this session — no re-fetch on tab switch
+            return; // Already loaded this session
         }
-        const fetchLayout = async () => {
-            try {
-                const { db } = await import("@/firebase");
-                const { doc, getDoc } = await import("firebase/firestore");
-                const layoutRef = doc(db, "modifiedLayouts", "CUTTING");
-                const layoutSnap = await getDoc(layoutRef);
-
-                if (layoutSnap.exists()) {
-                    const data = layoutSnap.data();
-                    const savedLayout = data.machineLayout || [];
-                    
-                    if (savedLayout.length > 0) {
-                        const current = useLineStore.getState().machineLayout;
-                        const otherMachines = current.filter(m => 
-                            !m.id.startsWith('gerber-') &&
-                            !m.id.startsWith('mc-zone0-') &&
-                            !m.id.startsWith('bandknife-') &&
-                            !m.id.startsWith('spreading-table-') &&
-                            !m.id.startsWith('fusing-custom-') &&
-                            !m.id.startsWith('straight-knife-') &&
-                            !m.id.startsWith('manual-spreader-') &&
-                            !m.id.startsWith('supermarket-zone') &&
-                            !m.id.startsWith('storage-fusing-') &&
-                            !m.id.startsWith('cutting-fusing-') &&
-                            !m.id.startsWith('cutting-pillar') &&
-                            !(m.section && m.section.toLowerCase().includes('cutting')) &&
-                            !(m.operation?.section && m.operation.section.toLowerCase().includes('cutting')) &&
-                            m.section !== 'Storage Area' &&
-                            m.section !== 'Collar Production' &&
-                            !(m.section && m.section.toLowerCase().includes('zone'))
-                        );
-
-                        const savedMap = new Map(savedLayout.map((m: any) => [m.id, m]));
-                        const merged = baseCuttingMachines.map(base =>
-                            savedMap.has(base.id) ? { ...base, ...savedMap.get(base.id) } : base
-                        );
-                        
-                        const baseIds = new Set(baseCuttingMachines.map(m => m.id));
-                        savedLayout.forEach((m: any) => {
-                            if (!baseIds.has(m.id)) merged.push(m);
-                        });
-
-                        setMachineLayout([...otherMachines, ...merged]);
-                    } else {
-                        const current = useLineStore.getState().machineLayout;
-                        const otherMachines = current.filter(m => 
-                            !m.id.startsWith('gerber-') &&
-                            !m.id.startsWith('mc-zone0-') &&
-                            !m.id.startsWith('bandknife-') &&
-                            !m.id.startsWith('spreading-table-') &&
-                            !m.id.startsWith('fusing-custom-') &&
-                            !m.id.startsWith('straight-knife-') &&
-                            !m.id.startsWith('manual-spreader-') &&
-                            !m.id.startsWith('supermarket-zone') &&
-                            !m.id.startsWith('storage-fusing-') &&
-                            !m.id.startsWith('cutting-fusing-') &&
-                            !m.id.startsWith('cutting-pillar') &&
-                            !(m.section && m.section.toLowerCase().includes('cutting')) &&
-                            !(m.operation?.section && m.operation.section.toLowerCase().includes('cutting')) &&
-                            m.section !== 'Storage Area' &&
-                            m.section !== 'Collar Production' &&
-                            !(m.section && m.section.toLowerCase().includes('zone'))
-                        );
-                        setMachineLayout([...otherMachines, ...baseCuttingMachines]);
-                    }
-                } else {
-                        const current = useLineStore.getState().machineLayout;
-                        const otherMachines = current.filter(m => 
-                            !m.id.startsWith('gerber-') &&
-                            !m.id.startsWith('mc-zone0-') &&
-                            !m.id.startsWith('bandknife-') &&
-                            !m.id.startsWith('spreading-table-') &&
-                            !m.id.startsWith('fusing-custom-') &&
-                            !m.id.startsWith('straight-knife-') &&
-                            !m.id.startsWith('manual-spreader-') &&
-                            !m.id.startsWith('supermarket-zone') &&
-                            !m.id.startsWith('storage-fusing-') &&
-                            !m.id.startsWith('cutting-fusing-') &&
-                            !m.id.startsWith('cutting-pillar') &&
-                            !(m.section && m.section.toLowerCase().includes('cutting')) &&
-                            !(m.operation?.section && m.operation.section.toLowerCase().includes('cutting')) &&
-                            m.section !== 'Storage Area' &&
-                            m.section !== 'Collar Production' &&
-                            !(m.section && m.section.toLowerCase().includes('zone'))
-                        );
-                        setMachineLayout([...otherMachines, ...baseCuttingMachines]);
-                }
-            } catch (err) {
-                console.error("Error loading cutting layout from Firestore:", err);
-                        const current = useLineStore.getState().machineLayout;
-                        const otherMachines = current.filter(m => 
-                            !m.id.startsWith('gerber-') &&
-                            !m.id.startsWith('mc-zone0-') &&
-                            !m.id.startsWith('bandknife-') &&
-                            !m.id.startsWith('spreading-table-') &&
-                            !m.id.startsWith('fusing-custom-') &&
-                            !m.id.startsWith('straight-knife-') &&
-                            !m.id.startsWith('manual-spreader-') &&
-                            !m.id.startsWith('supermarket-zone') &&
-                            !m.id.startsWith('storage-fusing-') &&
-                            !m.id.startsWith('cutting-fusing-') &&
-                            !m.id.startsWith('cutting-pillar') &&
-                            !(m.section && m.section.toLowerCase().includes('cutting')) &&
-                            !(m.operation?.section && m.operation.section.toLowerCase().includes('cutting')) &&
-                            m.section !== 'Storage Area' &&
-                            m.section !== 'Collar Production' &&
-                            !(m.section && m.section.toLowerCase().includes('zone'))
-                        );
-                        setMachineLayout([...otherMachines, ...baseCuttingMachines]);
-            } finally {
-                setServerLayoutLoaded(true);
-                setCuttingLayoutLoaded(true);
-            }
-        };
-        fetchLayout();
+        fetchCuttingLayout(() => baseCuttingMachines)
+            .then(() => setServerLayoutLoaded(true));
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Auto-save removed: layout is only saved when the user explicitly clicks Save.
+    // ── SYNC 1: When cuttingItems loads from Firebase, inject into machineLayout so Scene3D edit tools work ──
+    const prevCuttingItemsRef = React.useRef<any[] | null>(null);
+    useEffect(() => {
+        if (!cuttingItems || cuttingItems === prevCuttingItemsRef.current) return;
+        prevCuttingItemsRef.current = cuttingItems;
+
+        // Keep non-cutting machines (sewing etc.) from machineLayout, replace cutting ones with cuttingItems
+        const CUTTING_ID_PREFIXES = [
+            'gerber-', 'mc-zone0-', 'bandknife-', 'spreading-table-', 'fusing-custom-',
+            'straight-knife-', 'manual-spreader-', 'supermarket-zone', 'storage-fusing-',
+            'cutting-fusing-', 'cutting-pillar-',
+        ];
+        const CUTTING_SECTIONS = [
+            'Cutting Zone 0', 'Cutting Zone 1', 'Cutting Zone 2', 'Cutting Zone 3',
+            'Zone 0 Extension', 'Zone 1 Extension', 'Zone 2 Extension',
+            'Storage Area', 'Collar Production',
+        ];
+        const isCuttingMachine = (m: any) =>
+            CUTTING_ID_PREFIXES.some(p => m.id?.startsWith(p)) ||
+            CUTTING_SECTIONS.includes(m.section) ||
+            CUTTING_SECTIONS.includes(m.operation?.section) ||
+            (m.section && (m.section.toLowerCase().includes('cutting') || m.section.toLowerCase().includes('zone')));
+
+        const otherMachines = machineLayout.filter(m => !isCuttingMachine(m));
+        setMachineLayout([...otherMachines, ...cuttingItems]);
+    }, [cuttingItems]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── SYNC 2: When Scene3D edits machineLayout, extract updated cutting items back into cuttingItems ──
+    const syncTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+        if (!serverLayoutLoaded) return; // Don't sync during initial load
+        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = setTimeout(() => {
+            const CUTTING_ID_PREFIXES = [
+                'gerber-', 'mc-zone0-', 'bandknife-', 'spreading-table-', 'fusing-custom-',
+                'straight-knife-', 'manual-spreader-', 'supermarket-zone', 'storage-fusing-',
+                'cutting-fusing-', 'cutting-pillar-',
+            ];
+            const CUTTING_SECTIONS = [
+                'Cutting Zone 0', 'Cutting Zone 1', 'Cutting Zone 2', 'Cutting Zone 3',
+                'Zone 0 Extension', 'Zone 1 Extension', 'Zone 2 Extension',
+                'Storage Area', 'Collar Production',
+            ];
+            const isCuttingMachine = (m: any) =>
+                CUTTING_ID_PREFIXES.some(p => m.id?.startsWith(p)) ||
+                CUTTING_SECTIONS.includes(m.section) ||
+                CUTTING_SECTIONS.includes(m.operation?.section) ||
+                (m.section && (m.section.toLowerCase().includes('cutting') || m.section.toLowerCase().includes('zone')));
+
+            const newCuttingItems = machineLayout.filter(isCuttingMachine);
+            // Only update if something actually changed (avoid infinite loop)
+            const currentIds = (cuttingItems ?? []).map((m: any) => `${m.id}:${JSON.stringify(m.position)}:${JSON.stringify(m.rotation)}`).sort().join('|');
+            const newIds = newCuttingItems.map((m: any) => `${m.id}:${JSON.stringify(m.position)}:${JSON.stringify(m.rotation)}`).sort().join('|');
+            if (currentIds !== newIds) {
+                setCuttingItems(newCuttingItems);
+            }
+        }, 200);
+        return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
+    }, [machineLayout]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
     return (
@@ -425,34 +359,10 @@ export const CuttingView: React.FC = () => {
                         {isEditMode && (
                             <button 
                                 onClick={async () => {
-                                    const CUTTING_SECTIONS = [
-                                        'Cutting Zone 0', 'Cutting Zone 1', 'Cutting Zone 2', 'Cutting Zone 3',
-                                        'Zone 0 Extension', 'Zone 1 Extension', 'Zone 2 Extension',
-                                        'Storage Area', 'Collar Production',
-                                    ];
-                                    const cuttingMachines = machineLayout.filter(m =>
-                                        m.id.startsWith('gerber-') ||
-                                        m.id.startsWith('mc-zone0-') ||
-                                        m.id.startsWith('bandknife-') ||
-                                        m.id.startsWith('spreading-table-') ||
-                                        m.id.startsWith('fusing-custom-') ||
-                                        m.id.startsWith('straight-knife-') ||
-                                        m.id.startsWith('manual-spreader-') ||
-                                        m.id.startsWith('supermarket-zone') ||
-                                        m.id.startsWith('storage-fusing-') ||
-                                        m.id.startsWith('cutting-fusing-') ||
-                                        m.id.startsWith('cutting-pillar') ||
-                                        m.id.startsWith('human-') ||
-                                        m.id.startsWith('op-') ||
-                                        CUTTING_SECTIONS.includes(m.section as string) ||
-                                        CUTTING_SECTIONS.includes(m.operation?.section as string) ||
-                                        (m.section && m.section.toLowerCase().includes('cutting')) ||
-                                        (m.section && m.section.toLowerCase().includes('zone')) ||
-                                        (m.operation?.section && m.operation.section.toLowerCase().includes('cutting')) ||
-                                        (m.operation?.section && m.operation.section.toLowerCase().includes('zone'))
-                                    );
+                                    // Save the isolated cuttingItems directly — no filtering needed
+                                    const itemsToSave = cuttingItems ?? [];
                                     try {
-                                        await useLineStore.getState().syncDigitalTwinLayout("CUTTING", cuttingMachines);
+                                        await useLineStore.getState().syncDigitalTwinLayout("CUTTING", itemsToSave as any);
                                         setIsSaved(true);
                                         setTimeout(() => setIsSaved(false), 3000);
                                         toast.success("✅ Cutting layout saved!");

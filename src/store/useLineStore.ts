@@ -23,8 +23,11 @@ import {
 import { calculateMachineRequirements } from '@/utils/lineBalancing';
 import { toast } from 'sonner';
 import { API_BASE_URL } from '../config';
-import { db } from "@/firebase";
+import { db, ishikaDb } from "@/firebase";
 import { doc, setDoc, getDoc, collection, getDocs, query, where, deleteDoc } from "firebase/firestore";
+
+// Use db for Digital Twin layouts (Avanthika's factory-twin Firebase)
+const layoutDb = db;
 
 interface LineStore {
   savedLines: LineData[];
@@ -136,6 +139,11 @@ interface LineStore {
   setWarehouseItems: (items: any[]) => void;
   fetchWarehouseLayout: (getInitialDefaultItems: () => any[]) => Promise<void>;
 
+  // Cutting layout isolated from machineLayout so it never gets overwritten by sewing layout generator
+  cuttingItems: any[] | null;     // null = not yet loaded
+  setCuttingItems: (items: any[]) => void;
+  fetchCuttingLayout: (getBaseCuttingMachines: () => any[]) => Promise<void>;
+
   cuttingLayoutLoaded: boolean;
   setCuttingLayoutLoaded: (loaded: boolean) => void;
 }
@@ -214,30 +222,77 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
   warehouseItems: null,
   setWarehouseItems: (items) => set({ warehouseItems: items }),
   fetchWarehouseLayout: async (getInitialDefaultItems) => {
-    // Only fetch if not already loaded
+    // Skip if already loaded from localStorage or previous fetch
     if (get().warehouseItems !== null) return;
     try {
-      const layoutRef = doc(db, 'modifiedLayouts', 'WAREHOUSE');
+      console.log('[FirebaseSync] Fetching warehouse layout from Firestore...');
+      const layoutRef = doc(layoutDb, 'modifiedLayouts', 'WAREHOUSE');
       const layoutSnap = await getDoc(layoutRef);
       if (layoutSnap.exists()) {
         const data = layoutSnap.data();
         const savedItems = data.machineLayout || [];
         if (savedItems.length > 0) {
           const defaultItems = getInitialDefaultItems();
+          // Merge: update default positions with saved positions, keep dynamic (added) items too
           const updatedDefaults = defaultItems.map((defItem: any) => {
             const saved = savedItems.find((s: any) => s.id === defItem.id);
             return saved ? { ...defItem, ...saved } : defItem;
           });
           const dynamicItems = savedItems.filter((s: any) => !defaultItems.some((d: any) => d.id === s.id));
           set({ warehouseItems: [...updatedDefaults, ...dynamicItems] });
+          console.log('[FirebaseSync] Warehouse layout loaded from Firestore:', savedItems.length, 'items');
           return;
         }
       }
       // No saved layout — use defaults
+      console.log('[FirebaseSync] No saved warehouse layout in Firestore — using defaults');
       set({ warehouseItems: getInitialDefaultItems() });
     } catch (err) {
-      console.error('[FirebaseSync] Error loading warehouse layout:', err);
-      set({ warehouseItems: getInitialDefaultItems() });
+      console.error('[FirebaseSync] Error loading warehouse layout from Firestore:', err);
+      // Fall back to default items if Firestore fails
+      if (get().warehouseItems === null) {
+        set({ warehouseItems: getInitialDefaultItems() });
+      }
+    }
+  },
+
+  // Cutting layout — isolated from sewing machineLayout so regenerating sewing never clobbers cutting
+  cuttingItems: null,
+  setCuttingItems: (items) => set({ cuttingItems: items }),
+  fetchCuttingLayout: async (getBaseCuttingMachines) => {
+    if (get().cuttingItems !== null) return;
+    try {
+      console.log('[FirebaseSync] Fetching cutting layout from Firestore...');
+      const layoutRef = doc(layoutDb, 'modifiedLayouts', 'CUTTING');
+      const layoutSnap = await getDoc(layoutRef);
+      if (layoutSnap.exists()) {
+        const data = layoutSnap.data();
+        const savedItems = data.machineLayout || [];
+        if (savedItems.length > 0) {
+          const baseItems = getBaseCuttingMachines();
+          const savedMap = new Map(savedItems.map((m: any) => [m.id, m]));
+          // Merge: start from base (correct geometry), override position/rotation from Firebase
+          const merged = baseItems.map((base: any) =>
+            savedMap.has(base.id) ? { ...base, ...savedMap.get(base.id) } : base
+          );
+          // Append items that were dynamically added (not in base)
+          const baseIds = new Set(baseItems.map((m: any) => m.id));
+          savedItems.forEach((m: any) => {
+            if (!baseIds.has(m.id)) merged.push(m);
+          });
+          set({ cuttingItems: merged, cuttingLayoutLoaded: true });
+          console.log('[FirebaseSync] Cutting layout loaded from Firestore:', savedItems.length, 'items');
+          return;
+        }
+      }
+      // No saved layout — use base defaults
+      console.log('[FirebaseSync] No saved cutting layout in Firestore — using defaults');
+      set({ cuttingItems: getBaseCuttingMachines(), cuttingLayoutLoaded: true });
+    } catch (err) {
+      console.error('[FirebaseSync] Error loading cutting layout from Firestore:', err);
+      if (get().cuttingItems === null) {
+        set({ cuttingItems: getBaseCuttingMachines(), cuttingLayoutLoaded: true });
+      }
     }
   },
 
@@ -1481,8 +1536,8 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
 
   syncDigitalTwinLayout: async (department: 'WAREHOUSE' | 'CUTTING' | 'SEWING' | 'FINISHING', machines: MachinePosition[]) => {
     try {
-      console.log(`[FirebaseSync] Saving Departmental Layout to Cloud... (${department})`);
-      const layoutRef = doc(db, "modifiedLayouts", department);
+      console.log(`[FirebaseSync] Saving ${department} layout to avanthioka Firebase...`, machines.length, 'items');
+      const layoutRef = doc(layoutDb, "modifiedLayouts", department);
       const sanitizedMachines = JSON.parse(JSON.stringify(machines));
       await setDoc(layoutRef, {
         department,
@@ -1491,9 +1546,15 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
         count: sanitizedMachines.length,
         firebase_updated: true
       });
-      console.log(`[FirebaseSync] Departmental Layout SAVED successfully to Firestore.`);
-    } catch (err) {
-      console.error("[FirebaseSync] Error syncing digital twin layout:", err);
+      console.log(`[FirebaseSync] ${department} layout SAVED successfully to Firestore (${sanitizedMachines.length} items).`);
+      // Also update the in-memory store slot so localStorage stays in sync with what was saved
+      if (department === 'WAREHOUSE') {
+        set({ warehouseItems: sanitizedMachines });
+      } else if (department === 'CUTTING') {
+        set({ cuttingItems: sanitizedMachines });
+      }
+    } catch (err: any) {
+      console.error(`[FirebaseSync] FAILED to save ${department} layout:`, err?.message || err);
       throw err;
     }
   },
@@ -1621,7 +1682,15 @@ export const useLineStore = create<LineStore>()(persist((set, get) => ({
     workingHours: state.workingHours,
     efficiency: state.efficiency,
     layoutLogicVersion: state.layoutLogicVersion,
+    // Persist layout data so it survives page refreshes WITHOUT Firebase round-trip
+    warehouseItems: state.warehouseItems,
+    cuttingItems: state.cuttingItems,
   }),
-  version: 2,
-  migrate: (persistedState: any, _version: number) => persistedState,
+  version: 3,
+  migrate: (persistedState: any, _version: number) => ({
+    ...persistedState,
+    // Ensure new fields default to null if upgrading from older version
+    warehouseItems: persistedState.warehouseItems ?? null,
+    cuttingItems: persistedState.cuttingItems ?? null,
+  }),
 }));
