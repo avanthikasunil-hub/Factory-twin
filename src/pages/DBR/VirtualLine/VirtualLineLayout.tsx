@@ -253,7 +253,7 @@ export default function VirtualLineLayout() {
                         <h2 className="text-[13px] font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-3">
                             {currentPath !== "/dbr/virtual-line/overview" && <span className="text-slate-300 font-medium">/</span>}
                             {NAV_ITEMS.find(item => item.path === currentPath)?.label ||
-                                (currentPath.includes('schedule') ? "Line Schedule" : "Virtual Line")}
+                                (currentPath.includes('schedule') ? "Line Schedule" : "C/O Monitor")}
                         </h2>
 
                         {(currentPath === "/dbr/virtual-line/floor" || (currentPath === "/dbr/virtual-line/tracker" && searchParams.get("line"))) && (

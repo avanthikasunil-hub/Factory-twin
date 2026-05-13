@@ -86,7 +86,7 @@ export default function HomeScreenPage() {
                         <p className="text-indigo-600 font-bold text-xs uppercase tracking-widest">Doddaballapur</p>
                       </div>
                       <p className="text-gray-500 text-sm leading-relaxed px-4">
-                        Access Line Planner, Virtual Line, and Digital Twin for the DBR facility.
+                        Access Line Planner, C/O Monitor, and FactoryView for the DBR facility.
                       </p>
                     </div>
                     <Button className="w-full bg-[#123B6D] hover:bg-[#1a4a84] py-6 rounded-2xl">Enter DBR</Button>
@@ -149,7 +149,7 @@ export default function HomeScreenPage() {
                     </Card>
                   </motion.div>
 
-                  {/* Virtual Line */}
+                  {/* C/O Monitor */}
                   <motion.div whileHover={{ y: -6 }}>
                     <Card
                       className="rounded-3xl shadow-xl border-0 bg-white cursor-pointer hover:shadow-2xl transition h-full"
@@ -160,17 +160,17 @@ export default function HomeScreenPage() {
                           <div className="w-16 h-16 rounded-2xl bg-purple-100 flex items-center justify-center">
                             <Brain className="text-purple-600" size={32} />
                           </div>
-                          <h3 className="text-2xl font-semibold">Virtual Line</h3>
+                          <h3 className="text-2xl font-semibold">C/O Monitor</h3>
                           <p className="text-gray-500 text-sm leading-relaxed px-4">
                             Digital twin view of production lines and operational status.
                           </p>
                         </div>
-                        <Button className="mt-6">Open Virtual Line</Button>
+                        <Button className="mt-6">Open C/O Monitor</Button>
                       </CardContent>
                     </Card>
                   </motion.div>
 
-                  {/* Digital Twin */}
+                  {/* FactoryView */}
                   <motion.div whileHover={{ y: -6 }}>
                     <Card
                       className="rounded-3xl shadow-xl border-0 bg-white cursor-pointer hover:shadow-2xl transition h-full"
@@ -181,12 +181,12 @@ export default function HomeScreenPage() {
                           <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center">
                             <Database className="text-emerald-600" size={32} />
                           </div>
-                          <h3 className="text-2xl font-semibold">Digital Twin</h3>
+                          <h3 className="text-2xl font-semibold">FactoryView</h3>
                           <p className="text-gray-500 text-sm leading-relaxed">
                             View the real-time status and 3D layout of the entire factory floor.
                           </p>
                         </div>
-                        <Button className="mt-6">Open Digital Twin</Button>
+                        <Button className="mt-6">Open FactoryView</Button>
                       </CardContent>
                     </Card>
                   </motion.div>

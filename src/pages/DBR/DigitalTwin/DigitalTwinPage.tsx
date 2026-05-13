@@ -370,7 +370,7 @@ export default function DigitalTwinPage() {
           </div>
           {sidebarOpen && (
             <div className="flex flex-col truncate">
-              <span className="font-black text-white text-lg tracking-tight">FACTORY TWIN</span>
+              <span className="font-black text-white text-lg tracking-tight">FACTORYVIEW</span>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">Intelligence Hub</span>
             </div>
           )}
