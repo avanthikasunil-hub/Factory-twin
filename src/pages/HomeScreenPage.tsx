@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Factory, Brain, Database, ArrowLeft, Building2, MapPin } from "lucide-react";
+import { Factory, Brain, Database, ArrowLeft, Building2, MapPin, Activity, Box } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -158,7 +158,7 @@ export default function HomeScreenPage() {
                       <CardContent className="p-10 flex flex-col items-center text-center gap-5 min-h-[340px] justify-between">
                         <div className="flex flex-col items-center gap-5">
                           <div className="w-16 h-16 rounded-2xl bg-purple-100 flex items-center justify-center">
-                            <Brain className="text-purple-600" size={32} />
+                            <Activity className="text-purple-600" size={32} />
                           </div>
                           <h3 className="text-2xl font-semibold">C/O Monitor</h3>
                           <p className="text-gray-500 text-sm leading-relaxed px-4">
@@ -179,7 +179,7 @@ export default function HomeScreenPage() {
                       <CardContent className="p-10 flex flex-col items-center text-center gap-5 min-h-[340px] justify-between">
                         <div className="flex flex-col items-center gap-5">
                           <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center">
-                            <Database className="text-emerald-600" size={32} />
+                            <Box className="text-emerald-600" size={32} />
                           </div>
                           <h3 className="text-2xl font-semibold">FactoryView</h3>
                           <p className="text-gray-500 text-sm leading-relaxed">

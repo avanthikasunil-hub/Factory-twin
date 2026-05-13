@@ -159,7 +159,7 @@ export default function VirtualLineLayout() {
                     isSidebarOpen ? "p-8 pb-10" : "py-8 justify-center"
                 )}>
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-lg shadow-purple-500/20">
-                        <Factory className="w-6 h-6 text-white" />
+                        <Activity className="w-6 h-6 text-white" />
                     </div>
                     <AnimatePresence>
                         {isSidebarOpen && (
@@ -169,8 +169,8 @@ export default function VirtualLineLayout() {
                                 exit={{ opacity: 0, x: -10 }}
                                 className="flex flex-col"
                             >
-                                <span className="font-black text-white text-xl tracking-tight leading-none">Factory</span>
-                                <span className="font-bold text-slate-500 text-[10px] uppercase tracking-widest mt-1">Intelligent Twin</span>
+                                <span className="font-black text-white text-xl tracking-tight leading-none">C/O</span>
+                                <span className="font-bold text-slate-500 text-[10px] uppercase tracking-widest mt-1">Monitor</span>
                             </motion.div>
                         )}
                     </AnimatePresence>
