@@ -141,7 +141,7 @@ export default function HomeScreenPage() {
                           </div>
                           <h3 className="text-2xl font-semibold">Line Planner</h3>
                           <p className="text-gray-500 text-sm leading-relaxed">
-                            Visualize and plan your garment production lines with powerful 3D layouts
+                            Advanced tool for the layout generation and planning of new styles.
                           </p>
                         </div>
                         <Button className="mt-6">Open Line Planner</Button>
@@ -162,7 +162,7 @@ export default function HomeScreenPage() {
                           </div>
                           <h3 className="text-2xl font-semibold">C/O Monitor</h3>
                           <p className="text-gray-500 text-sm leading-relaxed px-4">
-                            Digital twin view of production lines and operational status.
+                            Live interface for real-time changeover monitoring and execution tracking.
                           </p>
                         </div>
                         <Button className="mt-6">Open C/O Monitor</Button>
@@ -183,7 +183,7 @@ export default function HomeScreenPage() {
                           </div>
                           <h3 className="text-2xl font-semibold">FactoryView</h3>
                           <p className="text-gray-500 text-sm leading-relaxed">
-                            View the real-time status and 3D layout of the entire factory floor.
+                            Interactive 3D environment for viewing the complete factory floor.
                           </p>
                         </div>
                         <Button className="mt-6">Open FactoryView</Button>
@@ -206,7 +206,7 @@ export default function HomeScreenPage() {
                           </div>
                           <h3 className="text-2xl font-semibold">Line Planner</h3>
                           <p className="text-gray-500 text-sm leading-relaxed">
-                            Visualize and plan your garment production lines for Kanakapura
+                            Advanced tool for the layout generation and planning of new styles.
                           </p>
                         </div>
                         <Button className="mt-6">Open KPR Line Planner</Button>

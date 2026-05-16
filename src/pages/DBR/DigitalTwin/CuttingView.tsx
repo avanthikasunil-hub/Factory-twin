@@ -257,10 +257,14 @@ export const CuttingView: React.FC = () => {
 
     // ── ON MOUNT: Load layout from Firestore into the isolated cuttingItems store slot ──
     useEffect(() => {
-        // DEV OVERRIDE: Force updating the store with the latest code changes to bypass Zustand memory
-        setCuttingItems(baseCuttingMachines);
-        setServerLayoutLoaded(true);
-    }, [baseCuttingMachines, setCuttingItems]); // eslint-disable-line react-hooks/exhaustive-deps
+        if (!serverLayoutLoaded) {
+            const loadLayout = async () => {
+                await fetchCuttingLayout(() => baseCuttingMachines);
+                setServerLayoutLoaded(true);
+            };
+            loadLayout();
+        }
+    }, [serverLayoutLoaded, fetchCuttingLayout, baseCuttingMachines]);
 
     // ── SYNC 1: When cuttingItems loads from Firebase, inject into machineLayout so Scene3D edit tools work ──
     const prevCuttingItemsRef = React.useRef<any[] | null>(null);
