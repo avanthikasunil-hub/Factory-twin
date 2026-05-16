@@ -7,6 +7,7 @@ import {
   Users, Scissors, TrendingUp, Info, RefreshCw, Plus, Layers, FileDown, AlertTriangle
 } from 'lucide-react';
 import { generateLinePDF, generateMachineRequirementPDF } from '@/utils/pdfGenerator';
+import { generateMachineRequirementExcel } from '@/utils/excelGenerator';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -401,6 +402,9 @@ const LinePlannerPage = () => {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => currentLine && generateMachineRequirementPDF(currentLine as any)}>
                    Machine Requirements (PDF)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => currentLine && generateMachineRequirementExcel(currentLine as any)}>
+                   Machine Requirements (Excel)
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
