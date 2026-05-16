@@ -44,17 +44,65 @@ export const getCuttingLayout = (startX: number, z0Pos: number, z1Pos: number, z
                 y: 0, 
                 z: z0Pos + (2 * FT)
             },
-            rotation: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: Math.PI / 2, z: 0 },
             lane: 'B',
             section: 'Storage Area',
             tableLength: 4.0,
             tableWidth: 2.5,
             tableHeight: 4.0,
-            rotationOffset: Math.PI / 2,
-            rotateOperatorAxis: true,
-            operatorOnFarSide: true,
             centerModel: true,
-            modelRotation: Math.PI / 2,
+        };
+    }) as any,
+    ...Array.from({ length: 3 }).map((_, idx) => {
+        const xBase = 23.0; // Starts after Rotary Fusing (18.8 + 4.2)
+        return {
+            id: `storage-snls-single-${idx + 1}`,
+            operation: {
+                op_no: `STR-SNLS-S-${idx + 1}`,
+                op_name: 'SNLS',
+                machine_type: 'snls',
+                smv: 0.5,
+                section: 'Storage Area',
+            },
+            position: { 
+                x: startX + ((xBase + (idx * 4.2)) * FT), 
+                y: 0, 
+                z: z0Pos - (2 * FT) 
+            },
+            rotation: { x: 0, y: Math.PI / 2, z: 0 },
+            lane: 'A',
+            section: 'Storage Area',
+            tableLength: 4.0,
+            tableWidth: 2.5,
+            tableHeight: 4.0,
+            centerModel: true,
+        };
+    }) as any,
+    ...Array.from({ length: 8 }).map((_, idx) => {
+        const row = idx < 4 ? 0 : 1; 
+        const col = idx % 4;
+        const xBase = 35.6; 
+        return {
+            id: `storage-snls-${idx + 1}`,
+            operation: {
+                op_no: `STR-SNLS-${idx + 1}`,
+                op_name: 'SNLS',
+                machine_type: 'snls',
+                smv: 0.5,
+                section: 'Storage Area',
+            },
+            position: { 
+                x: startX + ((xBase + (col * 4.2)) * FT), 
+                y: 0, 
+                z: z0Pos + (row === 0 ? 2 * FT : -2 * FT) 
+            },
+            rotation: { x: 0, y: Math.PI / 2, z: 0 },
+            lane: row === 0 ? 'B' : 'A',
+            section: 'Storage Area',
+            tableLength: 4.0,
+            tableWidth: 2.5,
+            tableHeight: 4.0,
+            centerModel: true,
         };
     }) as any,
     {

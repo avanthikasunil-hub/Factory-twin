@@ -388,7 +388,13 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
 
       // Standard grounding - Snap internal position based on CLONED scene to be most accurate
       const finalBox = new THREE.Box3().setFromObject(clonedScene);
-      const baseY = -finalBox.min.y;
+      let baseY = -finalBox.min.y;
+
+      // FIX: Rotary Fusing / Fusing models hover in the air due to bounding box anomalies
+      if (mType.includes('fusing') || mType.includes('rotary')) {
+        baseY -= 0.6; // Pull down to the ground
+      }
+
       clonedScene.position.y = baseY;
 
       // Ensure the outer group itself starts at 0 height
@@ -505,7 +511,7 @@ const Machine3DInternal = ({ machineData, relativePosition, isOverview }: Machin
         mType.includes('bandknife') || mType.includes('rotary') ||
         mType.includes('folding') || mType.includes('macpi') || mType.includes('checking') ||
         mType.includes('thread') || mType.includes('spotwash') || mType.includes('finishing') ||
-        mType.includes('helper')
+        mType.includes('helper') || mType.includes('cuttingf')
       )
   ) && !machineData.hideOperator && mType !== 'human' && !mType.includes('sitting-human') && !mType.includes('supermarket') && !mType.includes('cabin');
 

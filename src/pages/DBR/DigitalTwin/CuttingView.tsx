@@ -146,8 +146,48 @@ export const CuttingView: React.FC = () => {
                     id: `cutting-fusing-${realIdx + 1}`,
                     operation: { op_no: `CUT-F-${realIdx + 1}`, op_name: 'Special Cutting', machine_type: 'cuttingf_sitting', smv: 0.5, section: 'Storage Area' },
                     position: { x: startX + ((2 + (realIdx * 4.2)) * FT), y: 0, z: z0Pos + (2 * FT) },
-                    rotation: { x: 0, y: 0, z: 0 },
-                    lane: 'B', section: 'Storage Area', tableLength: 4.0, tableWidth: 2.5, tableHeight: 4.0, rotationOffset: Math.PI / 2, rotateOperatorAxis: true, operatorOnFarSide: true, centerModel: true, modelRotation: Math.PI / 2,
+                    rotation: { x: 0, y: Math.PI / 2, z: 0 },
+                    lane: 'B', section: 'Storage Area', tableLength: 4.0, tableWidth: 2.5, tableHeight: 4.0, centerModel: true,
+                };
+            }) as any,
+            ...Array.from({ length: 3 }).map((_, idx) => {
+                const xBase = 23.0; // Starts after Rotary Fusing (18.8 + 4.2)
+                return {
+                    id: `storage-snls-single-${idx + 1}`,
+                    operation: { op_no: `STR-SNLS-S-${idx + 1}`, op_name: 'SNLS', machine_type: 'snls', smv: 0.5, section: 'Storage Area' },
+                    position: { 
+                        x: startX + ((xBase + (idx * 4.2)) * FT), 
+                        y: 0, 
+                        z: z0Pos - (2 * FT) 
+                    },
+                    rotation: { x: 0, y: Math.PI / 2, z: 0 },
+                    lane: 'A',
+                    section: 'Storage Area',
+                    tableLength: 4.0,
+                    tableWidth: 2.5,
+                    tableHeight: 4.0,
+                    centerModel: true,
+                };
+            }) as any,
+            ...Array.from({ length: 8 }).map((_, idx) => {
+                const row = idx < 4 ? 0 : 1; 
+                const col = idx % 4;
+                const xBase = 35.6; 
+                return {
+                    id: `storage-snls-${idx + 1}`,
+                    operation: { op_no: `STR-SNLS-${idx + 1}`, op_name: 'SNLS', machine_type: 'snls', smv: 0.5, section: 'Storage Area' },
+                    position: { 
+                        x: startX + ((xBase + (col * 4.2)) * FT), 
+                        y: 0, 
+                        z: z0Pos + (row === 0 ? 2 * FT : -2 * FT) 
+                    },
+                    rotation: { x: 0, y: Math.PI / 2, z: 0 },
+                    lane: row === 0 ? 'B' : 'A',
+                    section: 'Storage Area',
+                    tableLength: 4.0,
+                    tableWidth: 2.5,
+                    tableHeight: 4.0,
+                    centerModel: true,
                 };
             }) as any,
             { id: 'gerber-1', operation: { op_no: 'CUT-01', op_name: 'Gerber Cutter', machine_type: 'gerber', smv: 0, section: 'Cutting Zone 3' }, position: { x: startX + (113 * FT) + (17.0 * FT / 2) + (1.0 * FT), y: 0, z: z3Pos }, rotation: { x: 0, y: Math.PI, z: 0 }, lane: 'A', section: 'Cutting Zone 3', tableLength: 17.0, tableWidth: 7.1, operatorOnFarSide: true } as any,
@@ -217,13 +257,10 @@ export const CuttingView: React.FC = () => {
 
     // ── ON MOUNT: Load layout from Firestore into the isolated cuttingItems store slot ──
     useEffect(() => {
-        if (cuttingLayoutLoaded && cuttingItems !== null) {
-            setServerLayoutLoaded(true);
-            return; // Already loaded this session
-        }
-        fetchCuttingLayout(() => baseCuttingMachines)
-            .then(() => setServerLayoutLoaded(true));
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+        // DEV OVERRIDE: Force updating the store with the latest code changes to bypass Zustand memory
+        setCuttingItems(baseCuttingMachines);
+        setServerLayoutLoaded(true);
+    }, [baseCuttingMachines, setCuttingItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── SYNC 1: When cuttingItems loads from Firebase, inject into machineLayout so Scene3D edit tools work ──
     const prevCuttingItemsRef = React.useRef<any[] | null>(null);
