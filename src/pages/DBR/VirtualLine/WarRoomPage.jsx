@@ -32,6 +32,7 @@ import {
   extractOpSMV
 } from "./generatorCotLayout"; // Refreshed
 import { generateVirtualFloorLayout, LANE_Z_CENTER_AB, LANE_Z_CENTER_CD } from "./virtualFloorLayoutGenerator";
+import * as XLSX from "xlsx";
 
 const MACHINE_NORMALISATION = {
   'bholemc': 'Button Hole M/C', 'buttonholemc': 'Button Hole M/C', 'bholem': 'Button Hole M/C',
@@ -50,6 +51,72 @@ const MACHINE_NORMALISATION = {
 const IGNORED_OPS = ['washing allowance', 'washing_allowance', 'thread sucking', 'allowance'];
 
 function normalizeKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+// ── Parse real SMV values from an uploaded OB Excel file ──
+const _warRoomSMVCache = {};
+const TOTAL_ROW_PATTERNS = [
+  /^total$/i, /^sub.?total/i, /^grand.?total/i, /^section.?total/i,
+  /^sum$/i, /^summary$/i, /^aggregate/i, /^overall/i,
+  /^total\s+smv/i, /^smv\s+total/i, /^end\s+of/i
+];
+function isTotalOpName(name) {
+  const s = String(name || '').trim();
+  return s.length > 0 && TOTAL_ROW_PATTERNS.some(p => p.test(s));
+}
+async function parseSMVFromOBFile(fileUrl) {
+  if (!fileUrl) return null;
+  if (_warRoomSMVCache[fileUrl]) return _warRoomSMVCache[fileUrl];
+  try {
+    const resp = await fetch(fileUrl);
+    const buf = await resp.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const SMV_ALIASES = ['smv','sam','standardminute','stdmin','standardtime','cycletime','pitchtime','mins','min'];
+    const smvMap = {};
+    const SECTION_MAP = [['collar','Collar'],['cuff','Cuff'],['sleeve','Sleeve'],['front','Front'],['back','Back'],['assembly','Assembly'],['joining','Assembly'],['sewing','Assembly']];
+    wb.SheetNames.forEach(sheetName => {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
+      if (!rows || rows.length < 2) return;
+      let headerIdx = -1, smvCol = -1, opCol = -1, sectionCol = -1;
+      for (let ri = 0; ri < Math.min(rows.length, 40); ri++) {
+        const norm = rows[ri].map(c => normalizeKey(c));
+        const si = norm.findIndex(c => SMV_ALIASES.includes(c));
+        if (si >= 0) {
+          headerIdx = ri; smvCol = si;
+          opCol = norm.findIndex(c => ['operation','opname','description','particulars','process','b','c'].some(t => c.includes(t)));
+          if (opCol < 0) opCol = 1;
+          sectionCol = norm.findIndex(c => c.includes('section') || c.includes('dept') || c.includes('area'));
+          break;
+        }
+      }
+      if (headerIdx < 0 || smvCol < 0) return;
+      let currentSection = 'General';
+      for (let ri = headerIdx + 1; ri < rows.length; ri++) {
+        const row = rows[ri];
+        if (!row || row.length === 0) continue;
+        // detect section header rows
+        const rowStr = row.join(' ').toLowerCase();
+        const secMatch = SECTION_MAP.find(([kw]) => rowStr.includes(kw) && !String(row[smvCol]).trim());
+        if (secMatch) { currentSection = secMatch[1]; continue; }
+        const opName = normalizeKey(row[opCol]);
+        if (!opName || opName.length < 3) continue;
+        if (isTotalOpName(opName)) continue; // skip total/subtotal rows
+        const rawSMV = parseFloat(String(row[smvCol]).replace(/[^\d.]/g, ''));
+        // Per-op SMV sanity cap: real garment ops are < 15 min each
+        if (!isNaN(rawSMV) && rawSMV > 0 && rawSMV < 15) {
+          const sec = (sectionCol >= 0 && row[sectionCol]) ? String(row[sectionCol]).trim() : currentSection;
+          if (!smvMap[opName]) smvMap[opName] = [];
+          smvMap[opName].push({ smv: rawSMV, section: sec });
+        }
+      }
+    });
+    _warRoomSMVCache[fileUrl] = smvMap;
+    console.log(`[WarRoom] Parsed ${Object.keys(smvMap).length} SMV entries from OB file`);
+    return smvMap;
+  } catch (err) {
+    console.warn('[WarRoom] Failed to parse OB file for SMV:', err);
+    return null;
+  }
+}
 
 import fuzzy from "fuzzy";
 import axios from "axios";
@@ -1254,6 +1321,7 @@ export default function WarRoom() {
         }
       }
       if (!currentLine) {
+        console.log("[WarRoom Debug] currentLine is still undefined after fallbacks, setting '---'");
         setMeta({
           style: "---",
           line: activeLineLabel,
@@ -1264,22 +1332,66 @@ export default function WarRoom() {
         });
         return;
       }
+      
+      console.log("[WarRoom Debug] Resolving metadata for currentLine:", currentLine);
       const con = String(
         currentLine.conNumber ||
         currentLine.summaryData?.conNumber ||
         currentLine.conNo ||
+        currentLine.summaryData?.conNo ||
+        currentLine.con ||
+        currentLine.summaryData?.con ||
         "",
       ).trim();
 
+      // Resolve style — check every possible field name that different doc versions use
+      const resolveStyle = (src) =>
+        src?.toStyle ||
+        src?.style ||
+        src?.styleCode ||
+        src?.styleName ||
+        src?.uploadStyle ||
+        src?.styleNo ||
+        src?.style_no ||
+        null;
+
+      let styleVal = resolveStyle(currentLine) || resolveStyle(currentLine.summaryData);
+
+      // Fallback: If style is missing but we have CON, fetch from styleOBmetadata (like Overview does)
+      if (!styleVal && con && con !== "---") {
+        try {
+          console.log(`[WarRoom Debug] Fallback lookup for CON: ${con}`);
+          const metaQ = query(
+            collection(db, "styleOBmetadata"),
+            where("conNo", "==", con),
+            limit(1)
+          );
+          const metaSnap = await getDocs(metaQ);
+          if (!metaSnap.empty) {
+            const md = metaSnap.docs[0].data();
+            styleVal = md.styleName || md.uploadStyle || md.style || md.styleCode;
+            console.log(`[WarRoom Debug] Found style via fallback: ${styleVal}`, md);
+          } else {
+            console.log(`[WarRoom Debug] No styleOBmetadata found for CON: ${con}`);
+          }
+        } catch (e) {
+          console.warn("[WarRoom] Failed to fetch fallback style name:", e);
+        }
+      }
+      styleVal = styleVal || "---";
+
+      console.log(`[WarRoom Debug] Final styleVal=${styleVal}, con=${con}`);
+
+      const fromStyleVal = currentLine.fromStyle || currentLine.summaryData?.fromStyle ||
+                           currentLine.previousStyle || currentLine.summaryData?.previousStyle || "---";
+      const lineVal = currentLine.line || currentLine.summaryData?.line ||
+                      currentLine.lineNo || currentLine.summaryData?.lineNo ||
+                      (activeLineLabel?.includes('Line') ? activeLineLabel : 'Line 1');
+
       const nextMeta = {
-        style:
-          currentLine.toStyle ||
-          currentLine.summaryData?.toStyle ||
-          currentLine.style ||
-          "---",
-        fromStyle:
-          currentLine.fromStyle || currentLine.summaryData?.fromStyle || "---",
-        line: currentLine.line || currentLine.summaryData?.line || (activeLineLabel?.includes('Line') ? activeLineLabel : 'Line 1'),
+        style: styleVal,
+        fromStyle: fromStyleVal,
+        line: lineVal,
         con,
         fromCon: currentLine.fromCon || currentLine.summaryData?.fromCon || "---",
         fromBuyer: currentLine.fromBuyer || currentLine.summaryData?.fromBuyer || "---",
@@ -1288,9 +1400,9 @@ export default function WarRoom() {
 
       // Only update if values actually changed to prevent downstream effect ripple
       setMeta(prev => {
-        const isSame = prev.style === nextMeta.style && 
-                       prev.fromStyle === nextMeta.fromStyle && 
-                       prev.line === nextMeta.line && 
+        const isSame = prev.style === nextMeta.style &&
+                       prev.fromStyle === nextMeta.fromStyle &&
+                       prev.line === nextMeta.line &&
                        prev.con === nextMeta.con;
         return isSame ? prev : nextMeta;
       });
@@ -1321,22 +1433,95 @@ export default function WarRoom() {
         }
 
         if (!snapFrom.empty) {
-          const fromData = snapFrom.docs[0].data().parsedOBData || {};
-          const flattenedFrom = [];
-          const extractFrom = (data) => {
+          const fromDocData = snapFrom.docs[0].data();
+          const fromData = fromDocData.parsedOBData || {};
+          let flattenedFrom = [];
+          const extractFrom = (data, inheritedSection) => {
             if (!data) return;
             if (Array.isArray(data)) {
-              data.forEach((item) => {
-                if (item.operations)
-                  flattenedFrom.push(...(item.operations || []));
-                else if (item.operation || item.op_name)
-                  flattenedFrom.push(item);
-              });
+              data.forEach((item) => extractFrom(item, inheritedSection));
             } else if (typeof data === "object") {
-              Object.values(data).forEach(extractFrom);
+              const sec = data.section || data.sectionName || data.name || inheritedSection || "General";
+              if (Array.isArray(data.operations)) {
+                data.operations.forEach(op => {
+                   const opName = op.op_name || op.operation || "";
+                   if (opName && !isTotalOpName(opName)) {
+                     flattenedFrom.push({ ...op, section: sec, op_name: opName });
+                   }
+                });
+              } else if (data.operation || data.op_name) {
+                 const opName = data.op_name || data.operation || "";
+                 if (opName && !isTotalOpName(opName)) {
+                   flattenedFrom.push({ ...data, section: sec, op_name: opName });
+                 }
+              } else {
+                 Object.values(data).forEach(val => extractFrom(val, sec));
+              }
             }
           };
-          extractFrom(fromData);
+          extractFrom(fromData, "General");
+
+          // Correct SMVs using Excel fileUrl if available
+          let fromFileUrl = fromDocData.fileUrl || fromDocData.obFileUrl;
+          
+          if (!fromFileUrl) {
+            console.log("[WarRoom Debug] fileUrl missing on styleOBmetadata, checking past changeoverData for fromStyle:", fromStyleName);
+            try {
+              const pastQ = query(
+                collection(db, "changeoverData"),
+                where("line", "in", [activeLineLabel, activeLineLabel.toUpperCase(), (meta.line || "Line 1")]),
+                where("docType", "==", "summary"),
+                limit(10)
+              );
+              const pastSnap = await getDocs(pastQ);
+              const pastDoc = pastSnap.docs.find(d => {
+                const data = d.data();
+                const sty = data.toStyle || data.style || data.summaryData?.toStyle || data.summaryData?.style;
+                return sty === fromStyleName && data.fileUrl;
+              });
+              if (pastDoc) {
+                fromFileUrl = pastDoc.data().fileUrl;
+                console.log("[WarRoom Debug] Found fromFileUrl in past changeoverData:", fromFileUrl);
+              }
+            } catch(e) {
+               console.warn("[WarRoom] Failed to find historical fromStyle fileUrl", e);
+            }
+          }
+
+          console.log("[WarRoom Debug] fromDocData keys:", Object.keys(fromDocData), "resolved fileUrl:", fromFileUrl);
+          if (fromFileUrl) {
+            try {
+              console.log("[WarRoom] Parsing SMV from fromOps OB file:", fromFileUrl);
+              const excelSMVMap = await parseSMVFromOBFile(fromFileUrl);
+              // Clone map so we can shift without destroying cache for other uses
+              const localMap = excelSMVMap ? JSON.parse(JSON.stringify(excelSMVMap)) : null;
+              if (localMap && Object.keys(localMap).length > 0) {
+                flattenedFrom.forEach(op => {
+                  const key = normalizeKey(op.op_name || '');
+                  if (localMap[key] && localMap[key].length > 0) {
+                    op.smv = localMap[key].shift().smv;
+                  } else {
+                    const fuzzyKey = Object.keys(localMap).find(k =>
+                      localMap[k].length > 0 &&
+                      ((k.length >= 5 && (key.startsWith(k.slice(0,5)) || k.startsWith(key.slice(0,5)))) ||
+                      key.includes(k) || k.includes(key))
+                    );
+                    if (fuzzyKey) op.smv = localMap[fuzzyKey].shift().smv;
+                  }
+                });
+              }
+            } catch (e) {
+              console.warn("[WarRoom] Failed to parse fromOps Excel SMV:", e);
+            }
+          }
+
+          // Fallback: Make sure every op has an SMV even if fileUrl failed
+          flattenedFrom.forEach(op => {
+             if (op.smv === undefined || isNaN(op.smv)) {
+               op.smv = extractOpSMV(op) || 0;
+             }
+          });
+
           setFromOps(flattenedFrom);
         }
       }
@@ -1389,39 +1574,150 @@ export default function WarRoom() {
 
       if (!snap.empty) {
         setObRef(snap.docs[0].ref);
-        unsub = onSnapshot(snap.docs[0].ref, (docSnap) => {
+        unsub = onSnapshot(snap.docs[0].ref, async (docSnap) => {
           const foundData = docSnap.data();
           if (!foundData) return;
           setFullObData(foundData);
-          // ── Robust OB extraction: same as Floor View buildOps ──
-          const parsedOB = foundData.parsedOBData || {};
-          const data = Array.isArray(parsedOB) ? parsedOB : Object.values(parsedOB);
 
-          const ops = [];
-          data.forEach(group => {
-            const addBlock = (block) => {
-              const sName = (block.section || 'General').trim();
-              (block.operations || []).forEach(op => {
-                if (IGNORED_OPS.some(p => (op.op_name || op.operation || '').toLowerCase().includes(p))) return;
-                const rawSMV = extractOpSMV(op);
-                const rawMachine = op.machine_type || op.machine || '';
-                const machineType = MACHINE_NORMALISATION[normalizeKey(rawMachine)] || rawMachine || 'SNLS';
-                ops.push({
-                  ...op,
-                  section: sName,
-                  op_name: extractOpName(op),
-                  machine_type: machineType,
-                  smv: rawSMV > 0 ? rawSMV : 1.0,
+          let ops = [];
+
+          // ── Step 1: Backend SQLite /get-ob (primary – has real parsed SMVs) ──
+          try {
+            const lineStr = (meta.line || "Line 1").trim();
+            const styleStr = (meta.style || "").trim();
+            const conStr = (meta.con && meta.con !== "---") ? meta.con.trim() : "";
+            const backendUrl = `${API_BASE_URL}/get-ob?line_no=${encodeURIComponent(lineStr)}&style_no=${encodeURIComponent(styleStr)}${conStr ? `&con_no=${encodeURIComponent(conStr)}` : ""}`;
+            const resp = await axios.get(backendUrl);
+            const backendOps = resp.data?.operations;
+            if (Array.isArray(backendOps) && backendOps.length > 0) {
+              ops = backendOps
+                .filter(op => {
+                  const name = (op.op_name || "").toLowerCase();
+                  const smvVal = parseFloat(op.smv) || 0;
+                  // Skip ignored ops, zero-SMV ops, and total/subtotal rows that leaked through
+                  return !IGNORED_OPS.some(p => name.includes(p))
+                    && smvVal > 0
+                    && smvVal < 15  // per-op SMV cap: subtotals are always > 15 in a garment OB
+                    && !TOTAL_ROW_PATTERNS.some(p => p.test(op.op_name || ''));
+                })
+                .map(op => {
+                  const rawMachine = op.machine_type || op.machine || "";
+                  const machineType = MACHINE_NORMALISATION[normalizeKey(rawMachine)] || rawMachine || "SNLS";
+                  return { ...op, machine_type: machineType, smv: parseFloat(op.smv) || 0 };
                 });
+              console.log(`[WarRoom] Backend OB: ${ops.length} ops, totalSMV=${ops.reduce((s,o) => s+(o.smv||0), 0).toFixed(2)}`);
+            }
+          } catch (backendErr) {
+            console.warn("[WarRoom] Backend /get-ob failed, falling back to Firestore:", backendErr?.message);
+          }
+
+          // ── Step 2: Firestore fallback — always re-parse SMV from uploaded Excel file ──
+          if (ops.length === 0) {
+            const parsedOB = foundData.parsedOBData || {};
+
+            // Step 2a: Try to get correct SMVs straight from the Excel source (fileUrl)
+            // This is the ONLY reliable source — Firestore parsedOBData often contains
+            // subtotal rows that inflate the totalSMV (e.g. 92 instead of 31)
+            let excelSMVMap = null;
+            if (foundData.fileUrl) {
+              console.log("[WarRoom] Parsing SMV from uploaded OB file:", foundData.fileUrl);
+              excelSMVMap = await parseSMVFromOBFile(foundData.fileUrl);
+              if (excelSMVMap && Object.keys(excelSMVMap).length > 0) {
+                const totalExcel = Object.values(excelSMVMap).flat().reduce((s,v)=>s+v.smv, 0);
+                console.log(`[WarRoom] Excel SMV map: ${Object.values(excelSMVMap).flat().length} ops, totalSMV=${totalExcel.toFixed(2)}`);
+              }
+            }
+
+            // Step 2b: Extract ops from Firestore for structure (section, machine_type, op_name)
+            const deepExtract = (node, inheritedSection) => {
+              if (!node) return;
+              if (Array.isArray(node)) { node.forEach(item => deepExtract(item, inheritedSection)); return; }
+              if (typeof node !== "object") return;
+              const nodeSection = node.section || node.sectionName || node.name || inheritedSection || "General";
+              if (Array.isArray(node.operations)) {
+                node.operations.forEach(op => {
+                  const opName = extractOpName(op);
+                  if (!opName) return;
+                  if (IGNORED_OPS.some(p => opName.toLowerCase().includes(p))) return;
+                  if (isTotalOpName(opName)) return; // skip subtotal/total rows
+                  const rawSMV = extractOpSMV(op);
+                  const rawMachine = op.machine_type || op.machine || "";
+                  const machineType = MACHINE_NORMALISATION[normalizeKey(rawMachine)] || rawMachine || "SNLS";
+                  ops.push({
+                    ...op,
+                    section: (op.section || nodeSection).trim(),
+                    op_name: opName,
+                    machine_type: machineType,
+                    smv: rawSMV || 0,  // will be replaced from excelSMVMap below
+                  });
+                });
+                return;
+              }
+              const rawSMV = extractOpSMV(node);
+              const opName = extractOpName(node);
+              if (opName && !IGNORED_OPS.some(p => opName.toLowerCase().includes(p)) && !isTotalOpName(opName)) {
+                const rawMachine = node.machine_type || node.machine || "";
+                const machineType = MACHINE_NORMALISATION[normalizeKey(rawMachine)] || rawMachine || "SNLS";
+                ops.push({ ...node, section: (node.section || inheritedSection || "General").trim(), op_name: opName, machine_type: machineType, smv: rawSMV || 0 });
+                return;
+              }
+              Object.entries(node).forEach(([key, val]) => {
+                if (["section","sectionName","smv","sam","op_no","op_name","machine_type"].includes(key)) return;
+                const kl = key.toLowerCase();
+                const childSec = kl.includes("collar") ? "Collar" : kl.includes("cuff") ? "Cuff" : kl.includes("sleeve") ? "Sleeve" : kl.includes("back") ? "Back" : kl.includes("front") ? "Front" : (kl.includes("assembly") || kl.includes("joining") || kl.includes("sewing")) ? "Assembly" : nodeSection;
+                deepExtract(val, childSec);
               });
             };
-            if (Array.isArray(group)) group.forEach(addBlock);
-            else if (group && typeof group === 'object' && group.operations) addBlock(group);
-          });
+            deepExtract(parsedOB, "General");
 
-          console.log(`[WarRoom] Extracted ${ops.length} ops (sections: ${[...new Set(ops.map(o => o.section))].join(', ')})`);
+            // Step 2c: Replace ALL SMV values with Excel-parsed values (source of truth)
+            if (excelSMVMap && Object.keys(excelSMVMap).length > 0) {
+              // CLONE the cache map so shift() doesn't destroy the cache for future re-renders!
+              const localMap = JSON.parse(JSON.stringify(excelSMVMap));
+              ops.forEach(op => {
+                const key = normalizeKey(op.op_name || '');
+                // Exact match
+                if (localMap[key] && localMap[key].length > 0) {
+                  op.smv = localMap[key].shift().smv;
+                  return;
+                }
+                // Prefix/suffix fuzzy match
+                const fuzzyKey = Object.keys(localMap).find(k =>
+                  localMap[k].length > 0 &&
+                  ((k.length >= 5 && (key.startsWith(k.slice(0,5)) || k.startsWith(key.slice(0,5)))) ||
+                  key.includes(k) || k.includes(key))
+                );
+                if (fuzzyKey) {
+                  op.smv = localMap[fuzzyKey].shift().smv;
+                  return;
+                }
+                // No match → mark for removal (this op was a subtotal/ghost row in Firestore)
+                op.smv = 0;
+              });
 
-          // Use generateVirtualFloorLayout — same generator as Floor View
+              // If we got good coverage from Excel, drop unmatched ops (they were subtotals)
+              const matchedCount = ops.filter(o => o.smv > 0).length;
+              if (matchedCount > ops.length * 0.4) {
+                // More than 40% matched → trust the filter, drop unmatched
+                ops = ops.filter(o => o.smv > 0);
+              }
+            } else {
+              // No Excel file — apply caps to filter out obvious subtotal rows
+              ops = ops.filter(o => {
+                const s = o.smv || 0;
+                return s > 0 && s < 15 && !isTotalOpName(o.op_name || '');
+              });
+            }
+
+            console.log(`[WarRoom] Firestore OB: ${ops.length} ops, totalSMV=${ops.reduce((s,o)=>s+(o.smv||0),0).toFixed(2)} (sections: ${[...new Set(ops.map(o => o.section))].join(", ")})`);
+          }
+
+          if (ops.length === 0) {
+            console.warn("[WarRoom] No ops found for style:", meta.style, "con:", meta.con);
+            return;
+          }
+
+          // ── Generate layout (same as Floor View) ──
           const result = generateVirtualFloorLayout(ops, meta.line || "Line 1");
           setMasterData(result.machines);
           setObMetrics({
@@ -1431,21 +1727,20 @@ export default function WarRoom() {
           const standardSections = ["Collar", "Cuff", "Sleeve", "Back", "Front", "Assembly"];
           const foundSections = result.machines.map((m) => {
              const s = m.section || "";
-             if (s.toLowerCase().includes('assembly') || s.toLowerCase().includes('lane')) return 'Assembly';
+             if (s.toLowerCase().includes("assembly") || s.toLowerCase().includes("lane")) return "Assembly";
              return s;
           }).filter(Boolean);
           const uniqueSections = [...new Set([...standardSections, ...foundSections])];
-          
-          setSections(uniqueSections.filter(s => !s.toLowerCase().includes('assembly') || s === 'Assembly'));
+          setSections(uniqueSections.filter(s => !s.toLowerCase().includes("assembly") || s === "Assembly"));
           const { specs: s, sections: se } = getLayoutSpecs(meta.line || "Line 1");
           const allSecs = [
-            { id: `c`, name: `Cuff`, length: se.cuff.end - se.cuff.start, width: s.widthAB, position: { x: se.cuff.start, y: 0, z: LANE_Z_CENTER_AB }, color: '#f06b43' },
-            { id: `s`, name: `Sleeve`, length: se.sleeve.end - se.sleeve.start, width: s.widthAB, position: { x: se.sleeve.start, y: 0, z: LANE_Z_CENTER_AB }, color: '#f06b43' },
-            { id: `b`, name: `Back`, length: se.back.end - se.back.start, width: s.widthAB, position: { x: se.back.start, y: 0, z: LANE_Z_CENTER_AB }, color: '#f06b43' },
-            { id: `cl`, name: `Collar`, length: se.collar.end - se.collar.start, width: s.widthCD, position: { x: se.collar.start, y: 0, z: LANE_Z_CENTER_CD }, color: '#14b8a6' },
-            { id: `f`, name: `Front`, length: se.front.end - se.front.start, width: s.widthCD, position: { x: se.front.start, y: 0, z: LANE_Z_CENTER_CD }, color: '#14b8a6' },
-            { id: `a1`, name: `Assembly AB`, length: se.assemblyAB.end - se.assemblyAB.start, width: s.widthAB, position: { x: se.assemblyAB.start, y: 0, z: LANE_Z_CENTER_AB }, color: '#f06b43' },
-            { id: `a2`, name: `Assembly CD`, length: se.assemblyCD.end - se.assemblyCD.start, width: s.widthCD, position: { x: se.assemblyCD.start, y: 0, z: LANE_Z_CENTER_CD }, color: '#14b8a6' }
+            { id: `c`, name: `Cuff`, length: se.cuff.end - se.cuff.start, width: s.widthAB, position: { x: se.cuff.start, y: 0, z: LANE_Z_CENTER_AB }, color: "#f06b43" },
+            { id: `s`, name: `Sleeve`, length: se.sleeve.end - se.sleeve.start, width: s.widthAB, position: { x: se.sleeve.start, y: 0, z: LANE_Z_CENTER_AB }, color: "#f06b43" },
+            { id: `b`, name: `Back`, length: se.back.end - se.back.start, width: s.widthAB, position: { x: se.back.start, y: 0, z: LANE_Z_CENTER_AB }, color: "#f06b43" },
+            { id: `cl`, name: `Collar`, length: se.collar.end - se.collar.start, width: s.widthCD, position: { x: se.collar.start, y: 0, z: LANE_Z_CENTER_CD }, color: "#14b8a6" },
+            { id: `f`, name: `Front`, length: se.front.end - se.front.start, width: s.widthCD, position: { x: se.front.start, y: 0, z: LANE_Z_CENTER_CD }, color: "#14b8a6" },
+            { id: `a1`, name: `Assembly AB`, length: se.assemblyAB.end - se.assemblyAB.start, width: s.widthAB, position: { x: se.assemblyAB.start, y: 0, z: LANE_Z_CENTER_AB }, color: "#f06b43" },
+            { id: `a2`, name: `Assembly CD`, length: se.assemblyCD.end - se.assemblyCD.start, width: s.widthCD, position: { x: se.assemblyCD.start, y: 0, z: LANE_Z_CENTER_CD }, color: "#14b8a6" }
           ];
           setSections3D(allSecs);
         });
@@ -1456,7 +1751,10 @@ export default function WarRoom() {
   }, [meta.style, meta.con, meta.line, viewMode]);
 
   // ─── Operation Card Renderer ───────────────────────
-  const renderOperationCard = (op, idx, isExternal) => {
+  const renderOperationCard = (opData, idx, isExternal) => {
+    const op = opData.operation || opData;
+    const opLabel = extractOpName(opData) || extractOpName(op) || "Unknown Operation";
+    
     const isArranged = ["RUNNING", "CHANGEOVER_DONE", "QC_APPROVED"].includes(op.qcStatus);
     const assignedMc = isArranged
       ? gridData.find((m) => m.mc_serial_no === op.assignedMachineSerial)
@@ -1467,7 +1765,7 @@ export default function WarRoom() {
 
     return (
       <div
-        key={op.uniqueKey || idx}
+        key={opData.uniqueKey || idx}
         style={{
           padding: "14px",
           background: op.machineArranged === "Yes" ? "rgba(34, 197, 94, 0.05)" : "rgba(30, 41, 59, 0.4)",
@@ -1478,7 +1776,7 @@ export default function WarRoom() {
       >
         <div style={{ marginBottom: "8px" }}>
           <div style={{ color: "#f8fafc", fontSize: "11px", fontWeight: "bold" }}>
-            {op.operation || op.op_name}
+            {opLabel}
           </div>
           <div
             style={{
@@ -1679,25 +1977,17 @@ export default function WarRoom() {
 
   // ─── Comparative OB memoization ────────────────────
   const { externalOps, internalOps } = useMemo(() => {
-    if (!fullObData || !fromOps) return { externalOps: [], internalOps: [] };
+    if (!masterData || masterData.length === 0 || !fromOps) return { externalOps: [], internalOps: [] };
 
     const ops = [];
-    const extract = (data) => {
-      if (!data) return;
-      if (Array.isArray(data)) {
-        data.forEach((item) => {
-          if (item.operations)
-            item.operations.forEach((o) =>
-              ops.push({ ...o, section: item.section || "General" }),
-            );
-          else if (item.operation || item.op_name)
-            ops.push({ ...item, section: item.section || "General" });
-        });
-      } else if (typeof data === "object") {
-        Object.values(data).forEach(extract);
-      }
-    };
-    extract(fullObData.parsedOBData || {});
+    const seen = new Set();
+    masterData.forEach(m => {
+       const key = m.op_name || m.operation || m.uniqueKey;
+       if (key && !seen.has(key)) {
+          ops.push(m);
+          seen.add(key);
+       }
+    });
 
     const { external, internal } = compareOBs(fromOps, ops);
 
@@ -1709,7 +1999,7 @@ export default function WarRoom() {
       externalOps: externalRes,
       internalOps: internalRes,
     };
-  }, [fullObData, fromOps, activeSection]);
+  }, [masterData, fromOps, activeSection]);
 
   const sceneCenter = useMemo(() => {
     if (!sections3D || !sections3D.length) return [0, 0, 0];
@@ -2023,11 +2313,13 @@ export default function WarRoom() {
               ) : (
                 <option value={activeLineLabel}>
                   {(() => {
-                    const l = activeLines.find(x => x.id === activeLineLabel);
+                    const l = activeLines.find(x => x.id === activeLineLabel || (x.line || x.summaryData?.line) === activeLineLabel);
                     const ln = (l?.line || l?.summaryData?.line || activeLineLabel || "---").toUpperCase();
+                    const styleName = l?.toStyle || l?.summaryData?.toStyle || l?.style || l?.summaryData?.style || l?.uploadStyle || meta.style || "---";
+                    const conName = l?.conNumber || l?.summaryData?.conNumber || l?.conNo || l?.summaryData?.conNo || l?.con || meta.con || "---";
                     const date = l?.lastUpdated?.split(' ')[0] || "";
                     const showDate = viewMode === "lastSession" && date;
-                    return `${ln} | ${meta.con} ${showDate ? `(${date})` : ""}`;
+                    return `${ln} | ${conName || styleName} ${showDate ? `(${date})` : ""}`;
                   })()}
                 </option>
               )}

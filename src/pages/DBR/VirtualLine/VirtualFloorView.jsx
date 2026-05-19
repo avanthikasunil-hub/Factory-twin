@@ -103,7 +103,8 @@ async function parseSMVFromExcel(fileUrl) {
                 }
 
                 if (smvVal > 0) {
-                    smvMap[opName] = smvVal;
+                    if (!smvMap[opName]) smvMap[opName] = [];
+                    smvMap[opName].push(smvVal);
                 }
             }
         });
@@ -116,29 +117,9 @@ async function parseSMVFromExcel(fileUrl) {
     }
 }
 
-async function patchFirestoreSMV(docRef, parsedOBData, smvMap) {
-    if (!smvMap || Object.keys(smvMap).length === 0) return;
-    try {
-        const updated = JSON.parse(JSON.stringify(parsedOBData));
-        const sheets = Array.isArray(updated) ? { default: updated } : updated;
-        Object.values(sheets).forEach(sections => {
-            if (!Array.isArray(sections)) return;
-            sections.forEach(sec => {
-                (sec.operations || []).forEach(op => {
-                    const key = normalizeKey(op.operation || op.op_name || '');
-                    if (smvMap[key] && !op.smv) {
-                        op.smv = smvMap[key];
-                        op.sam = smvMap[key];
-                    }
-                });
-            });
-        });
-        await updateDoc(docRef, { parsedOBData: Array.isArray(updated) ? updated : sheets });
-        console.log('[VirtualFloor] Patched SMV values into Firestore doc');
-    } catch (err) {
-        console.warn('[VirtualFloor] Could not patch Firestore SMV:', err);
-    }
-}
+// Disabled: We no longer patch Firestore as it corrupts array-based SMV tracking.
+// The Excel file remains the immutable single source of truth.
+async function patchFirestoreSMV(docRef, parsedOBData, smvMap) {}
 
 export default function VirtualFloorView() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -421,8 +402,9 @@ export default function VirtualFloorView() {
                     if (!metadata) return;
                     const parsedOB = metadata.parsedOBData || {};
 
-                    const buildOps = (smvMap) => {
+                    const buildOps = (rawSmvMap) => {
                         const ops = [];
+                        const localMap = rawSmvMap ? JSON.parse(JSON.stringify(rawSmvMap)) : null;
                         const data = Array.isArray(parsedOB) ? parsedOB : Object.values(parsedOB);
                         data.forEach(group => {
                             const add = (block) => {
@@ -432,21 +414,24 @@ export default function VirtualFloorView() {
                                     
                                     // 1. Precise Match (Normalized)
                                     const key = normalizeKey(op.operation || op.op_name || '');
-                                    let rawSMV = (smvMap && key) ? smvMap[key] : null;
+                                    let rawSMV = null;
+                                    if (localMap && localMap[key] && localMap[key].length > 0) {
+                                        rawSMV = localMap[key].shift();
+                                    }
                                     
                                     // 2. Heavy Fuzzy Match (Keyword Overlap)
-                                    if (!rawSMV && smvMap) {
+                                    if (!rawSMV && localMap) {
                                         const opName = (op.operation || op.op_name || '').toLowerCase();
                                         const opTokens = opName.split(/[\s\-_/]+/).filter(t => t.length > 3);
                                         
-                                        // Try to find any key that shares at least 2 long tokens or is a substring
-                                        const foundKey = Object.keys(smvMap).find(k => {
+                                        const foundKey = Object.keys(localMap).find(k => {
+                                            if (localMap[k].length === 0) return false;
                                             if (k.length > 5 && (opName.includes(k) || k.includes(opName))) return true;
                                             const kTokens = k.split(/[\s\-_/]+/).filter(t => t.length > 3);
                                             const matches = opTokens.filter(t => k.includes(t)).length;
                                             return matches >= 2;
                                         });
-                                        if (foundKey) rawSMV = smvMap[foundKey];
+                                        if (foundKey) rawSMV = localMap[foundKey].shift();
                                     }
                                     
                                     // 3. Last Resort: Firestore value
@@ -475,12 +460,20 @@ export default function VirtualFloorView() {
                         setLineOBData(prev => ({ ...prev, [line_no]: { ops: result.balancedOps, rawOps: ops, totalSMV: (result.totalSMV || 0).toFixed(2), target: result.target, filled: result.filled, capacity: result.capacity, efficiency: prev[line_no]?.efficiency || 85 } }));
                     };
 
-                    const initialOps = buildOps(null);
-                    if (initialOps.every(op => !op.smv || op.smv === 0) && metadata.fileUrl) {
-                        let smvMap = excelCache.current[metadata.fileUrl] || await parseSMVFromExcel(metadata.fileUrl);
-                        if (smvMap) { excelCache.current[metadata.fileUrl] = smvMap; apply(buildOps(smvMap)); patchFirestoreSMV(docRef, parsedOB, smvMap); }
-                        else apply(initialOps);
-                    } else apply(initialOps);
+                    if (metadata.fileUrl) {
+                        let smvMap = excelCache.current[metadata.fileUrl];
+                        if (!smvMap) {
+                            smvMap = await parseSMVFromExcel(metadata.fileUrl);
+                            if (smvMap) excelCache.current[metadata.fileUrl] = smvMap;
+                        }
+                        if (smvMap) {
+                            apply(buildOps(smvMap));
+                        } else {
+                            apply(buildOps(null));
+                        }
+                    } else {
+                        apply(buildOps(null));
+                    }
                 });
             }
         };

@@ -301,6 +301,7 @@ export const generateVirtualFloorLayout = (
     const targetOutput = isNaN(rawTarget) ? 1800 : Math.min(1800, Math.max(1000, rawTarget));
 
     const layout = [];
+    let _globalMachineIdx = 0; // ensures every machine gets a unique id
     const sectionLayouts = [];
     const warnings = [];
 
@@ -456,7 +457,7 @@ export const generateVirtualFloorLayout = (
 
         const mIdx = countIdx ?? sectionCounters[sectionName || op.section]++;
         layout.push({
-            id: `machine-${op.op_no || op.op_name || 'unknown'}-${mIdx}`,
+            id: `machine-${op.op_no || 'x'}-${++_globalMachineIdx}`,
             operation: op,
             position: { x: xPos, y: 0, z },
             rotation: { x: 0, y: ry, z: 0 },

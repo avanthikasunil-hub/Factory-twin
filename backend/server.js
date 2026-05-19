@@ -199,6 +199,7 @@ const SECTION_MAP = [
 ];
 
 function isSectionHeader(row, opNoIndex, smvIndex) {
+  // Check if the whole row looks like a section/total label (no op_no AND no smv)
   if (typeof opNoIndex === 'number' && typeof smvIndex === 'number') {
     const opNo = row[opNoIndex];
     const smv = row[smvIndex];
@@ -209,6 +210,24 @@ function isSectionHeader(row, opNoIndex, smvIndex) {
     if (rowStr.includes(kw)) return label;
   }
   return null;
+}
+
+// Patterns that indicate a total/subtotal/summary row — NOT a real operation
+const TOTAL_SKIP_PATTERNS = [
+  /^total$/i, /^sub.?total/i, /^grand.?total/i, /^section.?total/i,
+  /^sum$/i, /^summary$/i, /^aggregate/i, /^overall/i,
+  /^total\s+smv/i, /^smv\s+total/i, /^total\s+sam/i,
+  /^end\s+of/i, /^\s*total\s*:/i
+];
+
+function isTotalRow(opName, opNo) {
+  const name = String(opName || '').trim();
+  const no   = String(opNo   || '').trim().toLowerCase();
+  if (!name) return false;
+  if (TOTAL_SKIP_PATTERNS.some(p => p.test(name))) return true;
+  // op_no is literally "total" or contains only the word "total"
+  if (no === 'total' || no === 'sub total' || no === 'subtotal' || no === 'grand total') return true;
+  return false;
 }
 
 function parseSpecificSheet(sheet) {
@@ -318,10 +337,13 @@ function parseSpecificSheet(sheet) {
       continue;
     }
 
-    const smv = parseValue(row[indices.smv]);
+    const smv    = parseValue(row[indices.smv]);
     const opName = indices.opName !== -1 ? String(row[indices.opName] || '').trim() : '';
-    const opNo = indices.opNo !== -1 ? String(row[indices.opNo] || '').trim() : '';
+    const opNo   = indices.opNo   !== -1 ? String(row[indices.opNo]   || '').trim() : '';
     const machine = indices.machine !== -1 ? String(row[indices.machine] || '').trim() : '';
+
+    // Skip total / subtotal rows — they inflate the SMV sum
+    if (isTotalRow(opName, opNo)) continue;
 
     if (smv > 0 && (opName || machine)) {
       operations.push({
