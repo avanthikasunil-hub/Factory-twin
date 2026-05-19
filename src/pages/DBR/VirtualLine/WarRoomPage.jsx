@@ -150,7 +150,7 @@ function fuzzyCompare(opName, operations) {
   if (!target) return false;
   
   return operations.some((o) => {
-    const fName = normalizeOpName(o.operation || o.op_name || o.Operation || o.OperationName);
+    const fName = normalizeOpName(extractOpName(o) || o.operation || o.op_name || o.Operation || o.OperationName);
     return fName === target;
   });
 }
@@ -162,28 +162,28 @@ function compareOBs(fromOps, toOps) {
   if (!fromOps || fromOps.length === 0) {
     return {
       external: [],
-      internal: toOps.map((op) => ({
+      internal: toOps.map((op, idx) => ({
         ...op,
-        uniqueKey: `${op.op_no}-${normalizeOpName(op.operation || op.op_name)}`,
+        uniqueKey: `${op.op_no || idx}-${normalizeOpName(extractOpName(op) || op.operation || op.op_name)}`,
         machineArranged: op.machineArranged || "",
         folderArranged: op.folderArranged || "",
       })),
     };
   }
   for (const op of toOps) {
-    if (fuzzyCompare(op.operation || op.op_name, fromOps)) internal.push(op);
+    if (fuzzyCompare(extractOpName(op) || op.operation || op.op_name, fromOps)) internal.push(op);
     else external.push(op);
   }
   return {
-    external: external.map((op) => ({
+    external: external.map((op, idx) => ({
       ...op,
-      uniqueKey: `${op.op_no}-${normalizeOpName(op.operation || op.op_name)}`,
+      uniqueKey: `${op.op_no || idx}-${normalizeOpName(extractOpName(op) || op.operation || op.op_name)}`,
       machineArranged: op.machineArranged || "",
       folderArranged: op.folderArranged || "",
     })),
-    internal: internal.map((op) => ({
+    internal: internal.map((op, idx) => ({
       ...op,
-      uniqueKey: `${op.op_no}-${normalizeOpName(op.operation || op.op_name)}`,
+      uniqueKey: `${op.op_no || idx}-${normalizeOpName(extractOpName(op) || op.operation || op.op_name)}`,
       machineArranged: op.machineArranged || "",
       folderArranged: op.folderArranged || "",
     })),
